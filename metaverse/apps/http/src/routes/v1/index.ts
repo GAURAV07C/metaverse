@@ -3,9 +3,9 @@ import { userRouter } from "./user.js";
 import { adminRouter } from "./admin.js";
 import { spaceRouter } from "./space.js";
 import { SigninSchema, SignupSchema } from "../../types/index.js";
-import bcrypt from 'bcrypt';
+import bcrypt from "bcrypt";
 import { client } from "@repo/db/client";
-import jwt from 'jsonwebtoken'
+import jwt from "jsonwebtoken";
 import { JWT_PASSWORD } from "../../config.js";
 
 export const router = Router();
@@ -19,16 +19,14 @@ router.post("/signup", async (req, res) => {
   const hashpassword = await bcrypt.hash(parseData.data.password, 10);
 
   try {
-
     const existingUser = await client.user.findFirst({
-      where:{
-        username:parseData.data.username
-      }
-    })
+      where: {
+        username: parseData.data.username,
+      },
+    });
 
-    if(existingUser){
-
-     return  res.status(400).json({message: "User already exists"})
+    if (existingUser) {
+      return res.status(400).json({ message: "User already exists" });
     }
 
     const user = await client.user.create({
@@ -43,7 +41,7 @@ router.post("/signup", async (req, res) => {
       userId: user.id,
     });
   } catch (e) {
-    res.status(500).json({ message: "Internal server error",e });
+    res.status(500).json({ message: "Internal server error", e });
   }
 });
 
@@ -68,7 +66,10 @@ router.post("/signin", async (req, res) => {
       return;
     }
 
-    const isValid = await bcrypt.compare(parsedData.data.password, user.password);
+    const isValid = await bcrypt.compare(
+      parsedData.data.password,
+      user.password,
+    );
 
     if (!isValid) {
       res.status(403).json({
@@ -83,7 +84,7 @@ router.post("/signin", async (req, res) => {
         userId: user.id,
         role: user.role,
       },
-      JWT_PASSWORD
+      JWT_PASSWORD,
     );
 
     return res.json({
@@ -94,15 +95,28 @@ router.post("/signin", async (req, res) => {
   }
 });
 
-router.get("/elements", (req, res) => {
-  res.json({
-    message: "elements",
+router.get("/elements", async (req, res) => {
+  const elements = await client.element.findMany();
+
+  return res.json({
+    element: elements.map((e) => ({
+      id: e.id,
+      imageUrl: e.imageUrl,
+      width: e.width,
+      height: e.height,
+      static: e.static,
+    })),
   });
 });
 
-router.get("/avatars", (req, res) => {
-  res.json({
-    message: "avatars",
+router.get("/avatars", async (req, res) => {
+  const avatars = await client.avatar.findMany();
+  return res.json({
+    avatars: avatars.map((e) => ({
+      id: e.id,
+      imageUrl: e.imageUrl,
+      name: e.name,
+    })),
   });
 });
 
