@@ -1,7 +1,7 @@
 const axios2 = require("axios");
 
 const BACKEND_URL = "http://localhost:3000";
-const WS_URL = "wss://localhost:3001";
+const WS_URL = "ws://localhost:3001";
 
 const axios = {
   post: async (...args) => {
@@ -251,7 +251,6 @@ describe("Space information", () => {
     });
     adminId = singupResponse.data.userId;
 
-
     const response = await axios.post(`${BACKEND_URL}/api/v1/signin`, {
       username,
       password,
@@ -311,7 +310,6 @@ describe("Space information", () => {
     element1Id = element1Responce.data.id;
     element2Id = element2Response.data.id;
 
-
     const map = await axios.post(
       `${BACKEND_URL}/api/v1/admin/map`,
       {
@@ -360,7 +358,6 @@ describe("Space information", () => {
         },
       },
     );
-
 
     expect(response.data.spaceId).toBeDefined();
   });
@@ -520,8 +517,6 @@ describe("Arena endpoints", () => {
       type: "admin",
     });
     adminId = singupResponse.data.userId;
-  
-    
 
     const response = await axios.post(`${BACKEND_URL}/api/v1/signin`, {
       username,
@@ -657,17 +652,14 @@ describe("Arena endpoints", () => {
         authorization: `Bearer ${userToken}`,
       },
     });
-    await axios.delete(
-      `${BACKEND_URL}/api/v1/space/element`,
-      {
-        data: {
-          id: response.data.elements[0].id,
-        },
-        headers: {
-          authorization: `Bearer ${userToken}`,
-        },
+    await axios.delete(`${BACKEND_URL}/api/v1/space/element`, {
+      data: {
+        id: response.data.elements[0].id,
       },
-    );
+      headers: {
+        authorization: `Bearer ${userToken}`,
+      },
+    });
 
     const newResponse = await axios.get(
       `${BACKEND_URL}/api/v1/space/${spaceId}`,
@@ -954,7 +946,7 @@ describe("Admin endpoints", () => {
   });
 });
 
-describe("websocket test",() => {
+describe("websocket test", () => {
   let adminToken;
   let adminUserId;
   let userToken;
@@ -967,60 +959,61 @@ describe("websocket test",() => {
   let ws2;
   let ws1Messages = [];
   let ws2Messages = [];
- let userX;
- let userY;
- let AdminX;
- let AdminY;
+  let userX;
+  let userY;
+  let AdminX;
+  let AdminY;
 
-  function waitForAndPopLatestMessage(messageArray){
-
-    return new Promise(r => {
-      if(messageArray.length > 0){
-        resolve(messageArray.shift())
+  function waitForAndPopLatestMessage(messageArray) {
+    return new Promise((resolve) => {
+      if (messageArray.length > 0) {
+        resolve(messageArray.shift());
       } else {
-         let interval =  setInterval(() => {
-          if(messageArray.length > 0){
-            resolve(messageArray.shift())
-            clearInterval(interval)
+        let interval = setInterval(() => {
+          if (messageArray.length > 0) {
+            resolve(messageArray.shift());
+            clearInterval(interval);
           }
-        },100)
+        }, 100);
       }
-    })
-
+    });
   }
 
-  async function setupHttp () {
-     const username = `Gaurav-${Math.random()}`;
+  async function setupHttp() {
+    const username = `Gaurav-${Math.random()}`;
     const password = "123456";
-    const singupResponse = await axios.post(`${BACKEND_URL}/api/v1/singup`, {
+    const singupResponse = await axios.post(`${BACKEND_URL}/api/v1/signup`, {
       username,
       password,
       type: "admin",
     });
+    adminUserId = singupResponse.data.userId;
 
-    const signinResponse = await axios.post(`${BACKEND_URL}/api/v1/signin`, {
+    const response = await axios.post(`${BACKEND_URL}/api/v1/signin`, {
       username,
       password,
     });
 
-    adminUserId =singupResponse.data.id;
-    adminToken = signinResponse.data.token;
+    adminToken = response.data.token;
 
-    const UsersingupResponse = await axios.post(`${BACKEND_URL}/api/v1/singup`, {
-      username : username + '-user',
+    const UsersingupResponse = await axios.post(
+      `${BACKEND_URL}/api/v1/signup`,
+      {
+        username: username + "-user",
+        password,
+        type: "user",
+      },
+    );
+    userId = UsersingupResponse.data.userId;
+
+    const Userresponse = await axios.post(`${BACKEND_URL}/api/v1/signin`, {
+      username: username + "-user",
       password,
-      type: "admin",
     });
 
-    const UsersigninResponse = await axios.post(`${BACKEND_URL}/api/v1/signin`, {
-       username : username + '-user',
-      password,
-    });
+    userToken = Userresponse.data.token;
 
-    userId = UsersingupResponse.data.id;
-    userToken = UsersigninResponse.data.token;
-
-     const element1Responce = await axios.post(
+    const element1Responce = await axios.post(
       `${BACKEND_URL}/api/v1/admin/element`,
       {
         imageUrl:
@@ -1052,7 +1045,7 @@ describe("websocket test",() => {
       },
     );
 
-    element1Id = element1Responce.dats.id;
+    element1Id = element1Responce.data.id;
     element2Id = element2Response.data.id;
 
     const map = await axios.post(
@@ -1085,7 +1078,8 @@ describe("websocket test",() => {
         },
       },
     );
-    mapId = map.id;
+
+    mapId = map.data.id;
 
     const spaceResponce = await axios.post(
       `${BACKEND_URL}/api/v1/space`,
@@ -1100,137 +1094,140 @@ describe("websocket test",() => {
         },
       },
     );
+
     spaceId = spaceResponce.data.spaceId;
   }
 
-  function setupWebSocket () {
-    ws1 = new WebSocket(WS_URL)
+  async function setupWs() {
+    ws1 = new WebSocket(WS_URL);
 
-    await new Promise(r => {
-      ws1.onopen = r
-    })
+    ws1.onmessage = (event) => {
+      console.log("got back adata 1");
+      console.log(event.data);
 
- ws1.onmessage = (event) => {
-      ws1Messages.push(JSON.parse(event.data))
-    }
-    ws2 = new WebSocket(WS_URL)
+      ws1Messages.push(JSON.parse(event.data));
+    };
+    await new Promise((r) => {
+      ws1.onopen = r;
+    });
 
-    await new Promise(r => {
-      ws2.onopen = r
-    })
+    ws2 = new WebSocket(WS_URL);
 
     ws2.onmessage = (event) => {
-      ws2Messages.push(JSON.parse(event.data))
-    }
-
+      console.log("got back data 2");
+      console.log(event.data);
+      ws2Messages.push(JSON.parse(event.data));
+    };
+    await new Promise((r) => {
+      ws2.onopen = r;
+    });
   }
 
-  beforeAll(() => {
-    setupHttp()
-    setupWebSocket()
+  beforeAll(async () => {
+    await setupHttp();
+    await setupWs();
+  });
 
-  })
-
-  test("Get back ack for joining the space", async() => {
-    ws1.send(JSON.stringify({
-       "type": "join",
-    "payload": {
-	    "spaceId": spaceId,
-	    "token": adminToken
-    }
-    }))
-  const message1 = await waitForAndPopLatestMessage(ws1Messages);
-
-     ws2.send(JSON.stringify({
-       "type": "join",
-    "payload": {
-	    "spaceId": spaceId,
-	    "token": userToken
-    }
-    }))
+  test("Get back ack for joining the space", async () => {
+    console.log("insixce first test");
+    ws1.send(
+      JSON.stringify({
+        type: "join",
+        payload: {
+          spaceId: spaceId,
+          token: adminToken,
+        },
+      }),
+    );
+    console.log("insixce first test1");
+    const message1 = await waitForAndPopLatestMessage(ws1Messages);
+    console.log("insixce first test2");
+    ws2.send(
+      JSON.stringify({
+        type: "join",
+        payload: {
+          spaceId: spaceId,
+          token: userToken,
+        },
+      }),
+    );
+    console.log("insixce first test3");
 
     const message2 = await waitForAndPopLatestMessage(ws2Messages);
     const message3 = await waitForAndPopLatestMessage(ws1Messages);
 
-    expect(message1.type).toBe("space-joined")
-     expect(message2.type).toBe("space-joined")
+    expect(message1.type).toBe("space-joined");
+    expect(message2.type).toBe("space-joined");
+    expect(message1.payload.users.length).toBe(0);
+    expect(message2.payload.users.length).toBe(1);
+    expect(message3.type).toBe("user-joined");
+    expect(message3.payload.x).toBe(message2.payload.spawn.x);
+    expect(message3.payload.y).toBe(message2.payload.spawn.y);
+    expect(message3.payload.userId).toBe(userId);
 
-     expect(message1.payload.user.length ).toBe(0)
-     expect(message2.payload.user.length ).toBe(1)
-      expect(message3.type ).toBe('user-join')
+    AdminX = message1.payload.spawn.x;
+    AdminY = message1.payload.spawn.y;
 
-      expect(message3.payload.x).toBe(message2.payload.spawn.x)
-     expect(message3.payload.y).toBe(message2.payload.spawn.y)
-     expect(message3.payload.userId).toBe(userId)
+    userX = message2.payload.spawn.x;
+    userY = message2.payload.spawn.y;
+  });
 
-     AdminX = message1.payload.spawn.x
-     AdminY = message1.payload.spawn.y
+  test("User should not be able to move across the boundary of the wall", async () => {
+    ws1.send(
+      JSON.stringify({
+        type: "move",
+        payload: {
+          x: 1000000,
+          y: 10000,
+        },
+      }),
+    );
 
-     userX = message2.payload.spawn.x
-     userY = message2.payload.spawn.y
+    const message = await waitForAndPopLatestMessage(ws1Messages);
+    expect(message.type).toBe("movement-rejected");
+    expect(message.payload.x).toBe(AdminX);
+    expect(message.payload.y).toBe(AdminY);
+  });
 
-  })
+  test("User should not be able to move two blocks at the same time", async () => {
+    ws1.send(
+      JSON.stringify({
+        type: "move",
+        payload: {
+          x: AdminX + 2,
+          y: AdminY,
+        },
+      }),
+    );
 
-  test("User should not be able to move across the boundary of the wall", async() => {
-    ws1.send(JSON.stringify({
-      type:"movement",
-      payload:{
-        x:100000,
-        y:10000,
-      }
-    }))
+    const message = await waitForAndPopLatestMessage(ws1Messages);
+    expect(message.type).toBe("movement-rejected");
+    expect(message.payload.x).toBe(AdminX);
+    expect(message.payload.y).toBe(AdminY);
+  });
 
-    const message = await waitForAndPopLatestMessage(ws1Messages)
+  test("Correct movement should be broadcasted to the other sockets in the room", async () => {
+    ws1.send(
+      JSON.stringify({
+        type: "move",
+        payload: {
+          x: AdminX + 1,
+          y: AdminY,
+          userId: adminUserId,
+        },
+      }),
+    );
 
-    expect(message.type).toBe("movement-rejcted")
-    expect(message.payload.x).toBe(AdminX)
-    expect(message.payload.y).toBe(AdminY)
+    const message = await waitForAndPopLatestMessage(ws2Messages);
+    expect(message.type).toBe("movement");
+    expect(message.payload.x).toBe(AdminX + 1);
+    expect(message.payload.y).toBe(AdminY);
+  });
 
-  })
-
-   test("User should not be able to move across the boundary of the wall", async() => {
-    ws1.send(JSON.stringify({
-      type:"movement",
-      payload:{
-        x:AdminX + 2,
-        y:AdminY + 2,
-      }
-    }))
-
-    const message = await waitForAndPopLatestMessage(ws1Messages)
-
-    expect(message.type).toBe("movement-rejcted")
-    expect(message.payload.x).toBe(AdminX)
-    expect(message.payload.y).toBe(AdminY)
-
-  })
-
-   test("Correct movement should be brodcasted to the other sockets in the room", async() => {
-    ws1.send(JSON.stringify({
-      type:"movement",
-      payload:{
-        x:AdminX + 1,
-        y:AdminY,
-        userId: adminUserId
-      }
-    }))
-
-    const message = await waitForAndPopLatestMessage(ws2Messages)
-
-    expect(message.type).toBe("movement")
-    expect(message.payload.x).toBe(AdminX +1)
-    expect(message.payload.y).toBe(AdminY)
-
-  })
-
-    test("If the user leaves the other user receive a leave event", async() => {
+  test("If a user leaves, the other user receives a leave event", async () => {
     ws1.close();
-
-    const message = await waitForAndPopLatestMessage(ws2Messages)
-
-    expect(message.type).toBe("user-left")
-    expect(message.payload.userId).toBe(adminUserId)
-
-  })
-
-} )
+    const message = await waitForAndPopLatestMessage(ws2Messages);
+    expect(message.type).toBe("user-left");
+    expect(message.payload.userId).toBe(adminUserId);
+  });
+});
