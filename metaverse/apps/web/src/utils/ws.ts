@@ -1,10 +1,10 @@
 export const WS_URL = 'ws://localhost:3001';
 
 export type WsIncomingMessage =
-  | { type: 'space-joined'; payload: { spawn: { x: number; y: number }; users: { id: string }[] } }
-  | { type: 'user-joined'; payload: { userId: string; x: number; y: number } }
+  | { type: 'space-joined'; payload: { spawn: { x: number; y: number }; userId: string; username?: string; avatarUrl?: string; users: { id: string; userId?: string; username?: string; avatarUrl?: string; x: number; y: number }[] } }
+  | { type: 'user-joined'; payload: { userId: string; username?: string; avatarUrl?: string; x: number; y: number } }
   | { type: 'user-left'; payload: { userId: string } }
-  | { type: 'movement'; payload: { x: number; y: number } }
+  | { type: 'movement'; payload: { userId: string; x: number; y: number } }
   | { type: 'movement-rejected'; payload: { x: number; y: number } };
 
 export class WsClient {

@@ -27,7 +27,7 @@ function App() {
         />
         <Route
           path="/space/:spaceId"
-          element={token ? <Arena /> : <Navigate to="/login" />}
+          element={token ? <Arena /> : <Navigate to={`/login?returnTo=${encodeURIComponent('/space/' + window.location.pathname.split('/space/')[1])}`} />}
         />
         <Route path="*" element={<Navigate to={token ? (type === 'admin' ? '/admin' : '/dashboard') : '/login'} />} />
       </Routes>

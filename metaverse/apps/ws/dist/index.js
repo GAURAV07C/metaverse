@@ -7761,6 +7761,12 @@ var User = class {
             return;
           }
           this.userId = userId;
+          const dbUser = await import_client.default.user.findUnique({
+            where: { id: userId },
+            select: { username: true, avatar: { select: { imageUrl: true } } }
+          });
+          this.username = dbUser?.username ?? "Unknown";
+          this.avatarUrl = dbUser?.avatar?.imageUrl ?? void 0;
           const space = await import_client.default.space.findFirst({
             where: { id: spaceId }
           });
@@ -7776,7 +7782,10 @@ var User = class {
             type: "space-joined",
             payload: {
               spawn: { x: this.x, y: this.y },
-              users: RoomManager.getInstance().rooms.get(spaceId)?.filter((x) => x.id !== this.id)?.map((u) => ({ id: u.id })) ?? []
+              userId: this.userId,
+              username: this.username,
+              avatarUrl: this.avatarUrl,
+              users: RoomManager.getInstance().rooms.get(spaceId)?.filter((x) => x.id !== this.id)?.map((u) => ({ id: u.id, userId: u.userId, username: u.username, avatarUrl: u.avatarUrl, x: u.x, y: u.y })) ?? []
             }
           });
           RoomManager.getInstance().broadcast(
@@ -7784,6 +7793,8 @@ var User = class {
               type: "user-joined",
               payload: {
                 userId: this.userId,
+                username: this.username,
+                avatarUrl: this.avatarUrl,
                 x: this.x,
                 y: this.y
               }
@@ -7820,6 +7831,7 @@ var User = class {
               {
                 type: "movement",
                 payload: {
+                  userId: this.userId,
                   x: this.x,
                   y: this.y
                 }

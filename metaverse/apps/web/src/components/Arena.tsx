@@ -3,12 +3,14 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useUserStore } from '../store';
 import { WsClient } from '../utils/ws';
 import { api } from '../utils/api';
-import { ArrowLeft, Users, Plus, Trash2, Layers, X } from 'lucide-react';
+import { findPath } from '../utils/pathfinding';
+import { ArrowLeft, Users, Plus, Trash2, Layers, X, Copy, Check, Link2, PlusCircle, MinusCircle, Navigation } from 'lucide-react';
 
-const TILE = 40;
+const TILE = 28;
 
 interface OtherUser {
-  id: string;
+  userId: string;
+  username: string;
   x: number;
   y: number;
   avatarUrl?: string;
@@ -33,8 +35,11 @@ export function Arena() {
   const { spaceId } = useParams<{ spaceId: string }>();
   const navigate = useNavigate();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WsClient | null>(null);
   const token = useUserStore((s) => s.token);
+  const myStoredUsername = useUserStore((s) => s.username);
+  const myStoredUserId = useUserStore((s) => s.userId);
 
   const [myPos, setMyPos] = useState({ x: 5, y: 5 });
   const [otherUsers, setOtherUsers] = useState<OtherUser[]>([]);
@@ -42,6 +47,29 @@ export function Arena() {
   const [dimensions, setDimensions] = useState({ w: 20, h: 20 });
   const [connected, setConnected] = useState(false);
   const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
+  const [myUserId, setMyUserId] = useState<string | null>(null);
+  const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(null);
+  const [autoPath, setAutoPath] = useState<{x: number, y: number}[]>([]);
+  const [zoom, setZoom] = useState(1);
+
+  // Image cache for avatars
+  const imageCacheRef = useRef<Record<string, HTMLImageElement>>({});
+  const [renderTrigger, setRenderTrigger] = useState(0);
+
+  // Camera offset tracking for click events
+  const cameraRef = useRef({ cx: 0, cy: 0 });
+
+  // Invite / copy
+  const [copied, setCopied] = useState(false);
+  const handleCopyInvite = () => {
+    navigator.clipboard.writeText(window.location.href);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  // Online users panel — always visible sidebar, no toggle needed
+  // (showUsers kept for narrower screens as toggle)
+  const [showUsers, setShowUsers] = useState(true);
 
   // Element panel
   const [showPanel, setShowPanel] = useState(false);
@@ -71,7 +99,7 @@ export function Arena() {
     try {
       const res = await api.get('/elements');
       setAvailableElements(res.data.element ?? []);
-    } catch {}
+    } catch { }
   };
 
   // ── WebSocket ──────────────────────────
@@ -84,21 +112,38 @@ export function Arena() {
       switch (msg.type) {
         case 'space-joined':
           setMyPos(msg.payload.spawn);
-          setOtherUsers(msg.payload.users.map((u) => ({ id: u.id, x: 0, y: 0 })));
+          setMyUserId(msg.payload.userId ?? null);
+          setMyAvatarUrl(msg.payload.avatarUrl ?? null);
+          setOtherUsers(
+            msg.payload.users.map((u) => ({
+              userId: u.userId ?? u.id,
+              username: u.username ?? 'Unknown',
+              avatarUrl: u.avatarUrl,
+              x: u.x ?? 0,
+              y: u.y ?? 0,
+            }))
+          );
           setConnected(true);
           setWsStatus('connected');
           break;
         case 'user-joined':
           setOtherUsers((prev) => [
-            ...prev.filter((u) => u.id !== msg.payload.userId),
-            { id: msg.payload.userId, x: msg.payload.x, y: msg.payload.y },
+            ...prev.filter((u) => u.userId !== msg.payload.userId),
+            { userId: msg.payload.userId, username: msg.payload.username ?? 'Unknown', avatarUrl: msg.payload.avatarUrl, x: msg.payload.x, y: msg.payload.y },
           ]);
           break;
         case 'user-left':
-          setOtherUsers((prev) => prev.filter((u) => u.id !== msg.payload.userId));
+          setOtherUsers((prev) => prev.filter((u) => u.userId !== msg.payload.userId));
           break;
         case 'movement':
-          // movement broadcast from another user
+          // Update the specific user who moved
+          setOtherUsers((prev) =>
+            prev.map((u) =>
+              u.userId === msg.payload.userId
+                ? { ...u, x: msg.payload.x, y: msg.payload.y }
+                : u
+            )
+          );
           break;
         case 'movement-rejected':
           setMyPos({ x: msg.payload.x, y: msg.payload.y });
@@ -115,23 +160,113 @@ export function Arena() {
     if (!connected) return;
     // Don't move when typing in inputs
     if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
-    const { x, y } = myPos;
-    let nx = x, ny = y;
-    if (e.key === 'ArrowUp' || e.key === 'w') ny -= 1;
-    else if (e.key === 'ArrowDown' || e.key === 's') ny += 1;
-    else if (e.key === 'ArrowLeft' || e.key === 'a') nx -= 1;
-    else if (e.key === 'ArrowRight' || e.key === 'd') nx += 1;
-    else return;
-    e.preventDefault();
+    
+    let nx = myPos.x, ny = myPos.y;
+    let moved = false;
+    if (e.key === 'ArrowUp' || e.key === 'w') { ny -= 1; moved = true; }
+    else if (e.key === 'ArrowDown' || e.key === 's') { ny += 1; moved = true; }
+    else if (e.key === 'ArrowLeft' || e.key === 'a') { nx -= 1; moved = true; }
+    else if (e.key === 'ArrowRight' || e.key === 'd') { nx += 1; moved = true; }
+    
+    if (moved) {
+      e.preventDefault();
+      setAutoPath([]); // Cancel auto-path on manual move
+    } else {
+      return;
+    }
+    
     if (nx < 0 || ny < 0 || nx >= dimensions.w || ny >= dimensions.h) return;
+
+    // Check collision with static elements
+    const isCollidingWithElement = elements.some((el) => {
+      if (!el.element.static) return false;
+      return (
+        nx >= el.x &&
+        nx < el.x + el.element.width &&
+        ny >= el.y &&
+        ny < el.y + el.element.height
+      );
+    });
+    if (isCollidingWithElement) return;
+
+    // Check collision with other users
+    const isCollidingWithUser = otherUsers.some((u) => u.x === nx && u.y === ny);
+    if (isCollidingWithUser) return;
+
     setMyPos({ x: nx, y: ny });
     wsRef.current?.move(nx, ny);
-  }, [connected, myPos, dimensions]);
+  }, [connected, myPos, dimensions, elements, otherUsers]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
+
+  // ── Auto path stepping ─────────────────
+  useEffect(() => {
+    if (autoPath.length === 0) return;
+    
+    const interval = setInterval(() => {
+      setAutoPath(prevPath => {
+        if (prevPath.length === 0) return [];
+        const nextStep = prevPath[0];
+        const newPath = prevPath.slice(1);
+        
+        // Validate collision again just in case someone moved into our path
+        const isCollidingWithUser = otherUsers.some((u) => u.x === nextStep.x && u.y === nextStep.y);
+        if (isCollidingWithUser) {
+          // Recalculate path from current pos to target pos if blocked by user
+          // For simplicity, just stop if a user blocks the path
+          return [];
+        }
+
+        setMyPos({ x: nextStep.x, y: nextStep.y });
+        wsRef.current?.move(nextStep.x, nextStep.y);
+        return newPath;
+      });
+    }, 120); // Move every 120ms
+    
+    return () => clearInterval(interval);
+  }, [autoPath, otherUsers]);
+
+  // ── Click-to-move ──────────────────────
+  const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    
+    // Mouse relative to canvas element (account for zoom)
+    const mouseX = (e.clientX - rect.left) / zoom;
+    const mouseY = (e.clientY - rect.top) / zoom;
+
+    // Convert to world coordinates (no camera offset)
+    const worldX = mouseX;
+    const worldY = mouseY;
+
+    const gridX = Math.floor(worldX / TILE);
+    const gridY = Math.floor(worldY / TILE);
+
+    if (gridX < 0 || gridY < 0 || gridX >= dimensions.w || gridY >= dimensions.h) return;
+
+    // A* Pathfinding
+    const path = findPath(
+      myPos,
+      { x: gridX, y: gridY },
+      dimensions.w,
+      dimensions.h,
+      (x, y) => {
+        // Walkable check
+        const isStaticEl = elements.some(el => el.element.static && x >= el.x && x < el.x + el.element.width && y >= el.y && y < el.y + el.element.height);
+        if (isStaticEl) return false;
+        // Don't walk through other users (except if it's the final target, then A* handles it, but let's avoid walking through)
+        // Wait, if target has a user, we can't step ON them.
+        return true;
+      }
+    );
+
+    if (path.length > 0) {
+      setAutoPath(path);
+    }
+  };
 
   // ── Add element to space (POST /space/element) ──
   const handleAddElement = async () => {
@@ -175,9 +310,10 @@ export function Arena() {
 
     const W = dimensions.w * TILE;
     const H = dimensions.h * TILE;
-    canvas.width = W;
-    canvas.height = H;
+    canvas.width = W * zoom;
+    canvas.height = H * zoom;
 
+    ctx.scale(zoom, zoom);
     ctx.clearRect(0, 0, W, H);
 
     // Floor
@@ -194,68 +330,154 @@ export function Arena() {
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
     }
 
+
     // Elements (static objects)
     elements.forEach((el) => {
+      const w = el.element.width * TILE;
+      const h = el.element.height * TILE;
+      const px = el.x * TILE;
+      const py = el.y * TILE;
+
+      if (el.element.imageUrl) {
+        let img = imageCacheRef.current[el.element.imageUrl];
+        if (!img) {
+          img = new Image();
+          img.src = el.element.imageUrl;
+          img.onload = () => setRenderTrigger(t => t + 1);
+          imageCacheRef.current[el.element.imageUrl] = img;
+        }
+        if (img.complete && img.naturalWidth > 0) {
+          // Draw shadow underneath to ground it
+          ctx.fillStyle = 'rgba(0,0,0,0.2)';
+          ctx.beginPath();
+          ctx.ellipse(px + w / 2, py + h - 4, w / 2 - 4, 6, 0, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.drawImage(img, px, py, w, h);
+          return;
+        }
+      }
+
+      // Fallback if no image or not loaded
       ctx.fillStyle = el.element.static ? 'rgba(100,116,139,0.5)' : 'rgba(16,185,129,0.3)';
       ctx.strokeStyle = el.element.static ? '#475569' : '#10b981';
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.roundRect(el.x * TILE + 4, el.y * TILE + 4, TILE - 8, TILE - 8, 6);
+      ctx.roundRect(px + 4, py + 4, w - 8, h - 8, 6);
       ctx.fill();
       ctx.stroke();
       ctx.fillStyle = '#94a3b8';
-      ctx.font = `${TILE * 0.45}px sans-serif`;
+      ctx.font = `${Math.min(w, h) * 0.45}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(el.element.static ? '🪑' : '🟢', el.x * TILE + TILE / 2, el.y * TILE + TILE / 2);
+      ctx.fillText(el.element.static ? '🪑' : '🟢', px + w / 2, py + h / 2);
     });
+
+    const drawAvatar = (x: number, y: number, url?: string, fallback: string = '👤', color: string = '#6366f1') => {
+      // Shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.beginPath();
+      ctx.ellipse(x, y + TILE / 2, 8, 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (url) {
+        let img = imageCacheRef.current[url];
+        if (!img) {
+          img = new Image();
+          img.src = url;
+          img.onload = () => setRenderTrigger(t => t + 1);
+          imageCacheRef.current[url] = img;
+        }
+        if (img.complete && img.naturalWidth > 0) {
+          // Draw image
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(x, y, 12, 0, Math.PI * 2);
+          ctx.closePath();
+          ctx.clip();
+          ctx.drawImage(img, x - 12, y - 12, 24, 24);
+          ctx.restore();
+          // Border
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(x, y, 12, 0, Math.PI * 2);
+          ctx.stroke();
+          return;
+        }
+      }
+      // Fallback
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(x, y, 12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = '14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(fallback, x, y);
+    };
 
     // Other users
     otherUsers.forEach((u) => {
-      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      const px = u.x * TILE + TILE / 2;
+      const py = u.y * TILE + TILE / 2 - 4;
+
+      drawAvatar(px, py, u.avatarUrl, '👤', '#6366f1');
+      // Name tag
+      ctx.fillStyle = 'rgba(99,102,241,0.85)';
+      const name = u.username || u.userId.slice(0, 5);
+      const tagW = name.length * 6 + 6;
       ctx.beginPath();
-      ctx.ellipse(u.x * TILE + TILE / 2, u.y * TILE + TILE - 4, 10, 4, 0, 0, Math.PI * 2);
+      ctx.roundRect(px - tagW / 2, py - 20, tagW, 12, 3);
       ctx.fill();
-      ctx.fillStyle = '#6366f1';
-      ctx.beginPath();
-      ctx.arc(u.x * TILE + TILE / 2, u.y * TILE + TILE / 2 - 4, 14, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.font = '18px sans-serif';
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 8px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('👤', u.x * TILE + TILE / 2, u.y * TILE + TILE / 2 - 4);
+      ctx.fillText(name, px, py - 14);
     });
 
-    // My avatar
     const mx = myPos.x * TILE + TILE / 2;
     const my = myPos.y * TILE + TILE / 2 - 4;
-    const grd = ctx.createRadialGradient(mx, my, 0, mx, my, 22);
+
+    const grd = ctx.createRadialGradient(mx, my, 0, mx, my, 18);
     grd.addColorStop(0, 'rgba(59,130,246,0.4)');
     grd.addColorStop(1, 'rgba(59,130,246,0)');
     ctx.fillStyle = grd;
     ctx.beginPath();
-    ctx.arc(mx, my, 22, 0, Math.PI * 2);
+    ctx.arc(mx, my, 18, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.beginPath();
-    ctx.ellipse(mx, myPos.y * TILE + TILE - 4, 10, 4, 0, 0, Math.PI * 2);
-    ctx.fill();
+    drawAvatar(mx, my, myAvatarUrl ?? undefined, '🧑', '#3b82f6');
+  }, [myPos, otherUsers, elements, dimensions, myAvatarUrl, renderTrigger, autoPath, zoom]);
 
-    ctx.fillStyle = '#3b82f6';
-    ctx.beginPath();
-    ctx.arc(mx, my, 15, 0, Math.PI * 2);
-    ctx.fill();
+  // Handle window resize for canvas scaling
+  useEffect(() => {
+    const handleResize = () => setRenderTrigger(t => t + 1);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
-    ctx.font = '18px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('🧑', mx, my);
-  }, [myPos, otherUsers, elements, dimensions]);
+  // ── Locate User ──
+  const handleLocateUser = () => {
+    if (!wrapperRef.current) return;
+    const wrapper = wrapperRef.current;
+    
+    // Calculate user's pixel position in the scaled canvas
+    const px = (myPos.x * TILE + TILE / 2) * zoom;
+    const py = (myPos.y * TILE + TILE / 2) * zoom;
+
+    // Center the scroll view on the user
+    wrapper.scrollTo({
+      left: px - wrapper.clientWidth / 2,
+      top: py - wrapper.clientHeight / 2,
+      behavior: 'smooth'
+    });
+  };
 
   return (
     <div className="arena">
-      {/* Header */}
       <header className="arena-header glass">
         <button className="btn-icon" onClick={() => navigate('/dashboard')}>
           <ArrowLeft size={20} />
@@ -264,32 +486,132 @@ export function Arena() {
           <span className="arena-dot" style={{ background: wsStatus === 'connected' ? 'var(--success)' : wsStatus === 'error' ? 'var(--danger)' : '#f59e0b' }} />
           Space: <strong>{spaceId?.slice(0, 8)}…</strong>
         </div>
-        <div className="arena-players">
-          <Users size={16} /> {otherUsers.length + 1} online
+
+        <div style={{ display: 'flex', gap: '0.5rem', marginLeft: 'auto', alignItems: 'center' }}>
+          {/* Invite button */}
+          <button
+            className="btn"
+            style={{ fontSize: '0.8rem', padding: '0.45rem 0.9rem', background: copied ? 'rgba(16,185,129,0.2)' : undefined, borderColor: copied ? 'var(--success)' : undefined }}
+            onClick={handleCopyInvite}
+            title="Copy invite link"
+          >
+            {copied ? <><Check size={14} style={{ marginRight: 4 }} />Copied!</> : <><Link2 size={14} style={{ marginRight: 4 }} />Invite</>}
+          </button>
+
+          {/* Online users toggle */}
+          <button
+            className="btn"
+            style={{ fontSize: '0.8rem', padding: '0.45rem 0.9rem' }}
+            onClick={() => setShowUsers(!showUsers)}
+          >
+            <Users size={14} style={{ marginRight: 4 }} /> {otherUsers.length + 1} Online
+          </button>
+
+          {/* Elements panel toggle */}
+          <button
+            className="btn"
+            style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}
+            onClick={() => { setShowPanel(!showPanel); fetchAvailableElements(); }}
+          >
+            <Layers size={16} style={{ marginRight: 4 }} />
+            {showPanel ? 'Hide' : 'Elements'}
+          </button>
         </div>
-        <button
-          className="btn"
-          style={{ marginLeft: 'auto', fontSize: '0.85rem', padding: '0.5rem 1rem' }}
-          onClick={() => { setShowPanel(!showPanel); fetchAvailableElements(); }}
-        >
-          <Layers size={16} style={{ marginRight: 4 }} />
-          {showPanel ? 'Hide' : 'Elements'}
-        </button>
       </header>
 
       <div className="arena-body">
         {/* Canvas */}
         <main className="arena-main">
-          <div className="canvas-wrapper glass">
-            <canvas ref={canvasRef} style={{ display: 'block', borderRadius: '8px' }} />
+          <div className="canvas-wrapper glass" style={{ overflow: 'auto' }} ref={wrapperRef}>
+            <canvas 
+              ref={canvasRef} 
+              onDoubleClick={handleDoubleClick}
+              style={{ display: 'block', borderRadius: '8px', cursor: 'crosshair', transformOrigin: 'top left' }} 
+            />
           </div>
-          <div className="controls-hint glass">
-            <span>Move: <kbd>WASD</kbd> or <kbd>↑↓←→</kbd></span>
-            <span style={{ color: 'var(--text-secondary)' }}>{dimensions.w}×{dimensions.h} grid</span>
-            <span style={{ color: 'var(--text-secondary)' }}>{elements.length} elements</span>
-            {!connected && <span style={{ color: '#f59e0b' }}>⏳ Connecting…</span>}
+          
+          <div className="map-controls">
+            <button className="map-ctrl-btn" onClick={() => setZoom(z => Math.min(z + 0.25, 2.5))} title="Zoom In">
+              <PlusCircle size={20} />
+            </button>
+            <button className="map-ctrl-btn" onClick={() => setZoom(z => Math.max(z - 0.25, 0.5))} title="Zoom Out">
+              <MinusCircle size={20} />
+            </button>
+            <button className="map-ctrl-btn" onClick={handleLocateUser} title="Locate Me">
+              <Navigation size={20} />
+            </button>
+          </div>
+          <div className="action-toolbar glass">
+            <div className="action-profile-btn" title={myStoredUsername || 'Profile'}>
+              {myStoredUsername ? myStoredUsername.charAt(0).toUpperCase() : 'U'}
+            </div>
+            <button className="action-icon-btn" title="React with Emoji">
+              😀
+            </button>
+            <button className="action-leave-btn" onClick={() => navigate('/dashboard')} title="Leave Space">
+              Leave
+            </button>
           </div>
         </main>
+
+        {/* ── Permanent Players Sidebar ── */}
+        <aside className="players-sidebar glass">
+          <div className="players-sidebar-header">
+            <Users size={15} />
+            <span>Players</span>
+            <span className="players-count-badge">{otherUsers.length + 1}</span>
+          </div>
+
+          <div className="players-list">
+            {/* Me */}
+            <div className="player-entry player-me">
+              {myAvatarUrl ? (
+                <img src={myAvatarUrl} alt="" className="player-avatar-img" />
+              ) : (
+                <div className="player-avatar-dot" style={{ background: '#3b82f6' }}>🧑</div>
+              )}
+              <div className="player-info">
+                <p className="player-name">{myStoredUsername ?? 'You'} <span className="player-you-tag">YOU</span></p>
+                <p className="player-pos">({myPos.x}, {myPos.y})</p>
+              </div>
+              <span className="online-dot" />
+            </div>
+
+            {/* Other users */}
+            {otherUsers.map((u, i) => {
+              const colors = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#8b5cf6'];
+              const color = colors[i % colors.length];
+              return (
+                <div key={u.userId} className="player-entry animate-fade-in">
+                  {u.avatarUrl ? (
+                    <img src={u.avatarUrl} alt="" className="player-avatar-img" style={{ borderColor: color }} />
+                  ) : (
+                    <div className="player-avatar-dot" style={{ background: color }}>👤</div>
+                  )}
+                  <div className="player-info">
+                    <p className="player-name">{u.username}</p>
+                    <p className="player-pos">({u.x}, {u.y})</p>
+                  </div>
+                  <span className="online-dot" />
+                </div>
+              );
+            })}
+
+            {otherUsers.length === 0 && (
+              <div className="players-empty">
+                <span style={{ fontSize: '1.5rem' }}>🏜️</span>
+                <p>You're alone!</p>
+                <button
+                  className="btn"
+                  style={{ fontSize: '0.72rem', padding: '0.35rem 0.75rem', marginTop: '0.4rem' }}
+                  onClick={handleCopyInvite}
+                >
+                  {copied ? '✓ Copied!' : '🔗 Copy Invite'}
+                </button>
+              </div>
+            )}
+          </div>
+        </aside>
 
         {/* Elements Side Panel */}
         {showPanel && (
@@ -352,8 +674,13 @@ export function Arena() {
               <div className="panel-space-elements">
                 {elements.map(el => (
                   <div key={el.id} className="panel-space-el">
-                    <div>
-                      <span style={{ fontSize: '0.85rem' }}>{el.element.static ? '🪑' : '🟢'}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <img
+                        src={el.element.imageUrl}
+                        alt=""
+                        style={{ width: 24, height: 24, objectFit: 'contain' }}
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
                       <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
                         ({el.x},{el.y})
                       </span>

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { AddElementSchema, CreateSpaceSchema, deleteElement } from "../../types/index.js";
+import { AddElementSchema, CreateSpaceSchema, deleteElement, UpdateSpaceSchema } from "../../types/index.js";
 import client from "@repo/db/client";
 import { userMiddleware } from "../../middleware/user.js";
 export const spaceRouter = Router();
@@ -84,6 +84,39 @@ spaceRouter.delete("/element", userMiddleware, async (req, res) => {
         }
     });
     return res.json({ message: "element deleted" });
+});
+spaceRouter.put("/:spaceId", userMiddleware, async (req, res) => {
+    const parseData = UpdateSpaceSchema.safeParse(req.body);
+    if (!parseData.success) {
+        res.status(400).json({ message: "validation failed" });
+        return;
+    }
+    const space = await client.space.findUnique({
+        where: { id: req.params.spaceId },
+        select: { creatorId: true },
+    });
+    if (!space) {
+        return res.status(400).json({ message: "space not found" });
+    }
+    if (space.creatorId !== req.userId) {
+        return res.status(403).json({ message: "Unauthorized" });
+    }
+    const updateData = {};
+    if (parseData.data.name)
+        updateData.name = parseData.data.name;
+    if (Object.keys(updateData).length === 0) {
+        return res.json({ message: "No updates provided" });
+    }
+    try {
+        await client.space.update({
+            where: { id: req.params.spaceId },
+            data: updateData
+        });
+        return res.json({ message: "Space updated" });
+    }
+    catch (e) {
+        return res.status(400).json({ message: "Failed to update space" });
+    }
 });
 spaceRouter.delete("/:spaceId", userMiddleware, async (req, res) => {
     const space = await client.space.findUnique({

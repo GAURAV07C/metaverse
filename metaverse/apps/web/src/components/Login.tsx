@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { SignupSchema, SigninSchema, getZodMessage } from '../schemas';
 import { useUserStore } from '../store';
 import { api } from '../utils/api';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 type Role = 'user' | 'admin';
 
@@ -17,6 +17,8 @@ export function Login() {
 
   const setAuth = useUserStore((state) => state.setAuth);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const returnTo = searchParams.get('returnTo');
 
   const decodeToken = (token: string) => {
     try {
@@ -37,8 +39,8 @@ export function Login() {
         if (!res.data.token) throw new Error(res.data.message || 'Login failed');
         const payload = decodeToken(res.data.token);
         const userRole: Role = payload?.role === 'Admin' ? 'admin' : 'user';
-        setAuth(res.data.token, payload?.userId ?? '', userRole);
-        navigate(userRole === 'admin' ? '/admin' : '/dashboard');
+        setAuth(res.data.token, payload?.userId ?? '', userRole, res.data.username);
+        navigate(returnTo ?? (userRole === 'admin' ? '/admin' : '/dashboard'));
       } else {
         SignupSchema.parse({ username, password, type: role });
         const signupRes = await api.post('/signup', { username, password, type: role });
@@ -47,8 +49,8 @@ export function Login() {
         if (!loginRes.data.token) throw new Error('Login after signup failed');
         const payload = decodeToken(loginRes.data.token);
         const userRole: Role = payload?.role === 'Admin' ? 'admin' : 'user';
-        setAuth(loginRes.data.token, payload?.userId ?? signupRes.data.userId, userRole);
-        navigate(userRole === 'admin' ? '/admin' : '/dashboard');
+        setAuth(loginRes.data.token, payload?.userId ?? signupRes.data.userId, userRole, loginRes.data.username);
+        navigate(returnTo ?? (userRole === 'admin' ? '/admin' : '/dashboard'));
       }
     } catch (err: unknown) {
       if (err instanceof z.ZodError) setError(getZodMessage(err));

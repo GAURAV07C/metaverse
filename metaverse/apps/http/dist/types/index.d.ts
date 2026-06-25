@@ -56,4 +56,11 @@ export declare const CreateMapSchema: z.ZodObject<{
         y: z.ZodNumber;
     }, z.core.$strip>>;
 }, z.core.$strip>;
+export declare const UpdateMapSchema: z.ZodObject<{
+    name: z.ZodOptional<z.ZodString>;
+    thumbnail: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>;
+export declare const UpdateSpaceSchema: z.ZodObject<{
+    name: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>;
 //# sourceMappingURL=index.d.ts.map

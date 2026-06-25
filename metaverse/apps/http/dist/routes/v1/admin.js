@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { adminMiddleware } from "../../middleware/admin.js";
-import { CreateAvatarSchema, CreateElementSchema, CreateMapSchema, UpdateElementSchema, } from "../../types/index.js";
+import { CreateAvatarSchema, CreateElementSchema, CreateMapSchema, UpdateElementSchema, UpdateMapSchema, } from "../../types/index.js";
 import client from "@repo/db/client";
 export const adminRouter = Router();
 adminRouter.post("/element", adminMiddleware, async (req, res) => {
@@ -77,6 +77,28 @@ adminRouter.post("/map", adminMiddleware, async (req, res) => {
     return res.json({
         id: map.id,
     });
+});
+adminRouter.put("/map/:mapId", adminMiddleware, async (req, res) => {
+    const parseData = UpdateMapSchema.safeParse(req.body);
+    if (!parseData.success) {
+        res.status(400).json({ message: "validation failed" });
+        return;
+    }
+    const updateData = {};
+    if (parseData.data.name)
+        updateData.name = parseData.data.name;
+    if (parseData.data.thumbnail)
+        updateData.thumbnails = parseData.data.thumbnail;
+    try {
+        await client.map.update({
+            where: { id: req.params.mapId },
+            data: updateData
+        });
+        return res.json({ message: "Map updated" });
+    }
+    catch (e) {
+        return res.status(400).json({ message: "Failed to update map" });
+    }
 });
 adminRouter.delete("/element/:elementId", adminMiddleware, async (req, res) => {
     try {

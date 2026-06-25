@@ -18,6 +18,8 @@ function getRandomString(length: number) {
 export class User {
   public id: string;
   public userId?: string;
+  public username?: string;
+  public avatarUrl?: string;
   private spaceId?: string;
   public x: number;
   public y: number;
@@ -59,6 +61,15 @@ export class User {
           }
 
           this.userId = userId;
+
+          // Fetch username and avatar from DB for display
+          const dbUser = await client.user.findUnique({
+            where: { id: userId },
+            select: { username: true, avatar: { select: { imageUrl: true } } },
+          });
+          this.username = dbUser?.username ?? 'Unknown';
+          this.avatarUrl = dbUser?.avatar?.imageUrl ?? undefined;
+
           const space = await client.space.findFirst({
             where: { id: spaceId },
           });
@@ -79,11 +90,13 @@ export class User {
             payload: {
               spawn: { x: this.x, y: this.y },
               userId: this.userId,
+              username: this.username,
+              avatarUrl: this.avatarUrl,
               users:
                 RoomManager.getInstance()
                   .rooms.get(spaceId)
                   ?.filter((x) => x.id !== this.id)
-                  ?.map((u) => ({ id: u.id, userId: u.userId, x: u.x, y: u.y })) ?? [],
+                  ?.map((u) => ({ id: u.id, userId: u.userId, username: u.username, avatarUrl: u.avatarUrl, x: u.x, y: u.y })) ?? [],
             },
           });
 
@@ -92,6 +105,8 @@ export class User {
               type: "user-joined",
               payload: {
                 userId: this.userId,
+                username: this.username,
+                avatarUrl: this.avatarUrl,
                 x: this.x,
                 y: this.y,
               },
