@@ -65,3 +65,12 @@ export const CreateMapSchema = z.object({
     y:z.number(),
   }))
 });
+
+export const UpdateMapSchema = z.object({
+  name: z.string().optional(),
+  thumbnail: z.string().optional(),
+});
+
+export const UpdateSpaceSchema = z.object({
+  name: z.string().optional(),
+});

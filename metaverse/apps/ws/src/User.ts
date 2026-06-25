@@ -19,8 +19,8 @@ export class User {
   public id: string;
   public userId?: string;
   private spaceId?: string;
-  private x: number;
-  private y: number;
+  public x: number;
+  public y: number;
   private ws: WebSocket;
 
   constructor(ws: WebSocket) {
@@ -78,11 +78,12 @@ export class User {
             type: "space-joined",
             payload: {
               spawn: { x: this.x, y: this.y },
+              userId: this.userId,
               users:
                 RoomManager.getInstance()
                   .rooms.get(spaceId)
                   ?.filter((x) => x.id !== this.id)
-                  ?.map((u) => ({ id: u.id })) ?? [],
+                  ?.map((u) => ({ id: u.id, userId: u.userId, x: u.x, y: u.y })) ?? [],
             },
           });
 
@@ -144,6 +145,7 @@ export class User {
               {
                 type: "movement",
                 payload: {
+                  userId: this.userId,
                   x: this.x,
                   y: this.y,
                 },

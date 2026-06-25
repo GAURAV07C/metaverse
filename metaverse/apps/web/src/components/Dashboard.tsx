@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUserStore } from '../store';
 import { api } from '../utils/api';
-import { LogOut, Plus, Users, Maximize2, Map, Layers, X, Check, Trash2, User2 } from 'lucide-react';
+import { LogOut, Plus, Users, Maximize2, Map, Layers, X, Check, Trash2, User2, Pencil } from 'lucide-react';
 import { z } from 'zod';
 import { SpaceSchema, getZodMessage } from '../schemas';
 
@@ -112,6 +112,24 @@ export function Dashboard() {
     } finally { setDeleting(null); }
   };
 
+  // ── EDIT space ───────────────────────────
+  const [editingSpaceId, setEditingSpaceId] = useState<string | null>(null);
+  const [editSpaceName, setEditSpaceName] = useState('');
+  const [editSpaceLoading, setEditSpaceLoading] = useState(false);
+
+  const handleEditSpace = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSpaceId || !editSpaceName) return;
+    setEditSpaceLoading(true);
+    try {
+      await api.put(`/space/${editingSpaceId}`, { name: editSpaceName });
+      setEditingSpaceId(null);
+      await fetchSpaces();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to edit space');
+    } finally { setEditSpaceLoading(false); }
+  };
+
   // ── SET AVATAR (POST /user/metadata) ─────
   const handleSetAvatar = async (avatarId: string) => {
     setAvatarLoading(true);
@@ -214,6 +232,13 @@ export function Dashboard() {
                   </button>
                   <button
                     className="btn-icon"
+                    onClick={() => { setEditingSpaceId(space.id); setEditSpaceName(space.name); }}
+                    title="Edit space"
+                  >
+                    <Pencil size={16} />
+                  </button>
+                  <button
+                    className="btn-icon"
                     style={{ color: 'var(--danger)', borderColor: 'rgba(239,68,68,0.3)' }}
                     onClick={() => handleDeleteSpace(space.id)}
                     disabled={deleting === space.id}
@@ -232,6 +257,30 @@ export function Dashboard() {
           </div>
         )}
       </main>
+
+      {/* ─── Edit Space Modal ─── */}
+      {editingSpaceId && (
+        <div className="modal-overlay" onClick={() => setEditingSpaceId(null)}>
+          <div className="modal glass animate-fade-in" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <h2>Edit Space</h2>
+              <button className="btn-icon" onClick={() => setEditingSpaceId(null)}><X size={18} /></button>
+            </div>
+            <form onSubmit={handleEditSpace}>
+              <div className="field" style={{ marginBottom: '1rem' }}>
+                <label className="field-label">Space Name</label>
+                <input className="input" value={editSpaceName} onChange={e => setEditSpaceName(e.target.value)} required />
+              </div>
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button type="button" className="btn btn-ghost btn-full" onClick={() => setEditingSpaceId(null)}>Cancel</button>
+                <button type="submit" className="btn btn-full" disabled={editSpaceLoading}>
+                  {editSpaceLoading ? <span className="spinner" /> : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ─── Avatar Picker Modal ─── */}
       {showAvatarPicker && (

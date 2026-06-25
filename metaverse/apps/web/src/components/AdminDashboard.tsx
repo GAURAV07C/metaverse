@@ -194,6 +194,24 @@ export function AdminDashboard() {
     } finally { setMapLoading(false); }
   };
 
+  // ── UPDATE MAP ────────────────────────
+  const [editingMapId, setEditingMapId] = useState<string | null>(null);
+  const [editMapName, setEditMapName] = useState('');
+  const [updateMapLoading, setUpdateMapLoading] = useState(false);
+
+  const handleUpdateMap = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMapId || !editMapName) return;
+    setUpdateMapLoading(true);
+    try {
+      await api.put(`/admin/map/${editingMapId}`, { name: editMapName });
+      setEditingMapId(null);
+      await fetchMaps();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to update map');
+    } finally { setUpdateMapLoading(false); }
+  };
+
   // ── DELETE MAP ────────────────────────
   const deleteMap = async (id: string) => {
     if (!confirm('Are you sure you want to delete this map?')) return;
@@ -399,7 +417,7 @@ export function AdminDashboard() {
               </form>
             </div>
 
-            {/* Maps list with delete */}
+            {/* Maps list with edit & delete */}
             <h3 style={{ margin: '2rem 0 1rem', color: 'var(--text-secondary)' }}>All Maps ({maps.length})</h3>
             <div className="admin-items-grid">
               {maps.map(m => (
@@ -411,13 +429,42 @@ export function AdminDashboard() {
                     <p style={{ fontWeight: 600, fontSize: '0.9rem' }}>{m.name}</p>
                     <p className="admin-item-meta">{m.dimensions} • {m.elementCount} elements</p>
                   </div>
-                  <button className="panel-del-btn" title="Delete map" onClick={() => deleteMap(m.id)} disabled={deletingMap === m.id}>
-                    {deletingMap === m.id ? <span className="spinner" /> : <Trash2 size={13} />}
-                  </button>
+                  <div style={{ display: 'flex', gap: '0.3rem' }}>
+                    <button className="panel-del-btn" title="Edit map" onClick={() => { setEditingMapId(m.id); setEditMapName(m.name); }}>
+                      <Pencil size={13} />
+                    </button>
+                    <button className="panel-del-btn" title="Delete map" onClick={() => deleteMap(m.id)} disabled={deletingMap === m.id}>
+                      {deletingMap === m.id ? <span className="spinner" /> : <Trash2 size={13} />}
+                    </button>
+                  </div>
                 </div>
               ))}
               {maps.length === 0 && <p style={{ color: 'var(--text-secondary)', padding: '1rem 0' }}>No maps yet.</p>}
             </div>
+
+            {/* Edit Map Modal */}
+            {editingMapId && (
+              <div className="modal-overlay" onClick={() => setEditingMapId(null)}>
+                <div className="modal glass animate-fade-in" onClick={e => e.stopPropagation()}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                    <h2>Update Map Name</h2>
+                    <button className="btn-icon" onClick={() => setEditingMapId(null)}><X size={18} /></button>
+                  </div>
+                  <form onSubmit={handleUpdateMap}>
+                    <div className="field" style={{ marginBottom: '1rem' }}>
+                      <label className="field-label">New Map Name</label>
+                      <input className="input" value={editMapName} onChange={e => setEditMapName(e.target.value)} required />
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.75rem' }}>
+                      <button type="button" className="btn btn-ghost btn-full" onClick={() => setEditingMapId(null)}>Cancel</button>
+                      <button type="submit" className="btn btn-full" disabled={updateMapLoading}>
+                        {updateMapLoading ? <span className="spinner" /> : 'Update →'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

@@ -102,6 +102,12 @@ spaceRouter.delete("/:spaceId", userMiddleware, async (req, res) => {
     if (space.creatorId !== req.userId) {
         return res.status(403).json({ message: "Unauthorized" });
     }
+    // Delete all space elements first due to foreign key constraint
+    await client.spaceElements.deleteMany({
+        where: {
+            spaceId: req.params.spaceId,
+        },
+    });
     await client.space.delete({
         where: {
             id: req.params.spaceId,
