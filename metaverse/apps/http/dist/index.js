@@ -1,0 +1,20 @@
+import express from "express";
+import cors from "cors";
+import { router } from "./routes/v1/index.js";
+const app = express();
+app.use(cors({
+    origin: ["http://localhost:5173", "http://localhost:3000"],
+    credentials: true,
+}));
+app.use(express.json());
+app.use((err, req, res, next) => {
+    if (err instanceof SyntaxError && "status" in err && err.status === 400) {
+        return res.status(400).json({ error: "Invalid JSON" });
+    }
+    next();
+});
+app.use("/api/v1", router);
+app.listen(process.env.PORT || 3000, () => {
+    console.log(`HTTP server running on port ${process.env.PORT || 3000}`);
+});
+//# sourceMappingURL=index.js.map

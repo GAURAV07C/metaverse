@@ -99,3 +99,40 @@ adminRouter.post("/map", adminMiddleware, async (req, res) => {
     id: map.id,
   });
 });
+
+adminRouter.delete("/element/:elementId", adminMiddleware, async (req, res) => {
+  try {
+    await client.element.delete({
+      where: { id: req.params.elementId },
+    });
+    return res.json({ message: "Element deleted" });
+  } catch (e) {
+    return res.status(400).json({ message: "Failed to delete element, it may be in use." });
+  }
+});
+
+adminRouter.delete("/avatar/:avatarId", adminMiddleware, async (req, res) => {
+  try {
+    await client.avatar.delete({
+      where: { id: req.params.avatarId },
+    });
+    return res.json({ message: "Avatar deleted" });
+  } catch (e) {
+    return res.status(400).json({ message: "Failed to delete avatar, it may be in use." });
+  }
+});
+
+adminRouter.delete("/map/:mapId", adminMiddleware, async (req, res) => {
+  try {
+    // Delete mapElements first because of relation
+    await client.mapElements.deleteMany({
+      where: { mapId: req.params.mapId }
+    });
+    await client.map.delete({
+      where: { id: req.params.mapId },
+    });
+    return res.json({ message: "Map deleted" });
+  } catch (e) {
+    return res.status(400).json({ message: "Failed to delete map." });
+  }
+});

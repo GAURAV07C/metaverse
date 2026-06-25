@@ -123,3 +123,4 @@ router.get("/avatars", async (req, res) => {
 router.use("/user", userRouter);
 router.use("/admin", adminRouter);
 router.use("/space", spaceRouter);
+
