@@ -103,7 +103,7 @@ adminRouter.post("/map", adminMiddleware, async (req, res) => {
 adminRouter.delete("/element/:elementId", adminMiddleware, async (req, res) => {
   try {
     await client.element.delete({
-      where: { id: req.params.elementId },
+      where: { id: req.params.elementId as string },
     });
     return res.json({ message: "Element deleted" });
   } catch (e) {
@@ -114,7 +114,7 @@ adminRouter.delete("/element/:elementId", adminMiddleware, async (req, res) => {
 adminRouter.delete("/avatar/:avatarId", adminMiddleware, async (req, res) => {
   try {
     await client.avatar.delete({
-      where: { id: req.params.avatarId },
+      where: { id: req.params.avatarId as string },
     });
     return res.json({ message: "Avatar deleted" });
   } catch (e) {
@@ -126,10 +126,10 @@ adminRouter.delete("/map/:mapId", adminMiddleware, async (req, res) => {
   try {
     // Delete mapElements first because of relation
     await client.mapElements.deleteMany({
-      where: { mapId: req.params.mapId }
+      where: { mapId: req.params.mapId as string }
     });
     await client.map.delete({
-      where: { id: req.params.mapId },
+      where: { id: req.params.mapId as string },
     });
     return res.json({ message: "Map deleted" });
   } catch (e) {

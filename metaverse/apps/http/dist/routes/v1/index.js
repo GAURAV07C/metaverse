@@ -96,7 +96,6 @@ router.get("/avatars", async (req, res) => {
         })),
     });
 });
-// Public maps listing — any logged-in user can browse maps created by admins
 router.get("/maps", async (req, res) => {
     const maps = await client.map.findMany({
         include: {

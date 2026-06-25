@@ -120,7 +120,39 @@ router.get("/avatars", async (req, res) => {
   });
 });
 
+router.get("/maps", async (req, res) => {
+  const maps = await client.map.findMany({
+    include: {
+      mapElements: {
+        include: { element: true },
+      },
+    },
+  });
+  return res.json({
+    maps: maps.map((m) => ({
+      id: m.id,
+      name: m.name,
+      dimensions: `${m.width}x${m.height}`,
+      thumbnail: m.thumbnails,
+      elementCount: m.mapElements.length,
+      elements: m.mapElements.map((me) => ({
+        id: me.id,
+        x: me.x,
+        y: me.y,
+        element: {
+          id: me.element.id,
+          imageUrl: me.element.imageUrl,
+          width: me.element.width,
+          height: me.element.height,
+          static: me.element.static,
+        },
+      })),
+    })),
+  });
+});
+
 router.use("/user", userRouter);
 router.use("/admin", adminRouter);
 router.use("/space", spaceRouter);
+
 

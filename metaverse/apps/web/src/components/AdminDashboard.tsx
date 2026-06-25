@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUserStore } from '../store';
 import { api } from '../utils/api';
-import { LogOut, Plus, Layers, Map, User2, ChevronRight, Pencil, X, Check } from 'lucide-react';
+import { LogOut, Plus, Layers, Map, User2, ChevronRight, Pencil, X, Trash2 } from 'lucide-react';
 
 type Tab = 'elements' | 'maps' | 'avatars';
 
@@ -13,6 +13,14 @@ interface MapDefaultElement {
   elementId: string;
   x: number;
   y: number;
+}
+
+interface MapData {
+  id: string;
+  name: string;
+  dimensions: string;
+  thumbnail?: string;
+  elementCount: number;
 }
 
 export function AdminDashboard() {
@@ -28,6 +36,7 @@ export function AdminDashboard() {
   const [elStatic, setElStatic] = useState(true);
   const [elLoading, setElLoading] = useState(false);
   const [elError, setElError] = useState('');
+  const [deletingEl, setDeletingEl] = useState<string | null>(null);
 
   // Update element state
   const [editingElementId, setEditingElementId] = useState<string | null>(null);
@@ -41,8 +50,10 @@ export function AdminDashboard() {
   const [avName, setAvName] = useState('');
   const [avLoading, setAvLoading] = useState(false);
   const [avError, setAvError] = useState('');
+  const [deletingAv, setDeletingAv] = useState<string | null>(null);
 
   // Map state
+  const [maps, setMaps] = useState<MapData[]>([]);
   const [mapName, setMapName] = useState('');
   const [mapDims, setMapDims] = useState('100x200');
   const [mapThumb, setMapThumb] = useState('https://thumbnail.com/a.png');
@@ -53,6 +64,7 @@ export function AdminDashboard() {
   const [addElId, setAddElId] = useState('');
   const [addElX, setAddElX] = useState('0');
   const [addElY, setAddElY] = useState('0');
+  const [deletingMap, setDeletingMap] = useState<string | null>(null);
 
   const fetchElements = async () => {
     try {
@@ -68,7 +80,14 @@ export function AdminDashboard() {
     } catch {}
   };
 
-  useEffect(() => { fetchElements(); fetchAvatars(); }, []);
+  const fetchMaps = async () => {
+    try {
+      const res = await api.get('/maps');
+      setMaps(res.data.maps ?? []);
+    } catch {}
+  };
+
+  useEffect(() => { fetchElements(); fetchAvatars(); fetchMaps(); }, []);
 
   // ── CREATE ELEMENT ────────────────────
   const createElement = async (e: React.FormEvent) => {
@@ -89,7 +108,7 @@ export function AdminDashboard() {
     } finally { setElLoading(false); }
   };
 
-  // ── UPDATE ELEMENT (PUT /admin/element/:id) ──
+  // ── UPDATE ELEMENT ────────────────────
   const handleUpdateElement = async () => {
     if (!editingElementId) return;
     setUpdateLoading(true);
@@ -103,6 +122,18 @@ export function AdminDashboard() {
     } catch (err: any) {
       setUpdateMsg(err.response?.data?.message || err.message || 'Failed');
     } finally { setUpdateLoading(false); }
+  };
+
+  // ── DELETE ELEMENT ────────────────────
+  const deleteElement = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this element?')) return;
+    setDeletingEl(id);
+    try {
+      await api.delete(`/admin/element/${id}`);
+      await fetchElements();
+    } catch (e: any) {
+      alert(e.response?.data?.message || 'Failed to delete element');
+    } finally { setDeletingEl(null); }
   };
 
   // ── CREATE AVATAR ─────────────────────
@@ -119,7 +150,19 @@ export function AdminDashboard() {
     } finally { setAvLoading(false); }
   };
 
-  // ── CREATE MAP (with defaultElements) ──
+  // ── DELETE AVATAR ─────────────────────
+  const deleteAvatar = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this avatar?')) return;
+    setDeletingAv(id);
+    try {
+      await api.delete(`/admin/avatar/${id}`);
+      await fetchAvatars();
+    } catch (e: any) {
+      alert(e.response?.data?.message || 'Failed to delete avatar');
+    } finally { setDeletingAv(null); }
+  };
+
+  // ── CREATE MAP ────────────────────────
   const addMapElement = () => {
     if (!addElId) return;
     setMapDefaultElements(prev => [...prev, { elementId: addElId, x: parseInt(addElX), y: parseInt(addElY) }]);
@@ -145,9 +188,22 @@ export function AdminDashboard() {
       setMapSuccess(`Map created! ID: ${res.data.id}`);
       setMapName('');
       setMapDefaultElements([]);
+      await fetchMaps();
     } catch (err: any) {
       setMapError(err.response?.data?.message || err.message || 'Failed');
     } finally { setMapLoading(false); }
+  };
+
+  // ── DELETE MAP ────────────────────────
+  const deleteMap = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this map?')) return;
+    setDeletingMap(id);
+    try {
+      await api.delete(`/admin/map/${id}`);
+      await fetchMaps();
+    } catch (e: any) {
+      alert(e.response?.data?.message || 'Failed to delete map');
+    } finally { setDeletingMap(null); }
   };
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
@@ -217,7 +273,7 @@ export function AdminDashboard() {
               </form>
             </div>
 
-            {/* Elements list with edit */}
+            {/* Elements list with edit & delete */}
             <h3 style={{ margin: '2rem 0 1rem', color: 'var(--text-secondary)' }}>All Elements ({elements.length})</h3>
             {updateMsg && <div className={updateMsg === 'Updated!' ? 'success-banner' : 'error-banner'} style={{ marginBottom: '1rem' }}>{updateMsg}</div>}
             <div className="admin-items-grid">
@@ -230,9 +286,14 @@ export function AdminDashboard() {
                     <p className="admin-item-id">{el.id.slice(0, 12)}…</p>
                     <p className="admin-item-meta">{el.width}×{el.height} • {el.static ? '🚫 Static' : '✅ Walkable'}</p>
                   </div>
-                  <button className="panel-del-btn" title="Edit image" onClick={() => { setEditingElementId(el.id); setEditImageUrl(el.imageUrl); }}>
-                    <Pencil size={13} />
-                  </button>
+                  <div style={{ display: 'flex', gap: '0.3rem' }}>
+                    <button className="panel-del-btn" title="Edit image" onClick={() => { setEditingElementId(el.id); setEditImageUrl(el.imageUrl); }}>
+                      <Pencil size={13} />
+                    </button>
+                    <button className="panel-del-btn" title="Delete element" onClick={() => deleteElement(el.id)} disabled={deletingEl === el.id}>
+                      {deletingEl === el.id ? <span className="spinner" /> : <Trash2 size={13} />}
+                    </button>
+                  </div>
                 </div>
               ))}
               {elements.length === 0 && <p style={{ color: 'var(--text-secondary)', padding: '1rem 0' }}>No elements yet.</p>}
@@ -337,6 +398,26 @@ export function AdminDashboard() {
                 </button>
               </form>
             </div>
+
+            {/* Maps list with delete */}
+            <h3 style={{ margin: '2rem 0 1rem', color: 'var(--text-secondary)' }}>All Maps ({maps.length})</h3>
+            <div className="admin-items-grid">
+              {maps.map(m => (
+                <div key={m.id} className="glass admin-item-card">
+                  <div className="admin-item-thumb">
+                    <span style={{ fontSize: '1.5rem' }}>🗺️</span>
+                  </div>
+                  <div className="admin-item-info" style={{ flex: 1 }}>
+                    <p style={{ fontWeight: 600, fontSize: '0.9rem' }}>{m.name}</p>
+                    <p className="admin-item-meta">{m.dimensions} • {m.elementCount} elements</p>
+                  </div>
+                  <button className="panel-del-btn" title="Delete map" onClick={() => deleteMap(m.id)} disabled={deletingMap === m.id}>
+                    {deletingMap === m.id ? <span className="spinner" /> : <Trash2 size={13} />}
+                  </button>
+                </div>
+              ))}
+              {maps.length === 0 && <p style={{ color: 'var(--text-secondary)', padding: '1rem 0' }}>No maps yet.</p>}
+            </div>
           </div>
         )}
 
@@ -371,10 +452,13 @@ export function AdminDashboard() {
                   <div className="admin-item-thumb">
                     <img src={av.imageUrl} alt={av.name} onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/60x60/1e293b/94a3b8?text=?'; }} />
                   </div>
-                  <div className="admin-item-info">
+                  <div className="admin-item-info" style={{ flex: 1 }}>
                     <p style={{ fontWeight: 600, fontSize: '0.9rem' }}>{av.name}</p>
                     <p className="admin-item-id">{av.id.slice(0, 12)}…</p>
                   </div>
+                  <button className="panel-del-btn" title="Delete avatar" onClick={() => deleteAvatar(av.id)} disabled={deletingAv === av.id}>
+                    {deletingAv === av.id ? <span className="spinner" /> : <Trash2 size={13} />}
+                  </button>
                 </div>
               ))}
               {avatars.length === 0 && <p style={{ color: 'var(--text-secondary)', padding: '1rem 0' }}>No avatars yet.</p>}
