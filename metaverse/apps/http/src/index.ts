@@ -5,16 +5,20 @@ import { router } from "./routes/v1/index.js";
 
 const app = express();
 
-const allowedOrigins = process.env.CORS_ORIGIN 
+const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map(s => s.trim())
   : ["http://localhost:5173", "http://localhost:3000"];
+
+const isProduction = process.env.NODE_ENV === 'production';
 
 app.use(cors({
   origin: allowedOrigins,
   credentials: true,
 }));
 
-app.use(express.json());
+app.use(express.json({
+  limit: '10mb'
+}));
 
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (err instanceof SyntaxError && "status" in err && (err as any).status === 400) {
