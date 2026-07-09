@@ -3,7 +3,7 @@ services:
     name: http
     env: node
     plan: free
-    buildCommand: cd metaverse && yarn install && cd apps/http && yarn build
+    buildCommand: cd metaverse && yarn install --production=false && cd apps/http && yarn build
     startCommand: cd metaverse/apps/http && yarn start
     envVars:
       - key: NODE_ENV
@@ -21,7 +21,7 @@ services:
     name: ws
     env: node
     plan: free
-    buildCommand: cd metaverse && yarn install && cd apps/ws && yarn build
+    buildCommand: cd metaverse && yarn install --production=false && cd apps/ws && yarn build
     startCommand: cd metaverse/apps/ws && yarn start
     envVars:
       - key: NODE_ENV
@@ -35,7 +35,7 @@ services:
     name: web
     env: node
     plan: free
-    buildCommand: cd metaverse && yarn install && cd apps/web && yarn build
+    buildCommand: cd metaverse && yarn install --production=false && cd apps/web && yarn build
     startCommand: cd metaverse/apps/web && npx serve dist -l $PORT -s
     envVars:
       - key: NODE_ENV
