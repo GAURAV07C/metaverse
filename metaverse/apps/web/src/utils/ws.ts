@@ -1,4 +1,4 @@
-export const WS_URL = 'ws://localhost:3001';
+export const WS_URL = (import.meta as any).env?.VITE_APP_WS_URL ?? 'ws://localhost:3001';
 
 export type WsIncomingMessage =
   | { type: 'space-joined'; payload: { spawn: { x: number; y: number }; userId: string; username?: string; avatarUrl?: string; users: { id: string; userId?: string; username?: string; avatarUrl?: string; x: number; y: number }[] } }
