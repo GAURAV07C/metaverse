@@ -117,6 +117,23 @@ adminRouter.put("/map/:mapId", adminMiddleware, async (req, res) => {
       where: { id: req.params.mapId as string },
       data: updateData
     });
+
+    if (parseData.data.defaultElements !== undefined) {
+      await client.mapElements.deleteMany({
+        where: { mapId: req.params.mapId as string },
+      });
+      if (parseData.data.defaultElements.length > 0) {
+        await client.mapElements.createMany({
+          data: parseData.data.defaultElements.map((e) => ({
+            mapId: req.params.mapId as string,
+            elementId: e.elementId,
+            x: e.x,
+            y: e.y,
+          })),
+        });
+      }
+    }
+
     return res.json({ message: "Map updated" });
   } catch (e) {
     return res.status(400).json({ message: "Failed to update map" });

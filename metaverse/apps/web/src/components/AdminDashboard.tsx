@@ -36,12 +36,20 @@ interface MapDefaultElement {
   y: number;
 }
 
+interface MapElementInfo {
+  id: string;
+  x: number;
+  y: number;
+  element: { id: string; imageUrl: string; width: number; height: number; static: boolean };
+}
+
 interface MapData {
   id: string;
   name: string;
   dimensions: string;
   thumbnail?: string;
   elementCount: number;
+  elements: MapElementInfo[];
 }
 
 export function AdminDashboard() {
@@ -223,6 +231,20 @@ export function AdminDashboard() {
     setMapDefaultElements((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  const addEditMapElement = () => {
+    if (!editAddElId) return;
+    setEditMapElements((prev) => [
+      ...prev,
+      { elementId: editAddElId, x: parseInt(editAddElX), y: parseInt(editAddElY) },
+    ]);
+    setEditAddElX("0");
+    setEditAddElY("0");
+  };
+
+  const removeEditMapElement = (idx: number) => {
+    setEditMapElements((prev) => prev.filter((_, i) => i !== idx));
+  };
+
   const createMap = async (e: React.FormEvent) => {
     e.preventDefault();
     setMapError("");
@@ -250,6 +272,11 @@ export function AdminDashboard() {
   // ── UPDATE MAP ────────────────────────
   const [editingMapId, setEditingMapId] = useState<string | null>(null);
   const [editMapName, setEditMapName] = useState("");
+  const [editMapThumb, setEditMapThumb] = useState("");
+  const [editMapElements, setEditMapElements] = useState<MapDefaultElement[]>([]);
+  const [editAddElId, setEditAddElId] = useState("");
+  const [editAddElX, setEditAddElX] = useState("0");
+  const [editAddElY, setEditAddElY] = useState("0");
   const [updateMapLoading, setUpdateMapLoading] = useState(false);
 
   const handleUpdateMap = async (e: React.FormEvent) => {
@@ -257,9 +284,14 @@ export function AdminDashboard() {
     if (!editingMapId || !editMapName) return;
     setUpdateMapLoading(true);
     try {
-      await api.put(`/admin/map/${editingMapId}`, { name: editMapName });
+      await api.put(`/admin/map/${editingMapId}`, {
+        name: editMapName,
+        thumbnail: editMapThumb,
+        defaultElements: editMapElements,
+      });
       setEditingMapId(null);
       await fetchMaps();
+      toast("Map updated successfully!", "success");
     } catch (err: any) {
       toast(err.response?.data?.message || "Failed to update map", 'error');
     } finally {
@@ -753,6 +785,8 @@ export function AdminDashboard() {
                       onClick={() => {
                         setEditingMapId(m.id);
                         setEditMapName(m.name);
+                        setEditMapThumb(m.thumbnail || "");
+                        setEditMapElements(m.elements.map(el => ({ elementId: el.element.id, x: el.x, y: el.y })));
                       }}
                     >
                       <Pencil size={13} />
@@ -788,7 +822,7 @@ export function AdminDashboard() {
                 onClick={() => setEditingMapId(null)}
               >
                 <div
-                  className="modal glass animate-fade-in"
+                  className="modal-large glass animate-fade-in"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div
@@ -796,10 +830,10 @@ export function AdminDashboard() {
                       display: "flex",
                       justifyContent: "space-between",
                       alignItems: "center",
-                      marginBottom: "1rem",
+                      marginBottom: "1.5rem",
                     }}
                   >
-                    <h2>Update Map Name</h2>
+                    <h2 style={{ fontWeight: 700 }}>Edit Map</h2>
                     <button
                       className="btn-icon"
                       onClick={() => setEditingMapId(null)}
@@ -807,9 +841,10 @@ export function AdminDashboard() {
                       <X size={18} />
                     </button>
                   </div>
+
                   <form onSubmit={handleUpdateMap}>
                     <div className="field" style={{ marginBottom: "1rem" }}>
-                      <label className="field-label">New Map Name</label>
+                      <label className="field-label">Map Name</label>
                       <input
                         className="input"
                         value={editMapName}
@@ -817,7 +852,128 @@ export function AdminDashboard() {
                         required
                       />
                     </div>
-                    <div style={{ display: "flex", gap: "0.75rem" }}>
+                    <div className="field" style={{ marginBottom: "1.5rem" }}>
+                      <label className="field-label">Thumbnail URL</label>
+                      <input
+                        className="input"
+                        value={editMapThumb}
+                        onChange={(e) => setEditMapThumb(e.target.value)}
+                        placeholder="https://thumbnail.com/a.png"
+                      />
+                    </div>
+
+                    {/* Default Elements */}
+                    <div
+                      style={{
+                        borderTop: "1px solid var(--glass-border)",
+                        paddingTop: "1rem",
+                        marginTop: "0.5rem",
+                      }}
+                    >
+                      <p
+                        className="field-label"
+                        style={{ marginBottom: "0.75rem" }}
+                      >
+                        <Layers
+                          size={13}
+                          style={{ display: "inline", marginRight: 4 }}
+                        />
+                        Default Elements ({editMapElements.length})
+                      </p>
+
+                      {elements.length > 0 ? (
+                        <div className="map-el-builder">
+                          <select
+                            className="input"
+                            value={editAddElId}
+                            onChange={(e) => setEditAddElId(e.target.value)}
+                            style={{ flex: 2 }}
+                          >
+                            <option value="">Select element…</option>
+                            {elements.map((el) => (
+                              <option key={el.id} value={el.id}>
+                                {el.id.slice(0, 8)}… ({el.width}×{el.height},{" "}
+                                {el.static ? "static" : "walkable"})
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            className="input"
+                            type="number"
+                            placeholder="X"
+                            value={editAddElX}
+                            onChange={(e) => setEditAddElX(e.target.value)}
+                            style={{ flex: 1 }}
+                          />
+                          <input
+                            className="input"
+                            type="number"
+                            placeholder="Y"
+                            value={editAddElY}
+                            onChange={(e) => setEditAddElY(e.target.value)}
+                            style={{ flex: 1 }}
+                          />
+                          <button
+                            type="button"
+                            className="btn"
+                            style={{ padding: "0.5rem 1rem" }}
+                            onClick={addEditMapElement}
+                            disabled={!editAddElId}
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </div>
+                      ) : (
+                        <p
+                          style={{
+                            color: "var(--text-secondary)",
+                            fontSize: "0.8rem",
+                          }}
+                        >
+                          Create elements first (Elements tab)
+                        </p>
+                      )}
+
+                      {editMapElements.length > 0 && (
+                        <div className="map-el-list">
+                          {editMapElements.map((mel, i) => (
+                            <div key={i} className="map-el-chip">
+                              <span
+                                style={{
+                                  fontSize: "0.75rem",
+                                  fontFamily: "monospace",
+                                }}
+                              >
+                                {mel.elementId.slice(0, 6)}… @ ({mel.x},{mel.y})
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => removeEditMapElement(i)}
+                                style={{
+                                  background: "none",
+                                  border: "none",
+                                  color: "var(--danger)",
+                                  cursor: "pointer",
+                                  padding: 0,
+                                }}
+                              >
+                                <X size={12} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "0.75rem",
+                        marginTop: "1.5rem",
+                        paddingTop: "1.5rem",
+                        borderTop: "1px solid var(--glass-border)",
+                      }}
+                    >
                       <button
                         type="button"
                         className="btn btn-ghost btn-full"
@@ -833,7 +989,7 @@ export function AdminDashboard() {
                         {updateMapLoading ? (
                           <span className="spinner" />
                         ) : (
-                          "Update →"
+                          "Save Changes →"
                         )}
                       </button>
                     </div>
