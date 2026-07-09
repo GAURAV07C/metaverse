@@ -5,6 +5,7 @@ import { api } from '../utils/api';
 import { LogOut, Plus, Users, Maximize2, Map, Layers, X, Check, Trash2, User2, Pencil } from 'lucide-react';
 import { z } from 'zod';
 import { SpaceSchema, getZodMessage } from '../schemas';
+import { useToast } from '../utils/toast';
 
 interface Space {
   id: string;
@@ -70,6 +71,8 @@ export function Dashboard() {
   const { logout, type: userType } = useUserStore();
   const navigate = useNavigate();
 
+  const { toast, confirm } = useToast();
+
   const fetchSpaces = async () => {
     try {
       const res = await api.get('/space/all');
@@ -102,13 +105,13 @@ export function Dashboard() {
 
   // ── DELETE space ─────────────────────────
   const handleDeleteSpace = async (spaceId: string) => {
-    if (!confirm('Are you sure you want to delete this space?')) return;
+    if (!await confirm('Are you sure you want to delete this space?')) return;
     setDeleting(spaceId);
     try {
       await api.delete(`/space/${spaceId}`);
       setSpaces(prev => prev.filter(s => s.id !== spaceId));
     } catch (e: any) {
-      alert(e.response?.data?.message || 'Failed to delete space');
+      toast(e.response?.data?.message || 'Failed to delete space', 'error');
     } finally { setDeleting(null); }
   };
 
@@ -126,7 +129,7 @@ export function Dashboard() {
       setEditingSpaceId(null);
       await fetchSpaces();
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to edit space');
+      toast(err.response?.data?.message || 'Failed to edit space', 'error');
     } finally { setEditSpaceLoading(false); }
   };
 

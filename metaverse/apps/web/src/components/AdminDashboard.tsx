@@ -13,6 +13,7 @@ import {
   X,
   Trash2,
 } from "lucide-react";
+import { useToast } from "../utils/toast";
 
 type Tab = "elements" | "maps" | "avatars";
 
@@ -47,6 +48,7 @@ export function AdminDashboard() {
   const [tab, setTab] = useState<Tab>("elements");
   const { logout } = useUserStore();
   const navigate = useNavigate();
+  const { toast, confirm } = useToast();
 
   // Elements state
   const [elements, setElements] = useState<Element[]>([]);
@@ -162,13 +164,13 @@ export function AdminDashboard() {
 
   // ── DELETE ELEMENT ────────────────────
   const deleteElement = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this element?")) return;
+    if (!await confirm("Are you sure you want to delete this element?")) return;
     setDeletingEl(id);
     try {
       await api.delete(`/admin/element/${id}`);
       await fetchElements();
     } catch (e: any) {
-      alert(e.response?.data?.message || "Failed to delete element");
+      toast(e.response?.data?.message || "Failed to delete element", 'error');
     } finally {
       setDeletingEl(null);
     }
@@ -194,13 +196,13 @@ export function AdminDashboard() {
 
   // ── DELETE AVATAR ─────────────────────
   const deleteAvatar = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this avatar?")) return;
+    if (!await confirm("Are you sure you want to delete this avatar?")) return;
     setDeletingAv(id);
     try {
       await api.delete(`/admin/avatar/${id}`);
       await fetchAvatars();
     } catch (e: any) {
-      alert(e.response?.data?.message || "Failed to delete avatar");
+      toast(e.response?.data?.message || "Failed to delete avatar", 'error');
     } finally {
       setDeletingAv(null);
     }
@@ -259,7 +261,7 @@ export function AdminDashboard() {
       setEditingMapId(null);
       await fetchMaps();
     } catch (err: any) {
-      alert(err.response?.data?.message || "Failed to update map");
+      toast(err.response?.data?.message || "Failed to update map", 'error');
     } finally {
       setUpdateMapLoading(false);
     }
@@ -267,13 +269,13 @@ export function AdminDashboard() {
 
   // ── DELETE MAP ────────────────────────
   const deleteMap = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this map?")) return;
+    if (!await confirm("Are you sure you want to delete this map?")) return;
     setDeletingMap(id);
     try {
       await api.delete(`/admin/map/${id}`);
       await fetchMaps();
     } catch (e: any) {
-      alert(e.response?.data?.message || "Failed to delete map");
+      toast(e.response?.data?.message || "Failed to delete map", 'error');
     } finally {
       setDeletingMap(null);
     }
