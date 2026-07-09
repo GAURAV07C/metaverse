@@ -1102,9 +1102,6 @@ describe("websocket test", () => {
     ws1 = new WebSocket(WS_URL);
 
     ws1.onmessage = (event) => {
-      console.log("got back adata 1");
-      console.log(event.data);
-
       ws1Messages.push(JSON.parse(event.data));
     };
     await new Promise((r) => {
@@ -1114,8 +1111,6 @@ describe("websocket test", () => {
     ws2 = new WebSocket(WS_URL);
 
     ws2.onmessage = (event) => {
-      console.log("got back data 2");
-      console.log(event.data);
       ws2Messages.push(JSON.parse(event.data));
     };
     await new Promise((r) => {
@@ -1129,7 +1124,6 @@ describe("websocket test", () => {
   });
 
   test("Get back ack for joining the space", async () => {
-    console.log("insixce first test");
     ws1.send(
       JSON.stringify({
         type: "join",
@@ -1139,9 +1133,7 @@ describe("websocket test", () => {
         },
       }),
     );
-    console.log("insixce first test1");
     const message1 = await waitForAndPopLatestMessage(ws1Messages);
-    console.log("insixce first test2");
     ws2.send(
       JSON.stringify({
         type: "join",
@@ -1151,8 +1143,6 @@ describe("websocket test", () => {
         },
       }),
     );
-    console.log("insixce first test3");
-
     const message2 = await waitForAndPopLatestMessage(ws2Messages);
     const message3 = await waitForAndPopLatestMessage(ws1Messages);
 
