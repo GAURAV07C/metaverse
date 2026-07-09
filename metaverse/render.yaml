@@ -3,8 +3,8 @@ services:
     name: http
     env: node
     plan: free
-    buildCommand: yarn install && cd apps/http && yarn build
-    startCommand: cd apps/http && yarn start
+    buildCommand: cd metaverse && yarn install && cd apps/http && yarn build
+    startCommand: cd metaverse/apps/http && yarn start
     envVars:
       - key: NODE_ENV
         value: production
@@ -14,13 +14,15 @@ services:
         value: ${DATABASE_URL}
       - key: JWT_SECRET
         generateValue: true
+      - key: CORS_ORIGIN
+        value: "http://localhost:5173,http://localhost:3000"
 
   - type: web
     name: ws
     env: node
     plan: free
-    buildCommand: yarn install && cd apps/ws && yarn build
-    startCommand: cd apps/ws && yarn start
+    buildCommand: cd metaverse && yarn install && cd apps/ws && yarn build
+    startCommand: cd metaverse/apps/ws && yarn start
     envVars:
       - key: NODE_ENV
         value: production
@@ -33,8 +35,8 @@ services:
     name: web
     env: node
     plan: free
-    buildCommand: yarn install && cd apps/web && yarn build
-    startCommand: cd apps/web && npx serve dist -l $PORT -s
+    buildCommand: cd metaverse && yarn install && cd apps/web && yarn build
+    startCommand: cd metaverse/apps/web && npx serve dist -l $PORT -s
     envVars:
       - key: NODE_ENV
         value: production
