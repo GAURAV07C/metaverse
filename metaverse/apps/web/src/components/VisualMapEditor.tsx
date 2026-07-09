@@ -10,22 +10,24 @@ interface VisualMapEditorProps {
 
 export function VisualMapEditor({ width, height, elements, availableElements, onChange }: VisualMapEditorProps) {
   const [selectedElement, setSelectedElement] = useState<string | null>(null);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const gridRef = useRef<HTMLDivElement>(null);
-  const TILE = 20;
+  const TILE = 24;
 
-  const getTileFromEvent = useCallback((e: React.MouseEvent | React.DragEvent) => {
+  const getTileFromEvent = useCallback((clientX: number, clientY: number) => {
     if (!gridRef.current) return null;
     const rect = gridRef.current.getBoundingClientRect();
-    const x = Math.floor((e.clientX - rect.left) / TILE);
-    const y = Math.floor((e.clientY - rect.top) / TILE);
+    const x = Math.floor((clientX - rect.left) / TILE);
+    const y = Math.floor((clientY - rect.top) / TILE);
     if (x < 0 || y < 0 || x >= width || y >= height) return null;
     return { x, y };
   }, [width, height, TILE]);
 
   const handleGridClick = (e: React.MouseEvent) => {
     if (!selectedElement) return;
-    const pos = getTileFromEvent(e);
+    if (dragIdx !== null) return;
+    const pos = getTileFromEvent(e.clientX, e.clientY);
     if (!pos) return;
 
     const el = availableElements.find(el => el.id === selectedElement);
@@ -33,8 +35,8 @@ export function VisualMapEditor({ width, height, elements, availableElements, on
 
     const maxX = width - el.width;
     const maxY = height - el.height;
-    const clampedX = Math.min(pos.x, maxX);
-    const clampedY = Math.min(pos.y, maxY);
+    const clampedX = Math.min(pos.x, Math.max(0, maxX));
+    const clampedY = Math.min(pos.y, Math.max(0, maxY));
 
     const exists = elements.find(
       item => item.elementId === selectedElement && item.x === clampedX && item.y === clampedY
@@ -44,23 +46,22 @@ export function VisualMapEditor({ width, height, elements, availableElements, on
     onChange([...elements, { elementId: selectedElement, x: clampedX, y: clampedY }]);
   };
 
-  const handleDragStart = (e: React.DragEvent, elementId: string) => {
-    setDraggingId(elementId);
-    e.dataTransfer.setData("text/plain", elementId);
+  const handlePaletteDragStart = (e: React.DragEvent, elementId: string) => {
+    e.dataTransfer.setData("text/plain", `palette:${elementId}`);
     e.dataTransfer.effectAllowed = "copy";
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleGridDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleGridDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    const elementId = e.dataTransfer.getData("text/plain");
-    if (!elementId) return;
-
-    const pos = getTileFromEvent(e);
+    const raw = e.dataTransfer.getData("text/plain");
+    if (!raw?.startsWith("palette:")) return;
+    const elementId = raw.replace("palette:", "");
+    const pos = getTileFromEvent(e.clientX, e.clientY);
     if (!pos) return;
 
     const el = availableElements.find(el => el.id === elementId);
@@ -68,8 +69,8 @@ export function VisualMapEditor({ width, height, elements, availableElements, on
 
     const maxX = width - el.width;
     const maxY = height - el.height;
-    const clampedX = Math.min(pos.x, maxX);
-    const clampedY = Math.min(pos.y, maxY);
+    const clampedX = Math.min(pos.x, Math.max(0, maxX));
+    const clampedY = Math.min(pos.y, Math.max(0, maxY));
 
     const exists = elements.find(
       item => item.elementId === elementId && item.x === clampedX && item.y === clampedY
@@ -77,45 +78,89 @@ export function VisualMapEditor({ width, height, elements, availableElements, on
     if (exists) return;
 
     onChange([...elements, { elementId, x: clampedX, y: clampedY }]);
-    setDraggingId(null);
   };
 
-  const handleRemoveElement = (index: number) => {
-    onChange(elements.filter((_, i) => i !== index));
-  };
-
-  const handleElementDrag = (e: React.MouseEvent, index: number) => {
+  const handlePlacedMouseDown = (e: React.MouseEvent, index: number) => {
+    e.preventDefault();
     e.stopPropagation();
     const el = elements[index];
-    const pos = getTileFromEvent(e);
-    if (!pos) return;
-
     const elData = availableElements.find(el => el.id === el.elementId);
     if (!elData) return;
 
-    const maxX = width - elData.width;
-    const maxY = height - elData.height;
-    const clampedX = Math.min(pos.x, maxX);
-    const clampedY = Math.min(pos.y, maxY);
+    const gridRect = gridRef.current!.getBoundingClientRect();
+    const offsetX = e.clientX - (gridRect.left + el.x * TILE);
+    const offsetY = e.clientY - (gridRect.top + el.y * TILE);
 
-    onChange(elements.map((item, i) => i === index ? { ...item, x: clampedX, y: clampedY } : item));
+    setDragIdx(index);
+    setDragOffset({ x: offsetX, y: offsetY });
+
+    const handleMove = (moveEvent: MouseEvent) => {
+      const gridRectNow = gridRef.current!.getBoundingClientRect();
+      const newX = Math.floor((moveEvent.clientX - gridRectNow.left - offsetX) / TILE);
+      const newY = Math.floor((moveEvent.clientY - gridRectNow.top - offsetY) / TILE);
+
+      const maxX = width - elData.width;
+      const maxY = height - elData.height;
+      const clampedX = Math.min(Math.max(0, newX), maxX);
+      const clampedY = Math.min(Math.max(0, newY), maxY);
+
+      onChange(prev => prev.map((item, i) => i === index ? { ...item, x: clampedX, y: clampedY } : item));
+    };
+
+    const handleUp = () => {
+      setDragIdx(null);
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+    };
+
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
+  };
+
+  const handlePlacedClick = (e: React.MouseEvent, index: number) => {
+    e.stopPropagation();
+    if (dragIdx !== null) return;
+    onChange(elements.filter((_, i) => i !== index));
   };
 
   const getElementById = (id: string) => availableElements.find(el => el.id === id);
 
+  const gridStyle: React.CSSProperties = {
+    display: "grid",
+    gridTemplateColumns: `repeat(${width}, ${TILE}px)`,
+    gridTemplateRows: `repeat(${height}, ${TILE}px)`,
+    border: "1px solid var(--glass-border)",
+    borderRadius: "8px",
+    overflow: "auto",
+    maxWidth: "100%",
+    cursor: selectedElement ? "crosshair" : "default",
+    position: "relative",
+    background: "rgba(255,255,255,0.03)",
+  };
+
+  const cellStyle: React.CSSProperties = {
+    width: TILE,
+    height: TILE,
+    borderRight: "1px solid rgba(255,255,255,0.03)",
+    borderBottom: "1px solid rgba(255,255,255,0.03)",
+  };
+
   return (
     <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
       {/* Elements Palette */}
-      <div style={{ flex: "0 0 200px" }}>
+      <div style={{ flex: "0 0 220px" }}>
         <p className="field-label" style={{ marginBottom: "0.5rem" }}>
-          Drag elements to map
+          Elements
         </p>
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", maxHeight: "400px", overflowY: "auto" }}>
+        <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.5rem" }}>
+          Click to select, then click grid to place
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", maxHeight: "420px", overflowY: "auto" }}>
           {availableElements.map(el => (
             <div
               key={el.id}
               draggable
-              onDragStart={(e) => handleDragStart(e, el.id)}
+              onDragStart={(e) => handlePaletteDragStart(e, el.id)}
               onClick={() => setSelectedElement(el.id === selectedElement ? null : el.id)}
               style={{
                 display: "flex",
@@ -127,6 +172,7 @@ export function VisualMapEditor({ width, height, elements, availableElements, on
                 background: selectedElement === el.id ? "rgba(59,130,246,0.1)" : "transparent",
                 cursor: "grab",
                 transition: "all 0.15s",
+                userSelect: "none",
               }}
             >
               <img
@@ -140,7 +186,7 @@ export function VisualMapEditor({ width, height, elements, availableElements, on
                   {el.id.slice(0, 8)}
                 </p>
                 <p style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>
-                  {el.width}×{el.height}
+                  {el.width}×{el.height} • {el.static ? "Static" : "Walkable"}
                 </p>
               </div>
             </div>
@@ -149,77 +195,34 @@ export function VisualMapEditor({ width, height, elements, availableElements, on
       </div>
 
       {/* Map Grid */}
-      <div style={{ flex: 1, minWidth: "300px" }}>
+      <div style={{ flex: 1, minWidth: "320px" }}>
         <p className="field-label" style={{ marginBottom: "0.5rem" }}>
-          {width}×{height} map (click grid to place selected element)
+          {width}×{height} map
+          {selectedElement && <span style={{ color: "var(--accent)", marginLeft: "0.5rem" }}>• Click grid to place</span>}
         </p>
         <div
           ref={gridRef}
+          style={gridStyle}
           onClick={handleGridClick}
-          onDragOver={handleDragOver}
-          onDrop={handleDrop}
-          style={{
-            display: "grid",
-            gridTemplateColumns: `repeat(${width}, ${TILE}px)`,
-            gridTemplateRows: `repeat(${height}, ${TILE}px)`,
-            gap: "1px",
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid var(--glass-border)",
-            borderRadius: "8px",
-            overflow: "auto",
-            maxWidth: "100%",
-            cursor: selectedElement ? "crosshair" : "default",
-          }}
+          onDragOver={handleGridDragOver}
+          onDrop={handleGridDrop}
         >
           {Array.from({ length: height }).map((_, y) =>
-            Array.from({ length: width }).map((_, x) => {
-              const placedElement = elements.find(el => {
-                const elData = getElementById(el.elementId);
-                return elData && x >= el.x && x < el.x + elData.width && y >= el.y && y < el.y + elData.height;
-              });
-
-              return (
-                <div
-                  key={`${x}-${y}`}
-                  style={{
-                    width: TILE,
-                    height: TILE,
-                    background: placedElement
-                      ? "rgba(59,130,246,0.3)"
-                      : "rgba(15,23,42,0.4)",
-                    border: "1px solid rgba(255,255,255,0.03)",
-                  }}
-                />
-              );
-            })
+            Array.from({ length: width }).map((_, x) => (
+              <div key={`${x}-${y}`} style={cellStyle} />
+            ))
           )}
 
-          {/* Placed Elements */}
           {elements.map((el, idx) => {
             const elData = getElementById(el.elementId);
             if (!elData) return null;
+            const isDragging = dragIdx === idx;
             return (
               <div
-                key={idx}
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData("text/plain", String(idx));
-                  e.dataTransfer.effectAllowed = "move";
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleRemoveElement(idx);
-                }}
-                onMouseDown={(e) => {
-                  const handleMove = (moveEvent: MouseEvent) => handleElementDrag(e as unknown as React.MouseEvent, idx);
-                  const handleUp = () => {
-                    document.removeEventListener("mousemove", handleMove);
-                    document.removeEventListener("mouseup", handleUp);
-                  };
-                  document.addEventListener("mousemove", handleMove);
-                  document.addEventListener("mouseup", handleUp);
-                }}
-                title={`Click to remove | Drag to move`}
+                key={`placed-${idx}`}
+                onMouseDown={(e) => handlePlacedMouseDown(e, idx)}
+                onClick={(e) => handlePlacedClick(e, idx)}
+                title="Drag to move • Click to remove"
                 style={{
                   position: "absolute",
                   left: el.x * TILE,
@@ -230,17 +233,13 @@ export function VisualMapEditor({ width, height, elements, availableElements, on
                   backgroundSize: "cover",
                   backgroundPosition: "center",
                   borderRadius: "4px",
-                  cursor: "pointer",
+                  cursor: isDragging ? "grabbing" : "grab",
                   border: "2px solid var(--accent)",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
-                  zIndex: 10,
-                  transition: "box-shadow 0.15s",
-                }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLDivElement).style.boxShadow = "0 4px 12px rgba(59,130,246,0.5)";
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLDivElement).style.boxShadow = "0 2px 8px rgba(0,0,0,0.4)";
+                  boxShadow: isDragging ? "0 8px 24px rgba(59,130,246,0.6)" : "0 2px 8px rgba(0,0,0,0.4)",
+                  zIndex: 20,
+                  transition: isDragging ? "none" : "box-shadow 0.15s, transform 0.15s",
+                  transform: isDragging ? "scale(1.05)" : "scale(1)",
+                  userSelect: "none",
                 }}
               />
             );
@@ -280,7 +279,7 @@ export function VisualMapEditor({ width, height, elements, availableElements, on
                     </span>
                     <button
                       type="button"
-                      onClick={() => handleRemoveElement(idx)}
+                      onClick={() => onChange(elements.filter((_, i) => i !== idx))}
                       style={{
                         background: "none",
                         border: "none",
