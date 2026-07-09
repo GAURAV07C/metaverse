@@ -125,6 +125,12 @@ adminRouter.put("/map/:mapId", adminMiddleware, async (req, res) => {
 
 adminRouter.delete("/element/:elementId", adminMiddleware, async (req, res) => {
   try {
+    await client.spaceElements.deleteMany({
+      where: { elementId: req.params.elementId as string },
+    });
+    await client.mapElements.deleteMany({
+      where: { elementId: req.params.elementId as string },
+    });
     await client.element.delete({
       where: { id: req.params.elementId as string },
     });
