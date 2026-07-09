@@ -18,6 +18,10 @@ function App() {
           element={!token ? <Login /> : <Navigate to={type === 'admin' ? '/admin' : '/dashboard'} />}
         />
         <Route
+          path="/admin/login"
+          element={!token ? <Login mode="admin" /> : <Navigate to={type === 'admin' ? '/admin' : '/dashboard'} />}
+        />
+        <Route
           path="/dashboard"
           element={token ? <Dashboard /> : <Navigate to="/login" />}
         />

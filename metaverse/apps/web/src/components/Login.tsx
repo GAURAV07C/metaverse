@@ -7,9 +7,14 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 
 type Role = 'user' | 'admin';
 
-export function Login() {
+interface LoginProps {
+  mode?: Role;
+}
+
+export function Login({ mode = 'user' }: LoginProps) {
+  const isAdmin = mode === 'admin';
+  const role: Role = isAdmin ? 'admin' : 'user';
   const [isLogin, setIsLogin] = useState(true);
-  const [role, setRole] = useState<Role>('user');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -42,6 +47,7 @@ export function Login() {
         setAuth(res.data.token, payload?.userId ?? '', userRole, res.data.username);
         navigate(returnTo ?? (userRole === 'admin' ? '/admin' : '/dashboard'));
       } else {
+        if (isAdmin) return;
         SignupSchema.parse({ username, password, type: role });
         const signupRes = await api.post('/signup', { username, password, type: role });
         if (signupRes.data?.message) throw new Error(signupRes.data.message);
@@ -50,7 +56,7 @@ export function Login() {
         const payload = decodeToken(loginRes.data.token);
         const userRole: Role = payload?.role === 'Admin' ? 'admin' : 'user';
         setAuth(loginRes.data.token, payload?.userId ?? signupRes.data.userId, userRole, loginRes.data.username);
-        navigate(returnTo ?? (userRole === 'admin' ? '/admin' : '/dashboard'));
+        navigate(returnTo ?? '/dashboard');
       }
     } catch (err: unknown) {
       if (err instanceof z.ZodError) setError(getZodMessage(err));
@@ -70,27 +76,9 @@ export function Login() {
       </div>
 
       <div className="glass auth-card animate-fade-in">
-        <div className="auth-logo">🌐</div>
+        <div className="auth-logo">{isAdmin ? '🛡️' : '🌐'}</div>
         <h1 className="auth-title">{isLogin ? 'Welcome Back' : 'Join Metaverse'}</h1>
         <p className="auth-subtitle">{isLogin ? 'Enter your world' : 'Create your presence'}</p>
-
-        {/* Role Toggle */}
-        <div className="role-toggle">
-          <button
-            type="button"
-            className={`role-btn ${role === 'user' ? 'active' : ''}`}
-            onClick={() => setRole('user')}
-          >
-            👤 User
-          </button>
-          <button
-            type="button"
-            className={`role-btn ${role === 'admin' ? 'active' : ''}`}
-            onClick={() => setRole('admin')}
-          >
-            🛡️ Admin
-          </button>
-        </div>
 
         {error && <div className="error-banner">{error}</div>}
 
@@ -102,7 +90,7 @@ export function Login() {
               className="input"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder={role === 'admin' ? 'Admin username' : 'e.g. Gaurav'}
+              placeholder={isAdmin ? 'Admin username' : 'e.g. Gaurav'}
               autoComplete="username"
             />
           </div>
@@ -117,18 +105,19 @@ export function Login() {
               autoComplete="current-password"
             />
           </div>
-          <button type="submit" className="btn btn-full" disabled={loading}
-            style={role === 'admin' ? { background: 'var(--purple)' } : {}}>
-            {loading ? <span className="spinner" /> : isLogin ? `Sign In as ${role === 'admin' ? 'Admin' : 'User'} →` : `Create ${role === 'admin' ? 'Admin' : 'User'} Account →`}
+          <button type="submit" className="btn btn-full" disabled={loading}>
+            {loading ? <span className="spinner" /> : isLogin ? 'Sign In →' : 'Sign Up →'}
           </button>
         </form>
 
-        <p className="auth-switch">
-          {isLogin ? "Don't have an account? " : 'Already have an account? '}
-          <button type="button" className="link-btn" onClick={() => { setIsLogin(!isLogin); setError(''); }}>
-            {isLogin ? 'Sign up' : 'Sign in'}
-          </button>
-        </p>
+        {!isAdmin && (
+          <p className="auth-switch">
+            {isLogin ? "Don't have an account? " : 'Already have an account? '}
+            <button type="button" className="link-btn" onClick={() => { setIsLogin(!isLogin); setError(''); }}>
+              {isLogin ? 'Sign up' : 'Sign in'}
+            </button>
+          </p>
+        )}
       </div>
     </div>
   );
