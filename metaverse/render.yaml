@@ -1,0 +1,44 @@
+services:
+  - type: web
+    name: http
+    env: node
+    plan: free
+    buildCommand: yarn install && cd apps/http && yarn build
+    startCommand: cd apps/http && yarn start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        value: ${DATABASE_URL}
+      - key: JWT_SECRET
+        generateValue: true
+
+  - type: web
+    name: ws
+    env: node
+    plan: free
+    buildCommand: yarn install && cd apps/ws && yarn build
+    startCommand: cd apps/ws && yarn start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        value: ${DATABASE_URL}
+
+  - type: web
+    name: web
+    env: node
+    plan: free
+    buildCommand: yarn install && cd apps/web && yarn build
+    startCommand: cd apps/web && npx serve dist -l $PORT -s
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: VITE_APP_API_URL
+        value: ${VITE_APP_API_URL}
+      - key: VITE_APP_WS_URL
+        value: ${VITE_APP_WS_URL}
