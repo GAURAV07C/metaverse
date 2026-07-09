@@ -4,7 +4,7 @@ import { useUserStore } from '../store';
 import { WsClient } from '../utils/ws';
 import { api } from '../utils/api';
 import { findPath } from '../utils/pathfinding';
-import { ArrowLeft, Users, Plus, Trash2, Layers, X, Copy, Check, Link2, PlusCircle, MinusCircle, Navigation } from 'lucide-react';
+import { ArrowLeft, Users, Plus, Trash2, Layers, X, Check, Link2, PlusCircle, MinusCircle, Navigation } from 'lucide-react';
 
 const TILE = 28;
 
@@ -39,15 +39,12 @@ export function Arena() {
   const wsRef = useRef<WsClient | null>(null);
   const token = useUserStore((s) => s.token);
   const myStoredUsername = useUserStore((s) => s.username);
-  const myStoredUserId = useUserStore((s) => s.userId);
-
   const [myPos, setMyPos] = useState({ x: 5, y: 5 });
   const [otherUsers, setOtherUsers] = useState<OtherUser[]>([]);
   const [elements, setElements] = useState<SpaceElement[]>([]);
   const [dimensions, setDimensions] = useState({ w: 20, h: 20 });
   const [connected, setConnected] = useState(false);
   const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
-  const [myUserId, setMyUserId] = useState<string | null>(null);
   const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(null);
   const [autoPath, setAutoPath] = useState<{x: number, y: number}[]>([]);
   const [zoom, setZoom] = useState(1);
@@ -55,9 +52,6 @@ export function Arena() {
   // Image cache for avatars
   const imageCacheRef = useRef<Record<string, HTMLImageElement>>({});
   const [renderTrigger, setRenderTrigger] = useState(0);
-
-  // Camera offset tracking for click events
-  const cameraRef = useRef({ cx: 0, cy: 0 });
 
   // Invite / copy
   const [copied, setCopied] = useState(false);
@@ -112,7 +106,6 @@ export function Arena() {
       switch (msg.type) {
         case 'space-joined':
           setMyPos(msg.payload.spawn);
-          setMyUserId(msg.payload.userId ?? null);
           setMyAvatarUrl(msg.payload.avatarUrl ?? null);
           setOtherUsers(
             msg.payload.users.map((u) => ({

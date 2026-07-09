@@ -1,3 +1,4 @@
+rootDirectory: metaverse
 services:
   - type: web
     name: http
