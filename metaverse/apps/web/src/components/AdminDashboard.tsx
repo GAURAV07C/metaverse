@@ -14,7 +14,6 @@ import {
   Trash2,
 } from "lucide-react";
 import { useToast } from "../utils/toast";
-import { VisualMapEditor } from "./VisualMapEditor";
 
 type Tab = "elements" | "maps" | "avatars";
 
@@ -94,6 +93,9 @@ export function AdminDashboard() {
   const [mapDefaultElements, setMapDefaultElements] = useState<
     MapDefaultElement[]
   >([]);
+  const [addElId, setAddElId] = useState("");
+  const [addElX, setAddElX] = useState("0");
+  const [addElY, setAddElY] = useState("0");
   const [deletingMap, setDeletingMap] = useState<string | null>(null);
 
   const fetchElements = async () => {
@@ -215,6 +217,34 @@ export function AdminDashboard() {
   };
 
   // ── CREATE MAP ────────────────────────
+  const addMapElement = () => {
+    if (!addElId) return;
+    setMapDefaultElements((prev) => [
+      ...prev,
+      { elementId: addElId, x: parseInt(addElX), y: parseInt(addElY) },
+    ]);
+    setAddElX("0");
+    setAddElY("0");
+  };
+
+  const removeMapElement = (idx: number) => {
+    setMapDefaultElements((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const addEditMapElement = () => {
+    if (!editAddElId) return;
+    setEditMapElements((prev) => [
+      ...prev,
+      { elementId: editAddElId, x: parseInt(editAddElX), y: parseInt(editAddElY) },
+    ]);
+    setEditAddElX("0");
+    setEditAddElY("0");
+  };
+
+  const removeEditMapElement = (idx: number) => {
+    setEditMapElements((prev) => prev.filter((_, i) => i !== idx));
+  };
+
   const createMap = async (e: React.FormEvent) => {
     e.preventDefault();
     setMapError("");
@@ -243,8 +273,10 @@ export function AdminDashboard() {
   const [editingMapId, setEditingMapId] = useState<string | null>(null);
   const [editMapName, setEditMapName] = useState("");
   const [editMapThumb, setEditMapThumb] = useState("");
-  const [editMapDims, setEditMapDims] = useState("100x200");
   const [editMapElements, setEditMapElements] = useState<MapDefaultElement[]>([]);
+  const [editAddElId, setEditAddElId] = useState("");
+  const [editAddElX, setEditAddElX] = useState("0");
+  const [editAddElY, setEditAddElY] = useState("0");
   const [updateMapLoading, setUpdateMapLoading] = useState(false);
 
   const handleUpdateMap = async (e: React.FormEvent) => {
@@ -624,7 +656,51 @@ export function AdminDashboard() {
                     map)
                   </p>
 
-                  {elements.length === 0 ? (
+                  {/* Element picker */}
+                  {elements.length > 0 && (
+                    <div className="map-el-builder">
+                      <select
+                        className="input"
+                        value={addElId}
+                        onChange={(e) => setAddElId(e.target.value)}
+                        style={{ flex: 2 }}
+                      >
+                        <option value="">Select element…</option>
+                        {elements.map((el) => (
+                          <option key={el.id} value={el.id}>
+                            {el.id.slice(0, 8)}… ({el.width}×{el.height},{" "}
+                            {el.static ? "static" : "walkable"})
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        className="input"
+                        type="number"
+                        placeholder="X"
+                        value={addElX}
+                        onChange={(e) => setAddElX(e.target.value)}
+                        style={{ flex: 1 }}
+                      />
+                      <input
+                        className="input"
+                        type="number"
+                        placeholder="Y"
+                        value={addElY}
+                        onChange={(e) => setAddElY(e.target.value)}
+                        style={{ flex: 1 }}
+                      />
+                      <button
+                        type="button"
+                        className="btn"
+                        style={{ padding: "0.5rem 1rem" }}
+                        onClick={addMapElement}
+                        disabled={!addElId}
+                      >
+                        <Plus size={14} />
+                      </button>
+                    </div>
+                  )}
+                  {elements.length === 0 && (
                     <p
                       style={{
                         color: "var(--text-secondary)",
@@ -633,14 +709,37 @@ export function AdminDashboard() {
                     >
                       Create elements first (Elements tab)
                     </p>
-                  ) : (
-                    <VisualMapEditor
-                      width={parseInt(mapDims.split("x")[0] || "100")}
-                      height={parseInt(mapDims.split("x")[1] || "200")}
-                      elements={mapDefaultElements}
-                      availableElements={elements}
-                      onChange={setMapDefaultElements}
-                    />
+                  )}
+
+                  {/* Added elements list */}
+                  {mapDefaultElements.length > 0 && (
+                    <div className="map-el-list">
+                      {mapDefaultElements.map((mel, i) => (
+                        <div key={i} className="map-el-chip">
+                          <span
+                            style={{
+                              fontSize: "0.75rem",
+                              fontFamily: "monospace",
+                            }}
+                          >
+                            {mel.elementId.slice(0, 6)}… @ ({mel.x},{mel.y})
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeMapElement(i)}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              color: "var(--danger)",
+                              cursor: "pointer",
+                              padding: 0,
+                            }}
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
 
@@ -687,7 +786,6 @@ export function AdminDashboard() {
                         setEditingMapId(m.id);
                         setEditMapName(m.name);
                         setEditMapThumb(m.thumbnail || "");
-                        setEditMapDims(m.dimensions);
                         setEditMapElements(m.elements.map(el => ({ elementId: el.element.id, x: el.x, y: el.y })));
                       }}
                     >
@@ -783,24 +881,88 @@ export function AdminDashboard() {
                         Default Elements ({editMapElements.length})
                       </p>
 
-                       {elements.length > 0 ? (
-                         <VisualMapEditor
-                           width={parseInt(editMapDims.split("x")[0] || "100")}
-                           height={parseInt(editMapDims.split("x")[1] || "200")}
-                           elements={editMapElements}
-                           availableElements={elements}
-                           onChange={setEditMapElements}
-                         />
-                       ) : (
-                         <p
-                           style={{
-                             color: "var(--text-secondary)",
-                             fontSize: "0.8rem",
-                           }}
-                         >
-                           Create elements first (Elements tab)
-                         </p>
-                       )}
+                      {elements.length > 0 ? (
+                        <div className="map-el-builder">
+                          <select
+                            className="input"
+                            value={editAddElId}
+                            onChange={(e) => setEditAddElId(e.target.value)}
+                            style={{ flex: 2 }}
+                          >
+                            <option value="">Select element…</option>
+                            {elements.map((el) => (
+                              <option key={el.id} value={el.id}>
+                                {el.id.slice(0, 8)}… ({el.width}×{el.height},{" "}
+                                {el.static ? "static" : "walkable"})
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            className="input"
+                            type="number"
+                            placeholder="X"
+                            value={editAddElX}
+                            onChange={(e) => setEditAddElX(e.target.value)}
+                            style={{ flex: 1 }}
+                          />
+                          <input
+                            className="input"
+                            type="number"
+                            placeholder="Y"
+                            value={editAddElY}
+                            onChange={(e) => setEditAddElY(e.target.value)}
+                            style={{ flex: 1 }}
+                          />
+                          <button
+                            type="button"
+                            className="btn"
+                            style={{ padding: "0.5rem 1rem" }}
+                            onClick={addEditMapElement}
+                            disabled={!editAddElId}
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </div>
+                      ) : (
+                        <p
+                          style={{
+                            color: "var(--text-secondary)",
+                            fontSize: "0.8rem",
+                          }}
+                        >
+                          Create elements first (Elements tab)
+                        </p>
+                      )}
+
+                      {editMapElements.length > 0 && (
+                        <div className="map-el-list">
+                          {editMapElements.map((mel, i) => (
+                            <div key={i} className="map-el-chip">
+                              <span
+                                style={{
+                                  fontSize: "0.75rem",
+                                  fontFamily: "monospace",
+                                }}
+                              >
+                                {mel.elementId.slice(0, 6)}… @ ({mel.x},{mel.y})
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => removeEditMapElement(i)}
+                                style={{
+                                  background: "none",
+                                  border: "none",
+                                  color: "var(--danger)",
+                                  cursor: "pointer",
+                                  padding: 0,
+                                }}
+                              >
+                                <X size={12} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     <div
