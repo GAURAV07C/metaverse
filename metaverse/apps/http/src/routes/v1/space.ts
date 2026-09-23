@@ -34,6 +34,7 @@ spaceRouter.post("/", userMiddleware, async (req, res) => {
         mapElements: true,
         width: true,
         height: true,
+        thumbnails: true,
       },
     });
 
@@ -48,6 +49,7 @@ spaceRouter.post("/", userMiddleware, async (req, res) => {
           name: parsedData.data.name,
           width: map.width,
           height: map.height,
+          thumbnail: map.thumbnails,
           creatorId: req.userId!,
         },
       });
@@ -244,10 +246,14 @@ spaceRouter.get("/:spaceId", userMiddleware, async (req, res) => {
         include: {
             elements:{
                 include:{
-                    element:true,
+                    element:{
+                        include: {
+                            interactiveObjects: true
+                        }
+                    },
                 }
             },
-
+            privateZones: true,
         }
     })
 
@@ -258,6 +264,7 @@ spaceRouter.get("/:spaceId", userMiddleware, async (req, res) => {
     }
 
     res.json({
+        thumbnail: space.thumbnail,
         dimensions: `${space.width}x${space.height}`,
         elements: space.elements.map((e) => ({
             id: e.id,
@@ -267,9 +274,11 @@ spaceRouter.get("/:spaceId", userMiddleware, async (req, res) => {
                 width: e.element.width,
                 height: e.element.height,
                 static: e.element.static,
+                interactiveObjects: e.element.interactiveObjects,
             },
             x: e.x,
             y: e.y,
         })),
+        privateZones: space.privateZones,
     });
 });

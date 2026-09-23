@@ -20,6 +20,11 @@ model User {
   avatarId String?
   role     Role
 
+  orgId    String?
+  org      Organization? @relation(fields: [orgId], references: [id])
+  teamId   String?
+  team     Team? @relation(fields: [teamId], references: [id])
+
   spaces Space[]
   avatar Avatar? @relation(fields: [avatarId] , references: [id])
 }
@@ -33,8 +38,8 @@ model Space {
   creatorId String
   admin User @relation(fields: [creatorId], references: [id])
   elements spaceElements[]
-
-  
+  privateZones PrivateZone[]
+  meetings     Meeting[]
 }
 
 model spaceElements {
@@ -56,6 +61,7 @@ model Element {
   imageUrl String
   space spaceElements[]
   maps MapElements[]
+  interactiveObjects InteractiveObject[]
 }
 
 model Map {
@@ -87,4 +93,48 @@ model Avatar {
 enum Role {
   Admin
   User
+}
+
+model Organization {
+  id      String   @id @default(cuid())
+  name    String
+  logo    String?
+  teams   Team[]
+  users   User[]
+}
+
+model Team {
+  id      String   @id @default(cuid())
+  name    String
+  orgId   String
+  org     Organization @relation(fields: [orgId], references: [id])
+  users   User[]
+}
+
+model PrivateZone {
+  id      String @id @default(cuid())
+  name    String
+  spaceId String
+  space   Space  @relation(fields: [spaceId], references: [id])
+  startX  Int
+  startY  Int
+  endX    Int
+  endY    Int
+}
+
+model Meeting {
+  id        String   @id @default(cuid())
+  title     String
+  startTime DateTime
+  endTime   DateTime
+  spaceId   String
+  space     Space    @relation(fields: [spaceId], references: [id])
+}
+
+model InteractiveObject {
+  id        String  @id @default(cuid())
+  type      String  // "WHITEBOARD", "SCREENSHARE", "GAME"
+  elementId String
+  element   Element @relation(fields: [elementId], references: [id])
+  state     Json?
 }

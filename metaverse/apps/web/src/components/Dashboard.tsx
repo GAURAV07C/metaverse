@@ -356,26 +356,49 @@ export function Dashboard() {
 
                 {/* Map Picker */}
                 <label className="field-label" style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <Map size={14} /> Choose a Map Template (optional)
+                  <Map size={14} /> Choose Team Size Map Template
                 </label>
 
                 {mapsLoading ? (
                   <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}><div className="spinner" /></div>
-                ) : availableMaps.length === 0 ? (
-                  <div className="no-maps-hint">
-                    <span>🗺️</span>
-                    <p>No maps available yet.<br /><span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>Ask an admin to create maps first.</span></p>
-                  </div>
                 ) : (
                   <div className="map-picker-grid">
-                    <button type="button" className={`map-option ${!selectedMapId ? 'selected' : ''}`} onClick={() => setSelectedMapId(null)}>
-                      <div className="map-option-thumb empty-thumb">✨</div>
+                    <button type="button" className={`map-option ${!selectedMapId ? 'selected' : ''}`} onClick={() => { setSelectedMapId(null); setNewDims('48x27'); }}>
+                      <div className="map-option-thumb empty-thumb">🏢</div>
                       <div className="map-option-info">
-                        <span className="map-option-name">Empty Space</span>
-                        <span className="map-option-meta">Custom dimensions</span>
+                        <span className="map-option-name">Small Team Office</span>
+                        <span className="map-option-meta">2 - 10 People • 48x27</span>
                       </div>
                       {!selectedMapId && <Check size={14} className="map-option-check" />}
                     </button>
+
+                    <button type="button" className={`map-option ${selectedMapId === 'preset-medium' ? 'selected' : ''}`} onClick={() => { setSelectedMapId('preset-medium'); setNewDims('60x35'); }}>
+                      <div className="map-option-thumb empty-thumb">🏬</div>
+                      <div className="map-option-info">
+                        <span className="map-option-name">Medium Tech Hub</span>
+                        <span className="map-option-meta">10 - 25 People • 60x35</span>
+                      </div>
+                      {selectedMapId === 'preset-medium' && <Check size={14} className="map-option-check" />}
+                    </button>
+
+                    <button type="button" className={`map-option ${selectedMapId === 'preset-large' ? 'selected' : ''}`} onClick={() => { setSelectedMapId('preset-large'); setNewDims('80x45'); }}>
+                      <div className="map-option-thumb empty-thumb">🏙️</div>
+                      <div className="map-option-info">
+                        <span className="map-option-name">Corporate HQ</span>
+                        <span className="map-option-meta">25 - 75 People • 80x45</span>
+                      </div>
+                      {selectedMapId === 'preset-large' && <Check size={14} className="map-option-check" />}
+                    </button>
+
+                    <button type="button" className={`map-option ${selectedMapId === 'preset-campus' ? 'selected' : ''}`} onClick={() => { setSelectedMapId('preset-campus'); setNewDims('100x60'); }}>
+                      <div className="map-option-thumb empty-thumb">🏰</div>
+                      <div className="map-option-info">
+                        <span className="map-option-name">Enterprise Campus</span>
+                        <span className="map-option-meta">75+ People • 100x60</span>
+                      </div>
+                      {selectedMapId === 'preset-campus' && <Check size={14} className="map-option-check" />}
+                    </button>
+
                     {availableMaps.map(m => (
                       <button key={m.id} type="button" className={`map-option ${selectedMapId === m.id ? 'selected' : ''}`} onClick={() => setSelectedMapId(m.id)}>
                         <div className="map-option-thumb">🗺️</div>

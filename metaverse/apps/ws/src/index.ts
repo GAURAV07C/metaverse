@@ -1,6 +1,14 @@
 import 'dotenv/config';
 import { WebSocketServer } from "ws";
 import { User } from "./User";
+import { MediasoupManager } from "./MediasoupManager";
+
+// Initialize Mediasoup Worker
+MediasoupManager.getInstance().init().then(() => {
+    console.log("Mediasoup initialized successfully");
+}).catch((err) => {
+    console.error("Failed to initialize Mediasoup", err);
+});
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
 const wss = new WebSocketServer({ port: PORT });

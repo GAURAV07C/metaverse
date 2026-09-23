@@ -5,6 +5,7 @@ import { spaceRouter } from "./space.js";
 import { SigninSchema, SignupSchema } from "../../types/index.js";
 import bcrypt from "bcrypt";
 import { client } from "@repo/db/client";
+import { organizationRouter } from "./organization.js";
 import jwt from "jsonwebtoken";
 import { JWT_PASSWORD } from "../../config.js";
 
@@ -155,5 +156,4 @@ router.get("/maps", async (req, res) => {
 router.use("/user", userRouter);
 router.use("/admin", adminRouter);
 router.use("/space", spaceRouter);
-
-
+router.use("/organization", organizationRouter);

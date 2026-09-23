@@ -4,6 +4,11 @@ import { OutgoingMessage } from "./types";
 import client from "@repo/db/client";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import { JWT_PASSWORD } from "./config";
+import { MediasoupManager } from "./MediasoupManager";
+import { MovementHandler } from "./handlers/MovementHandler";
+import { ChatHandler } from "./handlers/ChatHandler";
+import { WebRTCHandler } from "./handlers/WebRTCHandler";
+
 
 function getRandomString(length: number) {
   const characters =
@@ -20,9 +25,10 @@ export class User {
   public userId?: string;
   public username?: string;
   public avatarUrl?: string;
-  private spaceId?: string;
+  public spaceId?: string;
   public x: number;
   public y: number;
+  public inProximityWith: Set<string> = new Set();
   private ws: WebSocket;
 
   constructor(ws: WebSocket) {
@@ -81,6 +87,7 @@ export class User {
 
           this.spaceId = spaceId;
           RoomManager.getInstance().addUser(spaceId, this);
+          RoomManager.getInstance().loadSpaceZones(spaceId);
 
           this.x = Math.floor(Math.random() * space.width);
           this.y = Math.floor(Math.random() * space.height!);
@@ -115,71 +122,32 @@ export class User {
             this.spaceId!,
           );
 
+          RoomManager.getInstance().checkProximity(this, this.spaceId!);
+
           break;
         }
 
-        case "move": {
-          const moveX = parsedData?.payload?.x;
-          const moveY = parsedData?.payload?.y;
-
-          // Tests show that sometimes payloads can contain null/non-numbers.
-          // Never mutate authoritative state (this.x/this.y) in those cases.
-          if (
-            typeof moveX !== "number" ||
-            typeof moveY !== "number" ||
-            !Number.isFinite(moveX) ||
-            !Number.isFinite(moveY)
-          ) {
-            this.send({
-              type: "movement-rejected",
-              payload: { x: this.x, y: this.y },
-            });
-            return;
-          }
-
-          // Don't allow movement before join/spaceId is set.
-          if (!this.spaceId) {
-            this.send({
-              type: "movement-rejected",
-              payload: { x: this.x, y: this.y },
-            });
-            return;
-          }
-
-          const xDisplacement = Math.abs(this.x - moveX);
-          const yDisplacement = Math.abs(this.y - moveY);
-
-          const isOneBlockMove =
-            (xDisplacement === 1 && yDisplacement === 0) ||
-            (xDisplacement === 0 && yDisplacement === 1);
-
-          if (isOneBlockMove) {
-            this.x = moveX;
-            this.y = moveY;
-            RoomManager.getInstance().broadcast(
-              {
-                type: "movement",
-                payload: {
-                  userId: this.userId,
-                  x: this.x,
-                  y: this.y,
-                },
-              },
-              this,
-              this.spaceId,
-            );
-            return;
-          }
-
-          this.send({
-            type: "movement-rejected",
-            payload: {
-              x: this.x,
-              y: this.y,
-            },
-          });
+        case "move":
+          MovementHandler.handleMove(this, parsedData);
           break;
-        }
+        case "chat-message":
+          ChatHandler.handleMessage(this, parsedData);
+          break;
+        case "webrtc-get-router-rtp-capabilities":
+          await WebRTCHandler.handleGetRouterRtpCapabilities(this);
+          break;
+        case "webrtc-create-transport":
+          await WebRTCHandler.handleCreateTransport(this);
+          break;
+        case "webrtc-connect-transport":
+          await WebRTCHandler.handleConnectTransport(this, parsedData);
+          break;
+        case "webrtc-produce":
+          await WebRTCHandler.handleProduce(this, parsedData);
+          break;
+        case "webrtc-consume":
+          await WebRTCHandler.handleConsume(this, parsedData);
+          break;
       }
     });
   }
