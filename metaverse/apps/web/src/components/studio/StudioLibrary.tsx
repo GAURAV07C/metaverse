@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Search, X, ChevronDown, Settings, Monitor, Lamp, UtensilsCrossed, TreePine, Image as ImageIcon } from 'lucide-react';
+import { Search, X, ChevronDown, Settings, Monitor, Lamp, UtensilsCrossed, TreePine, Image as ImageIcon, Archive } from 'lucide-react';
 import type { Prefab } from './types';
 
 const categories = [
@@ -9,6 +9,7 @@ const categories = [
   { id: 'food', icon: UtensilsCrossed },
   { id: 'outdoor', icon: TreePine },
   { id: 'Wall Decor', icon: ImageIcon },
+  { id: 'Cabinets & Shelves', icon: Archive },
 ];
 interface Props {
   prefabs: Prefab[];
