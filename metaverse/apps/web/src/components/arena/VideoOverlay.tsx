@@ -1,5 +1,5 @@
 import React from 'react';
-import { MicOff, VideoOff, Lock, LogOut, ShieldCheck } from 'lucide-react';
+import { MicOff, VideoOff, Lock, LogOut } from 'lucide-react';
 import type { OtherUser } from '../Arena';
 
 interface VideoOverlayProps {

@@ -1,188 +1,60 @@
-import React from 'react';
-import { Users, MessageSquare, Crosshair, Send, Search, Map as MapIcon, Bell, Gift, Settings, ChevronLeft, ChevronRight, Menu } from 'lucide-react';
+﻿import React, { useEffect, useRef, useState } from 'react';
+import { Users, MessageSquare, Crosshair, Send, Search, PanelLeftClose, Link2, Check, ChevronDown } from 'lucide-react';
 import type { OtherUser } from '../Arena';
 
 interface SidebarProps {
+  spaceName: string;
   showUsers: boolean;
-  onToggleSidebar?: () => void;
+  onToggleSidebar: () => void;
   activeTab: 'users' | 'chat';
   setActiveTab: (val: 'users' | 'chat') => void;
   otherUsers: OtherUser[];
   myStoredUsername: string | null;
   myAvatarUrl: string | undefined;
-  myPos: { x: number; y: number };
   handleNavigateToUser: (x: number, y: number) => void;
   handleCopyInvite: () => void;
   copied: boolean;
+  connected: boolean;
   messages: { username: string; message: string; time: string }[];
   chatInput: string;
   setChatInput: (val: string) => void;
   handleSendChat: (e: React.FormEvent) => void;
-  onOpenSettings?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
-  showUsers, onToggleSidebar, activeTab, setActiveTab,
-  otherUsers, myStoredUsername, myAvatarUrl, myPos,
-  handleNavigateToUser, handleCopyInvite, copied,
-  messages, chatInput, setChatInput, handleSendChat,
-  onOpenSettings
+  spaceName, showUsers, onToggleSidebar, activeTab, otherUsers,
+  myStoredUsername, myAvatarUrl, handleNavigateToUser, handleCopyInvite,
+  copied, connected, messages, chatInput, setChatInput, handleSendChat,
 }) => {
+  const [search, setSearch] = useState('');
+  const chatEnd = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (showUsers && activeTab === 'chat') chatEnd.current?.scrollIntoView({ block: 'nearest' }); }, [messages.length, showUsers, activeTab]);
+  if (!showUsers) return null;
+  const people = otherUsers.filter((u, index, all) => u.username !== myStoredUsername && all.findIndex(person => person.userId === u.userId) === index);
+  const matches = (name: string) => name.toLowerCase().includes(search.trim().toLowerCase());
+  const filtered = people.filter(u => matches(u.username));
+  const myName = myStoredUsername || 'You';
   return (
-    <div className={`sidebar-container ${!showUsers ? 'collapsed' : ''}`}>
-      <div className="sidebar-dock">
-        <div className="dock-top">
-          {/* Hamburger Menu Toggle Button */}
-          <button 
-            className={`dock-btn ${showUsers ? 'active' : ''}`} 
-            title={showUsers ? 'Hide Menu (Click to collapse)' : 'Show Menu (Click to expand)'} 
-            onClick={onToggleSidebar}
-          >
-            <Menu size={20} />
-          </button>
-          <button className="dock-btn" title="Search (Ctrl+K)"><Search size={20} /></button>
-          <button className="dock-btn" title="Map & Directory"><MapIcon size={20} /></button>
-          <button className="dock-btn" title="Inbox & Activity"><Bell size={20} /></button>
-          <button className="dock-btn" title="Gifts"><Gift size={20} /></button>
+    <aside className="space-sidebar" aria-label={activeTab === 'users' ? 'Participants' : 'Chat'}>
+      <header className="space-panel-header"><h2>{activeTab === 'users' ? spaceName : 'Chat'}</h2><button className="action-icon-btn" onClick={onToggleSidebar} aria-label="Close sidebar" title="Close sidebar"><PanelLeftClose size={16} /></button></header>
+      {activeTab === 'users' ? <>
+        <label className="people-search"><Search size={16} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search people" aria-label="Search people" /></label>
+        <div className="people-list">
+          <p className="people-section-title">Online ({people.length + 1}) <ChevronDown size={13} /></p>
+          {matches(myName) && <div className="person-row"><div className="person-avatar">{myAvatarUrl ? <img src={myAvatarUrl} alt="" /> : myName.charAt(0).toUpperCase()}</div><div className="person-info"><strong>{myName} <small>(you)</small></strong><span>{connected ? 'Active' : 'Connecting…'}</span></div><span className={`presence-dot ${connected ? '' : 'offline'}`} /></div>}
+          {filtered.map(u => <div key={u.userId} className="person-row"><div className="person-avatar">{u.avatarUrl ? <img src={u.avatarUrl} alt="" /> : u.username.charAt(0).toUpperCase()}</div><div className="person-info"><strong>{u.username}</strong><span>Active</span></div><button className="action-icon-btn person-locate" onClick={() => handleNavigateToUser(u.x, u.y)} title={`Locate ${u.username}`} aria-label={`Locate ${u.username}`}><Crosshair size={16} /></button></div>)}
+          {search && !filtered.length && !matches(myName) && <div className="panel-empty"><Search size={24} /><p>No people found</p><span>Try a different name.</span></div>}
+          {!search && !people.length && <div className="panel-empty"><Users size={28} /><p>Better together</p><span>Invite your team to join you here.</span></div>}
         </div>
-        <div className="dock-bottom">
-          <button className="dock-btn" title="Settings" onClick={onOpenSettings}><Settings size={20} /></button>
+        <footer className="space-panel-footer"><button className="space-invite" onClick={handleCopyInvite}>{copied ? <Check size={16} /> : <Link2 size={16} />}{copied ? 'Invite link copied' : 'Invite people'}</button></footer>
+      </> : <>
+        <div className="space-chat-messages" role="log" aria-label="Space messages" aria-live="polite">
+          {!messages.length && <div className="panel-empty"><MessageSquare size={28} /><p>Start a conversation</p><span>Messages are shared with this space.</span></div>}
+          {messages.map((m, i) => <article className="space-message" key={i}><header><strong>{m.username}</strong><time>{m.time}</time></header><p>{m.message}</p></article>)}
+          <div ref={chatEnd} />
         </div>
-      </div>
-      
-      <aside className="players-sidebar">
-        <div className="players-sidebar-header" style={{ padding: 0, display: 'flex', alignItems: 'center', position: 'relative' }}>
-          <button 
-            style={{ flex: 1, padding: '0.9rem', background: 'transparent', border: 'none', borderBottom: activeTab === 'users' ? '2px solid var(--accent)' : '2px solid transparent', color: activeTab === 'users' ? 'var(--text-primary)' : 'var(--text-muted)', cursor: 'pointer', display: 'flex', gap: '0.4rem', justifyContent: 'center', alignItems: 'center' }}
-            onClick={() => setActiveTab('users')}
-          >
-            <Users size={14} /> Participants
-          </button>
-          <button 
-            style={{ flex: 1, padding: '0.9rem', background: 'transparent', border: 'none', borderBottom: activeTab === 'chat' ? '2px solid var(--accent)' : '2px solid transparent', color: activeTab === 'chat' ? 'var(--text-primary)' : 'var(--text-muted)', cursor: 'pointer', display: 'flex', gap: '0.4rem', justifyContent: 'center', alignItems: 'center' }}
-            onClick={() => setActiveTab('chat')}
-          >
-            <MessageSquare size={14} /> Chat
-          </button>
-
-          {/* Hamburger / Chevron Toggle Hide Button */}
-          {onToggleSidebar && (
-            <button
-              onClick={onToggleSidebar}
-              title={showUsers ? "Collapse Sidebar Menu" : "Expand Sidebar Menu"}
-              style={{
-                background: 'rgba(255,255,255,0.06)',
-                border: 'none',
-                color: '#94a3b8',
-                padding: '0.4rem',
-                marginRight: '0.5rem',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'all 0.15s ease'
-              }}
-            >
-              <Menu size={16} />
-            </button>
-          )}
-        </div>
-
-      <div className="players-list" style={{ display: activeTab === 'users' ? 'block' : 'none' }}>
-        {/* Me */}
-        <div className="player-entry player-me">
-          {myAvatarUrl ? (
-            <img src={myAvatarUrl} alt="" className="player-avatar-img" />
-          ) : (
-            <div className="player-avatar-dot" style={{ background: '#7c5cbf' }}>🧑</div>
-          )}
-          <div className="player-info">
-            <p className="player-name">{myStoredUsername ?? 'You'} <span className="player-you-tag">YOU</span></p>
-            <p className="player-pos">({myPos.x}, {myPos.y})</p>
-          </div>
-          <span className="online-dot" />
-        </div>
-
-        {/* Other users (deduplicated) */}
-        {otherUsers
-          .filter(u => u.username !== myStoredUsername)
-          .map((u, i) => {
-          const colors = ['#6366f1', '#ec4899', '#fb6340', '#2dce89', '#9b7ed8', '#11cdef'];
-          const color = colors[i % colors.length];
-          return (
-            <div key={u.userId} className="player-entry animate-fade-in">
-              {u.avatarUrl ? (
-                <img src={u.avatarUrl} alt="" className="player-avatar-img" style={{ borderColor: color }} />
-              ) : (
-                <div className="player-avatar-dot" style={{ background: color }}>👤</div>
-              )}
-              <div className="player-info">
-                <p className="player-name">{u.username}</p>
-                <p className="player-pos">({u.x}, {u.y})</p>
-              </div>
-              <button
-                className="player-locate-btn"
-                onClick={() => handleNavigateToUser(u.x, u.y)}
-                title={`Navigate to ${u.username}`}
-              >
-                <Crosshair size={12} />
-              </button>
-              <span className="online-dot" />
-            </div>
-          );
-        })}
-
-        {otherUsers.filter(u => u.username !== myStoredUsername).length === 0 && (
-          <div className="players-empty">
-            <span style={{ fontSize: '1.4rem' }}>🏜️</span>
-            <p>You're alone!</p>
-            <button
-              className="btn"
-              style={{ fontSize: '0.7rem', padding: '0.3rem 0.7rem', marginTop: '0.3rem' }}
-              onClick={handleCopyInvite}
-            >
-              {copied ? '✓ Copied!' : '🔗 Invite'}
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Chat Tab */}
-      {activeTab === 'chat' && (
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
-            {messages.length === 0 ? (
-              <div className="players-empty">
-                <p style={{marginTop: '2rem'}}>No messages yet!</p>
-              </div>
-            ) : (
-              messages.map((m, i) => (
-                <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent)' }}>{m.username}</span>
-                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{m.time}</span>
-                  </div>
-                  <span style={{ fontSize: '0.85rem', color: 'var(--text-primary)', lineHeight: 1.4, wordBreak: 'break-word' }}>{m.message}</span>
-                </div>
-              ))
-            )}
-          </div>
-          <form onSubmit={handleSendChat} style={{ padding: '0.8rem', borderTop: '1px solid var(--border)', display: 'flex', gap: '0.4rem' }}>
-            <input 
-              type="text" 
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              placeholder="Type to room..." 
-              style={{ flex: 1, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.5rem', color: 'white', fontSize: '0.8rem' }}
-            />
-            <button type="submit" className="btn-icon" style={{ background: 'var(--accent)', color: 'white', border: 'none', padding: '0.5rem', borderRadius: 'var(--radius-sm)' }}>
-              <Send size={14} />
-            </button>
-          </form>
-        </div>
-      )}
-      </aside>
-    </div>
+        <form className="space-chat-form" onSubmit={handleSendChat}><input autoFocus value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder={connected ? 'Message everyone…' : 'Connecting…'} aria-label="Message everyone" /><button type="submit" disabled={!connected || !chatInput.trim()} className="action-icon-btn" aria-label="Send message" title="Send message"><Send size={18} /></button></form>
+      </>}
+    </aside>
   );
 };

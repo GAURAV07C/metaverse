@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" shape-rendering="crispEdges">
+  <!-- Base -->
+  <circle cx="16" cy="28" r="4" fill="#374151" />
+  <circle cx="16" cy="27" r="3" fill="#4B5563" />
+  
+  <!-- Stand Pole -->
+  <rect x="15" y="10" width="2" height="18" fill="#9CA3AF" />
+  
+  <!-- Boom Arm -->
+  <line x1="16" y1="12" x2="12" y2="8" stroke="#9CA3AF" stroke-width="2" />
+  
+  <!-- Mic clip -->
+  <circle cx="11" cy="7" r="1.5" fill="#111827" />
+  
+  <!-- Microphone head -->
+  <rect x="8" y="4" width="4" height="6" fill="#111827" transform="rotate(-45 10 7)" />
+  <circle cx="8" cy="4" r="2" fill="#6B7280" />
+</svg>

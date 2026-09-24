@@ -52,15 +52,22 @@ export class User {
 
       switch (parsedData?.type) {
         case "join": {
-          const spaceId = parsedData.payload.spaceId;
-          const token = parsedData.payload.token;
+          const spaceId = typeof parsedData?.payload?.spaceId === "string" ? parsedData.payload.spaceId : "";
+          const token = typeof parsedData?.payload?.token === "string" ? parsedData.payload.token : "";
           if (!token) {
-            this.ws.send("token missin");
             this.ws.close();
             return;
           }
 
-          const userId = (jwt.verify(token, JWT_PASSWORD) as JwtPayload).userId;
+          let userId: string | undefined;
+          try {
+            const payload = jwt.verify(token, JWT_PASSWORD) as JwtPayload;
+            userId = typeof payload.userId === "string" ? payload.userId : undefined;
+          } catch {
+            this.ws.close();
+            return;
+          }
+
           if (!userId) {
             this.ws.close();
             return;
@@ -87,10 +94,22 @@ export class User {
 
           this.spaceId = spaceId;
           RoomManager.getInstance().addUser(spaceId, this);
-          RoomManager.getInstance().loadSpaceZones(spaceId);
+          await RoomManager.getInstance().loadSpaceZones(spaceId);
+          await RoomManager.getInstance().loadSpaceBounds(spaceId);
 
-          this.x = Math.floor(Math.random() * space.width);
-          this.y = Math.floor(Math.random() * space.height!);
+          let spawn = { x: 0, y: 0 };
+          for (let i = 0; i < 200; i += 1) {
+            const candidate = {
+              x: Math.floor(Math.random() * space.width),
+              y: Math.floor(Math.random() * (space.height ?? 1)),
+            };
+            if (await RoomManager.getInstance().canOccupy(spaceId, candidate.x, candidate.y)) {
+              spawn = candidate;
+              break;
+            }
+          }
+          this.x = spawn.x;
+          this.y = spawn.y;
 
           this.send({
             type: "space-joined",
@@ -128,7 +147,7 @@ export class User {
         }
 
         case "move":
-          MovementHandler.handleMove(this, parsedData);
+          await MovementHandler.handleMove(this, parsedData);
           break;
         case "chat-message":
           ChatHandler.handleMessage(this, parsedData);
@@ -153,6 +172,7 @@ export class User {
   }
 
   destroy() {
+    if (!this.spaceId) return;
     RoomManager.getInstance().broadcast(
       {
         type: "user-left",
@@ -167,6 +187,8 @@ export class User {
   }
 
   send(payload: OutgoingMessage) {
-    this.ws.send(JSON.stringify(payload));
+    if (this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(payload));
+    }
   }
 }

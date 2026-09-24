@@ -6,14 +6,24 @@ import { findPath } from '../../utils/pathfinding';
 
 const TILE = 28;
 
+export interface PrivateZone {
+  id: string;
+  name: string;
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+}
+
 interface MapCanvasProps {
-  canvasRef: React.RefObject<HTMLCanvasElement>;
-  wrapperRef: React.RefObject<HTMLDivElement>;
+  canvasRef: React.RefObject<HTMLCanvasElement | null>;
+  wrapperRef: React.RefObject<HTMLDivElement | null>;
   dimensions: { w: number; h: number };
   myPos: { x: number; y: number };
   otherUsers: OtherUser[];
   elements: SpaceElement[];
-  mapThumbnail: string | null;
+  hiddenElementIds?: string[];
+  privateZones?: PrivateZone[];
   zoom: number;
   setZoom: React.Dispatch<React.SetStateAction<number>>;
   myAvatarUrl: string | null;
@@ -22,6 +32,10 @@ interface MapCanvasProps {
   handleLocateUser: () => void;
   panOffset: { x: number; y: number };
   setPanOffset: React.Dispatch<React.SetStateAction<{ x: number; y: number }>>;
+  onDropElement?: (elementId: string, x: number, y: number) => void;
+  addingElement?: string | null;
+  builderMode?: 'pointer' | 'brush' | 'eraser';
+  onRemoveElement?: (id: string) => void;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -31,7 +45,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   myPos,
   otherUsers,
   elements,
-  mapThumbnail,
+  hiddenElementIds = [],
+  privateZones = [],
   zoom,
   setZoom,
   myAvatarUrl,
@@ -40,6 +55,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   handleLocateUser,
   panOffset,
   setPanOffset,
+  onDropElement,
+  addingElement,
+  builderMode = 'pointer',
+  onRemoveElement,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -64,10 +83,46 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     hasDraggedRef.current = false;
     dragStartRef.current = { x: e.clientX, y: e.clientY };
     initialPanRef.current = { ...panOffset };
+
+    if (builderMode === 'brush' || builderMode === 'eraser') {
+      applyBuilderAction(e.clientX, e.clientY);
+    }
+  };
+
+  const applyBuilderAction = (clientX: number, clientY: number) => {
+    if (!canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const mouseX = clientX - rect.left;
+    const mouseY = clientY - rect.top;
+    const activeZoom = currentCamRef.current.zoom;
+    const worldX = (mouseX / activeZoom) + currentCamRef.current.camX;
+    const worldY = (mouseY / activeZoom) + currentCamRef.current.camY;
+    const gridX = Math.floor(worldX / TILE);
+    const gridY = Math.floor(worldY / TILE);
+    if (gridX < 0 || gridY < 0 || gridX >= dimensions.w || gridY >= dimensions.h) return;
+
+    if (builderMode === 'brush' && addingElement) {
+      onDropElement?.(addingElement, gridX, gridY);
+    } else if (builderMode === 'eraser') {
+      // Find element at this position to erase
+      const elToErase = elements.find(el => {
+        return gridX >= el.x && gridX < el.x + el.element.width &&
+               gridY >= el.y && gridY < el.y + el.element.height;
+      });
+      if (elToErase && onRemoveElement) {
+        onRemoveElement(elToErase.id);
+      }
+    }
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDragging || !dragStartRef.current) return;
+
+    if (builderMode === 'brush' || builderMode === 'eraser') {
+      applyBuilderAction(e.clientX, e.clientY);
+      return;
+    }
+
     const dist = Math.hypot(e.clientX - dragStartRef.current.x, e.clientY - dragStartRef.current.y);
     if (dist > 4) {
       hasDraggedRef.current = true;
@@ -94,7 +149,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     if (!canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
-    
+
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
@@ -110,13 +165,23 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     if (gridX < 0 || gridY < 0 || gridX >= dimensions.w || gridY >= dimensions.h) return;
 
+    if (builderMode === 'brush' || builderMode === 'eraser') {
+      return; // Handled by mouseDown/mouseMove
+    }
+
+    if (addingElement) {
+      onDropElement?.(addingElement, gridX, gridY);
+      return;
+    }
+
     const path = findPath(
       myPos,
       { x: gridX, y: gridY },
       dimensions.w,
       dimensions.h,
       (x, y) => {
-        const isStaticEl = elements.some(el => el.element.static && x >= el.x && x < el.x + el.element.width && y >= el.y && y < el.y + el.element.height);
+        const visibleElements = elements.filter(el => !hiddenElementIds.includes(el.id));
+        const isStaticEl = visibleElements.some(el => el.element.static && x >= el.x && x < el.x + el.element.width && y >= el.y && y < el.y + el.element.height);
         if (isStaticEl) return false;
         return true;
       }
@@ -164,76 +229,105 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     // Save current camera transform parameters for mouse click calculations
     currentCamRef.current = { camX, camY, zoom: activeZoom };
 
-    ctx.fillStyle = '#0f172a';
+    ctx.fillStyle = '#d9d1c3';
     ctx.fillRect(0, 0, viewW, viewH);
 
     ctx.save();
     ctx.scale(activeZoom, activeZoom);
     ctx.translate(-camX, -camY);
 
-    // Floor background map thumbnail or checkerboard tile pattern
-    if (mapThumbnail) {
-      let img = imageCacheRef.current[mapThumbnail];
-      if (!img) {
-        img = new Image();
-        img.src = mapThumbnail;
-        img.onload = () => setRenderTrigger(t => t + 1);
-        imageCacheRef.current[mapThumbnail] = img;
-      }
-      if (img.complete && img.naturalWidth > 0) {
-        ctx.drawImage(img, 0, 0, worldW, worldH);
-      }
-    } else {
-      // Tile floor (checkerboard pattern fallback)
-      for (let gx = 0; gx < dimensions.w; gx++) {
-        for (let gy = 0; gy < dimensions.h; gy++) {
-          const px = gx * TILE;
-          const py = gy * TILE;
-          const isLight = (gx + gy) % 2 === 0;
-          ctx.fillStyle = isLight ? '#1e2140' : '#1a1d38';
-          ctx.fillRect(px, py, TILE, TILE);
+    // Gather-style base office floor: warm pixel-style wood or clean grid
+    ctx.fillStyle = '#dbd3c5';
+    ctx.fillRect(0, 0, worldW, worldH);
+
+    // Draw subtle grid pattern like a pixel-art canvas
+    ctx.fillStyle = '#d3c9b7';
+    for (let y = 0; y < worldH; y += TILE) {
+      for (let x = 0; x < worldW; x += TILE) {
+        if ((x / TILE + y / TILE) % 2 === 0) {
+          ctx.fillRect(x, y, TILE, TILE);
         }
       }
     }
 
-    // Grid lines (subtle)
-    ctx.strokeStyle = 'rgba(59,130,246,0.08)';
+    // Grid lines
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
     ctx.lineWidth = 1;
-    for (let x = 0; x <= worldW; x += TILE) {
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, worldH); ctx.stroke();
-    }
     for (let y = 0; y <= worldH; y += TILE) {
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(worldW, y); ctx.stroke();
     }
+    for (let x = 0; x <= worldW; x += TILE) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, worldH); ctx.stroke();
+    }
 
-    // Private Zones (Meeting Rooms)
-    const privateZones = [
-      { id: 'zone1', startX: 15, startY: 6, endX: 23, endY: 16, name: 'Meeting Room A' },
-      { id: 'zone2', startX: 24, startY: 6, endX: 32, endY: 16, name: 'Meeting Room B' }
-    ];
-
-    privateZones.forEach((z) => {
+    // Room carpets, walls, and labels from DB zones so the canvas looks like an office map.
+    privateZones.forEach((z, index) => {
       const zx = z.startX * TILE;
       const zy = z.startY * TILE;
       const zw = (z.endX - z.startX + 1) * TILE;
       const zh = (z.endY - z.startY + 1) * TILE;
       const isInside = myPos.x >= z.startX && myPos.x <= z.endX && myPos.y >= z.startY && myPos.y <= z.endY;
+      const palettes = [
+        ['#8aa186', '#6f866c'],
+        ['#617f90', '#4b6979'],
+        ['#927f60', '#74664d'],
+        ['#8b7464', '#725f51'],
+      ];
+      const [roomFill, roomStroke] = palettes[index % palettes.length];
 
-      ctx.fillStyle = isInside ? 'rgba(45, 206, 137, 0.15)' : 'rgba(59, 130, 246, 0.1)';
-      ctx.fillRect(zx, zy, zw, zh);
+      ctx.save();
+      ctx.shadowColor = 'rgba(50, 35, 20, 0.18)';
+      ctx.shadowBlur = 6;
+      ctx.shadowOffsetY = 3;
+      ctx.fillStyle = roomFill;
+      ctx.beginPath();
+      ctx.roundRect(zx, zy, zw, zh, 10);
+      ctx.fill();
+      ctx.restore();
 
-      ctx.strokeStyle = isInside ? '#2dce89' : 'rgba(59, 130, 246, 0.4)';
-      ctx.lineWidth = isInside ? 2.5 : 1.5;
-      ctx.strokeRect(zx, zy, zw, zh);
+      ctx.strokeStyle = isInside ? '#55d184' : roomStroke;
+      ctx.lineWidth = isInside ? 5 : 4;
+      ctx.beginPath();
+      ctx.roundRect(zx + 2, zy + 2, zw - 4, zh - 4, 8);
+      ctx.stroke();
 
-      ctx.fillStyle = isInside ? '#2dce89' : '#60a5fa';
-      ctx.font = 'bold 10px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(z.name, zx + zw / 2, zy + 14);
+      // Door gap marker.
+      ctx.fillStyle = '#d6ba83';
+      ctx.fillRect(zx + Math.max(40, zw / 2 - 28), zy + zh - 7, 56, 10);
+
+      ctx.fillStyle = 'rgba(22, 26, 22, 0.58)';
+      ctx.beginPath();
+      ctx.roundRect(zx + 10, zy + 8, Math.min(170, z.name.length * 8 + 34), 24, 8);
+      ctx.fill();
+      ctx.fillStyle = '#fff6df';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(z.name, zx + 22, zy + 20);
     });
 
-    // Elements
-    elements.forEach((el) => {
+    // Outer office shell walls.
+    ctx.strokeStyle = '#5c4a36';
+    ctx.lineWidth = 10;
+    ctx.strokeRect(5, 5, worldW - 10, worldH - 10);
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(12, 12, worldW - 24, worldH - 24);
+
+    // Elements (filtering out hidden elements)
+    const visibleElements = elements.filter(el => !hiddenElementIds.includes(el.id));
+
+    const isFloorElement = (el: SpaceElement) => {
+      const text = `${el.element.id} ${el.element.name ?? ''} ${el.element.category ?? ''} ${el.element.imageUrl ?? ''}`.toLowerCase();
+      return text.includes('floor') || text.includes('carpet') || text.includes('wood_') || text.includes('tile_') || text.includes('grass');
+    };
+
+    // Draw Floors first
+    const floors = visibleElements.filter(isFloorElement);
+    // Draw Objects & Walls sorted by Y coordinate for depth
+    const objects = visibleElements.filter(el => !isFloorElement(el)).sort((a, b) => a.y - b.y);
+
+    const drawElement = (el: SpaceElement, isFloor: boolean) => {
       const px = el.x * TILE;
       const py = el.y * TILE;
       const w = el.element.width * TILE;
@@ -248,11 +342,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           imageCacheRef.current[el.element.imageUrl] = img;
         }
         if (img.complete && img.naturalWidth > 0) {
-          ctx.fillStyle = 'rgba(0,0,0,0.2)';
-          ctx.beginPath();
-          ctx.ellipse(px + w / 2, py + h - 4, w / 2 - 4, 6, 0, 0, Math.PI * 2);
-          ctx.fill();
-
+          if (!isFloor) {
+            ctx.fillStyle = 'rgba(0,0,0,0.2)';
+            ctx.beginPath();
+            ctx.ellipse(px + w / 2, py + h - 4, w / 2 - 4, 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+          }
           ctx.drawImage(img, px, py, w, h);
           return;
         }
@@ -270,7 +365,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(el.element.static ? '🪑' : '🟢', px + w / 2, py + h / 2);
-    });
+    };
+
+    floors.forEach(el => drawElement(el, true));
+    objects.forEach(el => drawElement(el, false));
 
     // Draw destination highlight tile & autoPath trajectory trail
     if (autoPath.length > 0) {
@@ -310,7 +408,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       ctx.restore();
     }
 
-    const drawAvatar = (x: number, y: number, url?: string, fallback: string = '👤', color: string = '#6366f1') => {
+    const drawAvatar = (x: number, y: number, url?: string, fallback: string = '👤', color: string = '#6366f1', isSitting: boolean = false) => {
       const userTileX = Math.floor(x / TILE);
       const userTileY = Math.floor(y / TILE);
       const inZone = (userTileX >= 15 && userTileX <= 32 && userTileY >= 6 && userTileY <= 16);
@@ -318,7 +416,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (inZone) {
         ctx.save();
         ctx.beginPath();
-        ctx.arc(x, y, 16, 0, Math.PI * 2);
+        ctx.roundRect(x - 18, y - 18, 36, 36, 8);
         ctx.strokeStyle = '#2dce89';
         ctx.lineWidth = 2.5;
         ctx.setLineDash([4, 4]);
@@ -328,11 +426,17 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         ctx.restore();
       }
 
-      ctx.fillStyle = 'rgba(0,0,0,0.3)';
-      ctx.beginPath();
-      ctx.ellipse(x, y + TILE / 2, 8, 3, 0, 0, Math.PI * 2);
-      ctx.fill();
+      const drawY = isSitting ? y + 8 : y;
 
+      if (!isSitting) {
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.beginPath();
+        ctx.ellipse(x, drawY + TILE / 2, 10, 4, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      const avSize = 26;
+      const r = 8;
       if (url) {
         let img = imageCacheRef.current[url];
         if (!img) {
@@ -344,16 +448,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         if (img.complete && img.naturalWidth > 0) {
           ctx.save();
           ctx.beginPath();
-          ctx.arc(x, y, 12, 0, Math.PI * 2);
+          ctx.roundRect(x - avSize/2, drawY - avSize/2, avSize, avSize, r);
           ctx.closePath();
           ctx.clip();
-          ctx.drawImage(img, x - 12, y - 12, 24, 24);
+          ctx.drawImage(img, x - avSize/2, drawY - avSize/2, avSize, avSize);
           ctx.restore();
 
           ctx.strokeStyle = color;
           ctx.lineWidth = 2;
           ctx.beginPath();
-          ctx.arc(x, y, 12, 0, Math.PI * 2);
+          ctx.roundRect(x - avSize/2, drawY - avSize/2, avSize, avSize, r);
           ctx.stroke();
           return;
         }
@@ -361,64 +465,90 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.arc(x, y, 12, 0, Math.PI * 2);
+      ctx.roundRect(x - avSize/2, drawY - avSize/2, avSize, avSize, r);
       ctx.fill();
       ctx.fillStyle = '#fff';
       ctx.font = '14px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(fallback, x, y);
+      ctx.fillText(fallback, x, drawY);
     };
+
+    const isChair = (tx: number, ty: number) => visibleElements.some(el => el.element.id.includes('chair') && el.x === tx && el.y === ty);
 
     // Other users
     otherUsers.forEach((u) => {
       const px = u.x * TILE + TILE / 2;
       const py = u.y * TILE + TILE / 2 - 4;
+      const sitting = isChair(u.x, u.y);
 
-      drawAvatar(px, py, u.avatarUrl, '👤', '#6366f1');
+      drawAvatar(px, py, u.avatarUrl, '👤', '#6366f1', sitting);
       ctx.fillStyle = 'rgba(99,102,241,0.85)';
       const name = u.username || u.userId.slice(0, 5);
       const tagW = name.length * 6 + 6;
       ctx.beginPath();
-      ctx.roundRect(px - tagW / 2, py - 20, tagW, 12, 3);
+      ctx.roundRect(px - tagW / 2, py - (sitting ? 12 : 20), tagW, 12, 3);
       ctx.fill();
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 8px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(name, px, py - 14);
+      ctx.fillText(name, px, py - (sitting ? 6 : 14));
     });
 
     const mx = myPos.x * TILE + TILE / 2;
     const my = myPos.y * TILE + TILE / 2 - 4;
+    const mySitting = isChair(myPos.x, myPos.y);
 
-    const grd = ctx.createRadialGradient(mx, my, 0, mx, my, 18);
-    grd.addColorStop(0, 'rgba(59,130,246,0.4)');
-    grd.addColorStop(1, 'rgba(59,130,246,0)');
-    ctx.fillStyle = grd;
-    ctx.beginPath();
-    ctx.arc(mx, my, 18, 0, Math.PI * 2);
-    ctx.fill();
+    if (!mySitting) {
+      const grd = ctx.createRadialGradient(mx, my, 0, mx, my, 18);
+      grd.addColorStop(0, 'rgba(59,130,246,0.4)');
+      grd.addColorStop(1, 'rgba(59,130,246,0)');
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.arc(mx, my, 18, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
-    drawAvatar(mx, my, myAvatarUrl ?? undefined, '🧑', '#3b82f6');
-  }, [myPos, otherUsers, elements, dimensions, myAvatarUrl, renderTrigger, autoPath, zoom, panOffset]);
+    drawAvatar(mx, my, myAvatarUrl ?? undefined, '🧑', '#3b82f6', mySitting);
+  }, [canvasRef, wrapperRef, myPos, otherUsers, elements, hiddenElementIds, privateZones, dimensions, myAvatarUrl, renderTrigger, autoPath, zoom, panOffset]);
 
   return (
     <>
       <div className="canvas-wrapper" style={{ flex: 1, height: '100%', position: 'relative', overflow: 'hidden' }} ref={wrapperRef}>
-        <canvas 
-          ref={canvasRef} 
+        <canvas
+          ref={canvasRef}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
           onClick={handleCanvasClick}
           onDoubleClick={handleCanvasClick}
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            const elementId = e.dataTransfer.getData('elementId');
+            if (!elementId || !canvasRef.current) return;
+            const rect = canvasRef.current.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            const activeZoom = currentCamRef.current.zoom;
+            const camX = currentCamRef.current.camX;
+            const camY = currentCamRef.current.camY;
+            const worldX = (mouseX / activeZoom) + camX;
+            const worldY = (mouseY / activeZoom) + camY;
+            const tileX = Math.max(0, Math.min(dimensions.w - 1, Math.floor(worldX / TILE)));
+            const tileY = Math.max(0, Math.min(dimensions.h - 1, Math.floor(worldY / TILE)));
+            onDropElement?.(elementId, tileX, tileY);
+          }}
           onWheel={(e) => {
             if (e.deltaY < 0) setZoom(z => Math.min(z + 0.1, 2.5));
             else setZoom(z => Math.max(z - 0.1, 0.6));
           }}
-          style={{ display: 'block', width: '100%', height: '100%', cursor: isDragging ? 'grabbing' : autoPath.length > 0 ? 'crosshair' : 'grab' }} 
+          style={{ display: 'block', width: '100%', height: '100%', cursor: isDragging ? 'grabbing' : addingElement ? 'crosshair' : autoPath.length > 0 ? 'crosshair' : 'grab' }}
         />
       </div>
 

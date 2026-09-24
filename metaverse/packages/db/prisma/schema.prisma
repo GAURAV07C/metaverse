@@ -27,6 +27,12 @@ model User {
 
   spaces Space[]
   avatar Avatar? @relation(fields: [avatarId] , references: [id])
+  assignedDesks DeskAssignment[]
+  studioDrafts SpaceDraft[]
+
+  @@index([avatarId])
+  @@index([orgId])
+  @@index([teamId])
 }
 
 model Space {
@@ -40,6 +46,13 @@ model Space {
   elements spaceElements[]
   privateZones PrivateZone[]
   meetings     Meeting[]
+  settings     SpaceSettings?
+  inviteLinks  InviteLink[]
+  deskAssignments DeskAssignment[]
+  studioDraft  SpaceDraft?
+  smartObjects  SmartObject[]
+
+  @@index([creatorId])
 }
 
 model spaceElements {
@@ -51,17 +64,25 @@ model spaceElements {
 
   space Space @relation(fields: [spaceId], references: [id])
   element Element @relation(fields: [elementId], references: [id])
+
+  @@index([spaceId])
+  @@index([elementId])
+  @@index([spaceId, x, y])
 }
 
 model Element {
   id       String @id @unique @default(cuid())
   width    Int
   height   Int
-  static Boolean
+  static   Boolean
   imageUrl String
-  space spaceElements[]
-  maps MapElements[]
+  name     String?
+  category String?
+  space    spaceElements[]
+  maps     MapElements[]
   interactiveObjects InteractiveObject[]
+
+  @@index([category])
 }
 
 model Map {
@@ -71,6 +92,8 @@ model Map {
   name   String
   thumbnails String
   mapElements MapElements[]
+
+  @@index([name])
 }
 
 model MapElements {
@@ -81,6 +104,9 @@ model MapElements {
   y         Int?
   map Map @relation(fields: [mapId], references: [id])
   element Element @relation(fields: [elementId], references: [id])
+
+  @@index([mapId])
+  @@index([elementId])
 }
 
 model Avatar {
@@ -101,6 +127,8 @@ model Organization {
   logo    String?
   teams   Team[]
   users   User[]
+
+  @@index([name])
 }
 
 model Team {
@@ -109,6 +137,8 @@ model Team {
   orgId   String
   org     Organization @relation(fields: [orgId], references: [id])
   users   User[]
+
+  @@index([orgId])
 }
 
 model PrivateZone {
@@ -120,6 +150,8 @@ model PrivateZone {
   startY  Int
   endX    Int
   endY    Int
+
+  @@index([spaceId])
 }
 
 model Meeting {
@@ -129,6 +161,9 @@ model Meeting {
   endTime   DateTime
   spaceId   String
   space     Space    @relation(fields: [spaceId], references: [id])
+
+  @@index([spaceId])
+  @@index([startTime])
 }
 
 model InteractiveObject {
@@ -137,4 +172,93 @@ model InteractiveObject {
   elementId String
   element   Element @relation(fields: [elementId], references: [id])
   state     Json?
+
+  @@index([elementId])
+}
+
+
+model SpaceSettings {
+  id        String   @id @default(cuid())
+  spaceId   String   @unique
+  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  layoutType String  @default("Hybrid")
+  theme     String   @default("Startup")
+  sizeRange String   @default("1-10")
+  language  String   @default("English")
+  colorMode String   @default("Light")
+  ambientAudioVideo Boolean @default(true)
+  conversationRange String @default("Short")
+  autoLockDesks Boolean @default(true)
+  announcementsEnabled Boolean @default(true)
+  chatChannelsEnabled Boolean @default(true)
+  meetingChatEnabled Boolean @default(true)
+  nearbyChatEnabled Boolean @default(true)
+  directMessagesEnabled Boolean @default(true)
+  companyEmailMembership Boolean @default(false)
+  supportAccess Boolean @default(true)
+  memberInvitesEnabled Boolean @default(true)
+  smartObjectsEnabled Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model InviteLink {
+  id        String   @id @default(cuid())
+  spaceId   String
+  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  role      String   @default("Member")
+  expiresAt DateTime?
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([spaceId])
+  @@index([token])
+}
+
+model DeskAssignment {
+  id        String   @id @default(cuid())
+  spaceId   String
+  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  label     String
+  teamName  String   @default("Team")
+  x         Int
+  y         Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([spaceId])
+  @@index([userId])
+  @@index([spaceId, x, y])
+}
+
+model SpaceDraft {
+  id          String   @id @default(cuid())
+  spaceId     String   @unique
+  space       Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  data        Json
+  updatedById String?
+  updatedBy   User?    @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+  publishedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([updatedById])
+}
+
+model SmartObject {
+  id        String   @id @default(cuid())
+  spaceId   String
+  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  name      String
+  type      String   @default("CUSTOM")
+  config    Json?
+  state     Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([spaceId])
+  @@index([type])
 }

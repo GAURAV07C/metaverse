@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { Map as MapIcon, MessageSquare, Search, Settings, LogOut, CircleDot, Hammer, MoreVertical, Users, Share2, Compass, Wifi, CalendarDays, Sparkles } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useUserStore } from '../store';
 import { WsClient } from '../utils/ws';
+import { MediasoupClient } from '../utils/mediasoupClient';
 import { api } from '../utils/api';
 import { Sidebar } from './arena/Sidebar';
 import { SettingsModal } from './arena/SettingsModal';
 import { VideoOverlay } from './arena/VideoOverlay';
-import { ArenaHeader } from './arena/ArenaHeader';
 import { ElementsPanel, type SpaceElement, type AvailableElement } from './arena/ElementsPanel';
 import { MapCanvas } from './arena/MapCanvas';
 import { ActionToolbar } from './arena/ActionToolbar';
@@ -25,16 +26,24 @@ export function Arena() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WsClient | null>(null);
+  const msRef = useRef<MediasoupClient | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
   const token = useUserStore((s) => s.token);
   const myStoredUsername = useUserStore((s) => s.username);
-  
+
   const [myPos, setMyPos] = useState({ x: 5, y: 5 });
   const [otherUsers, setOtherUsers] = useState<OtherUser[]>([]);
+  const [proximityUsers, setProximityUsers] = useState<string[]>([]);
+  const [streams, setStreams] = useState<Record<string, MediaStream>>({});
+
+  const [micOn, setMicOn] = useState(false);
+  const [camOn, setCamOn] = useState(false);
+
   const [elements, setElements] = useState<SpaceElement[]>([]);
+  const [privateZones, setPrivateZones] = useState<any[]>([]);
   const [dimensions, setDimensions] = useState({ w: 48, h: 27 });
-  const [mapThumbnail, setMapThumbnail] = useState<string | null>('/virtual_office.jpg');
+  const [spaceName, setSpaceName] = useState('Office');
   const [connected, setConnected] = useState(false);
-  const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [myAvatarUrl, setMyAvatarUrl] = useState<string | null>(null);
   const [autoPath, setAutoPath] = useState<{x: number, y: number}[]>([]);
   const [zoom, setZoom] = useState(1);
@@ -43,13 +52,15 @@ export function Arena() {
   const [messages, setMessages] = useState<{ username: string; message: string; time: string }[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [showOfficeMenu, setShowOfficeMenu] = useState(false);
 
   // Invite / copy state
   const [copied, setCopied] = useState(false);
   const handleCopyInvite = () => {
-    navigator.clipboard.writeText(window.location.href);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    navigator.clipboard.writeText(window.location.href).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => setCopied(false));
   };
 
   // Sidebar toggle state
@@ -59,10 +70,27 @@ export function Arena() {
   const [showPanel, setShowPanel] = useState(false);
   const [availableElements, setAvailableElements] = useState<AvailableElement[]>([]);
   const [addingElement, setAddingElement] = useState<string | null>(null);
+  const [builderMode, setBuilderMode] = useState<'pointer' | 'brush' | 'eraser'>('pointer');
   const [addX, setAddX] = useState('0');
   const [addY, setAddY] = useState('0');
   const [panelLoading, setPanelLoading] = useState(false);
   const [panelMsg, setPanelMsg] = useState('');
+  const [hiddenElementIds, setHiddenElementIds] = useState<string[]>([]);
+
+  const toggleHideElement = (id: string) => {
+    setHiddenElementIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleUpdateDimensions = async (w: number, h: number) => {
+    if (w <= 0 || h <= 0) return;
+    setDimensions({ w, h });
+    setPanelMsg(`Map expanded to ${w}x${h}!`);
+    try {
+      await api.put(`/space/${spaceId}`, { dimensions: `${w}x${h}` });
+    } catch (e) { console.error(e); }
+  };
 
   // ── Fetch space data ───────────────────
   const fetchSpace = useCallback(async () => {
@@ -72,8 +100,9 @@ export function Arena() {
       const dimStr: string = res.data.dimensions ?? '48x27';
       const [w, h] = dimStr.split('x').map(Number);
       setDimensions({ w: w || 48, h: h || 27 });
+      setSpaceName(res.data.name || 'Office');
       setElements(res.data.elements ?? []);
-      setMapThumbnail(res.data.thumbnail || '/virtual_office.jpg');
+      setPrivateZones(res.data.privateZones ?? []);
     } catch (e) { console.error(e); }
   }, [spaceId]);
 
@@ -90,30 +119,47 @@ export function Arena() {
   // ── WebSocket setup ─────────────────────
   useEffect(() => {
     if (!spaceId || !token) return;
-    setWsStatus('connecting');
 
-    const ws = new WsClient(token, spaceId);
+    const ws = new WsClient(spaceId, token);
     wsRef.current = ws;
 
-    const unsub = ws.onMessage((msg) => {
+    const ms = new MediasoupClient(ws);
+    msRef.current = ms;
+
+    ms.onNewConsumer = (consumer, userId) => {
+      setStreams(prev => {
+        const existing = prev[userId] || new MediaStream();
+        existing.addTrack(consumer.track);
+        return { ...prev, [userId]: existing };
+      });
+    };
+
+    const unsub = ws.onMessage((msg: any) => {
       switch (msg.type) {
         case 'space-joined':
-          setWsStatus('connected');
           setConnected(true);
           setMyPos({ x: msg.payload.spawn.x, y: msg.payload.spawn.y });
-          const filteredJoined = (msg.payload.users ?? []).filter(
-            (u) => u.userId !== msg.payload.userId && u.username !== myStoredUsername
-          );
+          const filteredJoined: OtherUser[] = (msg.payload.users ?? [])
+            .filter((u: any) => (u.userId || u.id) !== msg.payload.userId && u.username !== myStoredUsername)
+            .map((u: any) => ({
+              userId: u.userId || u.id || '',
+              username: u.username || 'User',
+              x: u.x,
+              y: u.y,
+              avatarUrl: u.avatarUrl
+            }));
           setOtherUsers(filteredJoined);
           if (msg.payload.avatarUrl) setMyAvatarUrl(msg.payload.avatarUrl);
+
+          ms.init(); // Initialize mediasoup after joining
           break;
         case 'user-joined':
           if (msg.payload.userId && msg.payload.username !== myStoredUsername) {
             setOtherUsers((prev) => {
               if (prev.some((u) => u.userId === msg.payload.userId)) return prev;
               return [...prev, {
-                userId: msg.payload.userId,
-                username: msg.payload.username,
+                userId: msg.payload.userId || '',
+                username: msg.payload.username || 'User',
                 x: msg.payload.x,
                 y: msg.payload.y,
                 avatarUrl: msg.payload.avatarUrl,
@@ -123,8 +169,28 @@ export function Arena() {
           break;
         case 'user-left':
           setOtherUsers((prev) => prev.filter((u) => u.userId !== msg.payload.userId));
+          setProximityUsers(prev => prev.filter(id => id !== msg.payload.userId));
+          setStreams(prev => {
+            const next = { ...prev };
+            delete next[msg.payload.userId];
+            return next;
+          });
           break;
-        case 'chat':
+        case 'proximity-entered':
+          setProximityUsers(prev => {
+            if (prev.includes(msg.payload.userId)) return prev;
+            return [...prev, msg.payload.userId];
+          });
+          break;
+        case 'proximity-left':
+          setProximityUsers(prev => prev.filter(id => id !== msg.payload.userId));
+          setStreams(prev => {
+            const next = { ...prev };
+            delete next[msg.payload.userId];
+            return next;
+          });
+          break;
+        case 'chat-receive':
           setMessages((prev) => [
             ...prev,
             {
@@ -157,14 +223,14 @@ export function Arena() {
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (!connected) return;
     if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
-    
+
     let nx = myPos.x, ny = myPos.y;
     let moved = false;
     if (e.key === 'ArrowUp' || e.key === 'w') { ny -= 1; moved = true; }
     else if (e.key === 'ArrowDown' || e.key === 's') { ny += 1; moved = true; }
     else if (e.key === 'ArrowLeft' || e.key === 'a') { nx -= 1; moved = true; }
     else if (e.key === 'ArrowRight' || e.key === 'd') { nx += 1; moved = true; }
-    
+
     if (moved) {
       e.preventDefault();
       setPanOffset({ x: 0, y: 0 }); // Recenter camera on player keyboard move
@@ -172,7 +238,7 @@ export function Arena() {
     } else {
       return;
     }
-    
+
     if (nx < 0 || ny < 0 || nx >= dimensions.w || ny >= dimensions.h) return;
 
     // Static collision check
@@ -202,13 +268,13 @@ export function Arena() {
   // ── Auto path stepping ─────────────────
   useEffect(() => {
     if (autoPath.length === 0) return;
-    
+
     const interval = setInterval(() => {
       setAutoPath(prevPath => {
         if (prevPath.length === 0) return [];
         const nextStep = prevPath[0];
         const newPath = prevPath.slice(1);
-        
+
         const isCollidingWithUser = otherUsers.some((u) => u.x === nextStep.x && u.y === nextStep.y);
         if (isCollidingWithUser) return [];
 
@@ -217,7 +283,7 @@ export function Arena() {
         return newPath;
       });
     }, 120);
-    
+
     return () => clearInterval(interval);
   }, [autoPath, otherUsers]);
 
@@ -227,27 +293,51 @@ export function Arena() {
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const msgObj = { username: myStoredUsername || 'You', message: chatInput, time };
     setMessages((prev) => [...prev, msgObj]);
-    wsRef.current?.send({ type: 'chat', message: chatInput });
+    wsRef.current?.sendChat(chatInput);
     setChatInput('');
   };
 
-  // ── Element Management API ─────────────
-  const handleAddElement = async () => {
-    if (!addingElement || !spaceId) return;
+  const handleAddElementAt = async (elementId: string, targetX: number, targetY: number) => {
+    if (!spaceId) return;
     setPanelLoading(true);
     setPanelMsg('');
     try {
       await api.post('/space/element', {
-        elementId: addingElement,
+        elementId,
         spaceId,
-        x: parseInt(addX),
-        y: parseInt(addY),
+        x: targetX,
+        y: targetY,
       });
-      setPanelMsg('Element added!');
+      setPanelMsg('Element placed on map!');
       setAddingElement(null);
       await fetchSpace();
     } catch (e: any) {
-      setPanelMsg(e.response?.data?.message || 'Failed to add element');
+      setPanelMsg(e.response?.data?.message || 'Failed to place element');
+    } finally { setPanelLoading(false); }
+  };
+
+  const handleAddElement = async () => {
+    if (!addingElement || !spaceId) return;
+    await handleAddElementAt(addingElement, parseInt(addX) || 0, parseInt(addY) || 0);
+  };
+
+  const handleStampPrefab = async (prefab: any, startX: number, startY: number) => {
+    if (!spaceId) return;
+    setPanelLoading(true);
+    setPanelMsg(`Importing ${prefab.name}...`);
+    try {
+      for (const item of prefab.items) {
+        await api.post('/space/element', {
+          elementId: item.elementId,
+          spaceId,
+          x: startX + item.offsetX,
+          y: startY + item.offsetY,
+        });
+      }
+      setPanelMsg(`${prefab.name} imported successfully!`);
+      await fetchSpace();
+    } catch (e: any) {
+      setPanelMsg(e.response?.data?.message || 'Failed to import prefab');
     } finally { setPanelLoading(false); }
   };
 
@@ -263,77 +353,208 @@ export function Arena() {
     } finally { setPanelLoading(false); }
   };
 
+  const closeBuild = () => {
+    setShowPanel(false);
+    setAddingElement(null);
+    setBuilderMode('pointer');
+  };
+
+  const toggleSidebar = (tab: 'users' | 'chat') => {
+    setShowUsers(!showUsers || activeTab !== tab);
+    setActiveTab(tab);
+    closeBuild();
+  };
+
+  const toggleBuild = () => {
+    if (showPanel) closeBuild();
+    else {
+      setShowPanel(true);
+      setShowUsers(false);
+      fetchAvailableElements();
+    }
+  };
+
+  // MapCanvas listens for window resize; panel layout changes also need a redraw.
+  useEffect(() => {
+    window.dispatchEvent(new Event('resize'));
+  }, [showUsers]);
+
+  // ── Camera and Mic Controls ───────────
+  useEffect(() => {
+    async function toggleMic() {
+      if (!msRef.current) return;
+      if (micOn) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const track = stream.getAudioTracks()[0];
+          await msRef.current.produce(track, 'You');
+          if (!localStreamRef.current) localStreamRef.current = new MediaStream();
+          localStreamRef.current.addTrack(track);
+          setStreams(prev => ({ ...prev, me: localStreamRef.current! }));
+        } catch (e) {
+          console.error('Mic access denied', e);
+          setMicOn(false);
+        }
+      } else {
+        await msRef.current.stopProduce('audio');
+        if (localStreamRef.current) {
+          localStreamRef.current.getAudioTracks().forEach(t => {
+            t.stop();
+            localStreamRef.current?.removeTrack(t);
+          });
+          setStreams(prev => ({ ...prev, me: localStreamRef.current! }));
+        }
+      }
+    }
+    toggleMic();
+  }, [micOn]);
+
+  useEffect(() => {
+    async function toggleCam() {
+      if (!msRef.current) return;
+      if (camOn) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          const track = stream.getVideoTracks()[0];
+          await msRef.current.produce(track, 'You');
+          if (!localStreamRef.current) localStreamRef.current = new MediaStream();
+          localStreamRef.current.addTrack(track);
+          setStreams(prev => ({ ...prev, me: localStreamRef.current! }));
+        } catch (e) {
+          console.error('Cam access denied', e);
+          setCamOn(false);
+        }
+      } else {
+        await msRef.current.stopProduce('video');
+        if (localStreamRef.current) {
+          localStreamRef.current.getVideoTracks().forEach(t => {
+            t.stop();
+            localStreamRef.current?.removeTrack(t);
+          });
+          setStreams(prev => ({ ...prev, me: localStreamRef.current! }));
+        }
+      }
+    }
+    toggleCam();
+  }, [camOn]);
+
   const handleLocateUser = () => {
     setPanOffset({ x: 0, y: 0 });
   };
 
   return (
-    <div className="arena">
-      {/* ── Top Header Pill ── */}
-      <ArenaHeader 
-        spaceId={spaceId}
-        wsStatus={wsStatus}
-        showUsers={showUsers}
-        setShowUsers={setShowUsers}
-        otherUsersCount={otherUsers.length}
-        copied={copied}
-        handleCopyInvite={handleCopyInvite}
-        showPanel={showPanel}
-        setShowPanel={setShowPanel}
-        fetchAvailableElements={fetchAvailableElements}
-        onNavigateBack={() => navigate('/dashboard')}
-      />
+    <div className={`arena ${showUsers ? 'with-sidebar' : ''}`}>
+        <nav className="space-rail" aria-label="Office navigation">
+          <button className="rail-brand" title={spaceName} aria-label="Office menu" onClick={() => setShowOfficeMenu(prev => !prev)}><CircleDot size={25} /></button>
+          <button className="rail-button" title="Search people" aria-label="Search people" onClick={() => { setActiveTab('users'); setShowUsers(true); requestAnimationFrame(() => document.querySelector<HTMLInputElement>('.people-search input')?.focus()); }}><Search size={23} /></button>
+          <span className="rail-divider" />
+          <button className={`rail-button ${showUsers && activeTab === 'users' ? 'selected' : ''}`} title="People and map" aria-label="People and map" aria-expanded={showUsers && activeTab === 'users'} onClick={() => toggleSidebar('users')}><MapIcon size={23} /></button>
+          <button className="rail-button" title="Edit the office" aria-label="Edit the office" onClick={() => navigate(`/studio/${spaceId}`)}><Hammer size={21} /></button>
+          <button className={`rail-button ${showUsers && activeTab === 'chat' ? 'selected' : ''}`} title="Chat" aria-label="Chat" aria-expanded={showUsers && activeTab === 'chat'} onClick={() => toggleSidebar('chat')}><MessageSquare size={21} /></button>
+          <button className="rail-button" title="More" aria-label="More" onClick={() => setShowOfficeMenu(prev => !prev)}><MoreVertical size={21} /></button>
+          <div className="rail-bottom">
+            <button className="rail-button rail-leave" title="Leave space" aria-label="Leave space" onClick={() => navigate('/dashboard')}><LogOut size={21} /></button>
+            <button className="rail-button" title="Settings" aria-label="Settings" onClick={() => setIsSettingsOpen(true)}><Settings size={23} /></button>
+          </div>
+        </nav>
 
-      <div className="arena-body">
+
+        {showOfficeMenu && (
+          <div className="office-menu-popover">
+            <strong>{spaceName}</strong>
+            <button onClick={handleCopyInvite}>Invite to office</button>
+            <button onClick={() => { setIsSettingsOpen(true); setShowOfficeMenu(false); }}>Settings</button>
+            <button onClick={() => { toggleBuild(); setShowOfficeMenu(false); }}>Decorate desk</button>
+            <button onClick={() => navigate(`/desk-manager/${spaceId}`)}>Desk manager</button>
+            <button onClick={() => navigate(`/studio/${spaceId}`)}>Edit the office</button>
+            <button onClick={() => navigate('/dashboard')}>Go to lobby</button>
+            <button className="danger" onClick={() => navigate('/dashboard')}>Leave office</button>
+          </div>
+        )}
+
         {/* ── Left Sidebar Drawer + Dock ── */}
-        <Sidebar 
+        <Sidebar
+          spaceName={spaceName}
           showUsers={showUsers}
           onToggleSidebar={() => setShowUsers(prev => !prev)}
-          activeTab={activeTab} 
+          activeTab={activeTab}
           setActiveTab={setActiveTab}
           otherUsers={otherUsers}
           myStoredUsername={myStoredUsername}
           myAvatarUrl={myAvatarUrl || undefined}
-          myPos={myPos}
+          connected={connected}
           handleNavigateToUser={(x, y) => { setMyPos({ x, y }); setPanOffset({ x: 0, y: 0 }); }}
           handleCopyInvite={handleCopyInvite}
           copied={copied}
           messages={messages}
-          chatInput={chatInput} 
+          chatInput={chatInput}
           setChatInput={setChatInput}
           handleSendChat={handleSendChat}
-          onOpenSettings={() => setIsSettingsOpen(true)}
         />
 
         {/* ── Main Viewport Canvas Area ── */}
-        <main className="arena-main" style={{ position: 'relative' }}>
-          <VideoOverlay 
-            proximityUsers={[]}
+        <main className="arena-main" aria-label="Space map">
+          <section className="arena-top-left" aria-label="Space header">
+            <button className="space-title-pill" onClick={() => setShowOfficeMenu(prev => !prev)} title="Open space menu">
+              <span className="space-title-logo"><Sparkles size={16} /></span>
+              <span><b>{spaceName}</b><small>{connected ? 'Live office' : 'Connecting...'}</small></span>
+            </button>
+            <button className="arena-mini-action" onClick={handleCopyInvite} title="Invite people"><Share2 size={16} />{copied ? 'Copied' : 'Invite'}</button>
+            <button className="arena-mini-action" onClick={() => navigate(`/studio/${spaceId}`)} title="Open Studio"><Hammer size={16} />Edit map</button>
+          </section>
+
+          <section className="arena-top-right" aria-label="Presence and events">
+            <button className="arena-status-chip" onClick={() => toggleSidebar('users')}><Users size={16} />{otherUsers.length + 1} online</button>
+            <button className="arena-status-chip"><CalendarDays size={16} />No meetings</button>
+            <button className={`arena-status-chip ${connected ? 'online' : ''}`}><Wifi size={16} />{connected ? 'Connected' : 'Reconnecting'}</button>
+          </section>
+
+          <aside className="arena-right-stack" aria-label="Map widgets">
+            <div className="arena-minimap">
+              <header><Compass size={15} />Mini map</header>
+              <div className="minimap-surface">
+                <span className="minimap-room r1" />
+                <span className="minimap-room r2" />
+                <span className="minimap-room r3" />
+                <span className="minimap-you" style={{ left: `${Math.min(94, Math.max(5, (myPos.x / Math.max(1, dimensions.w)) * 100))}%`, top: `${Math.min(92, Math.max(8, (myPos.y / Math.max(1, dimensions.h)) * 100))}%` }} />
+              </div>
+              <button onClick={handleLocateUser}>Center me</button>
+            </div>
+            <div className="arena-help-card">
+              <b>Move</b>
+              <span>WASD / arrow keys or click any walkable tile.</span>
+            </div>
+          </aside>
+
+          <VideoOverlay
+            proximityUsers={proximityUsers}
             otherUsers={otherUsers}
-            streams={{}}
+            streams={streams}
             screenStreams={{}}
             myStoredUsername={myStoredUsername}
             myAvatarUrl={myAvatarUrl || undefined}
-            micOn={false}
-            camOn={false}
+            micOn={micOn}
+            camOn={camOn}
             currentZone={
-              (myPos.x >= 15 && myPos.x <= 23 && myPos.y >= 6 && myPos.y <= 16)
-                ? { id: 'zone1', name: 'Meeting Room A' }
-                : (myPos.x >= 24 && myPos.x <= 32 && myPos.y >= 6 && myPos.y <= 16)
-                ? { id: 'zone2', name: 'Meeting Room B' }
+              privateZones.find(z => myPos.x >= z.startX && myPos.x <= z.endX && myPos.y >= z.startY && myPos.y <= z.endY)
+                ? {
+                    id: privateZones.find(z => myPos.x >= z.startX && myPos.x <= z.endX && myPos.y >= z.startY && myPos.y <= z.endY)!.id || 'zone1',
+                    name: privateZones.find(z => myPos.x >= z.startX && myPos.x <= z.endX && myPos.y >= z.startY && myPos.y <= z.endY)!.name || 'Private Room'
+                  }
                 : null
             }
             onLeaveZone={() => setMyPos(prev => ({ ...prev, y: 17 }))}
           />
 
-          <MapCanvas 
+          <MapCanvas
             canvasRef={canvasRef}
             wrapperRef={wrapperRef}
             dimensions={dimensions}
             myPos={myPos}
             otherUsers={otherUsers}
             elements={elements}
-            mapThumbnail={mapThumbnail}
+            hiddenElementIds={hiddenElementIds}
+            privateZones={privateZones}
             zoom={zoom}
             setZoom={setZoom}
             myAvatarUrl={myAvatarUrl}
@@ -342,21 +563,40 @@ export function Arena() {
             handleLocateUser={handleLocateUser}
             panOffset={panOffset}
             setPanOffset={setPanOffset}
+            onDropElement={handleAddElementAt}
+            addingElement={addingElement}
+            builderMode={builderMode}
+            onRemoveElement={handleRemoveElement}
           />
 
-          <ActionToolbar 
+          <ActionToolbar
             myStoredUsername={myStoredUsername}
             onLeaveSpace={() => navigate('/dashboard')}
+            micOn={micOn}
+            setMicOn={setMicOn}
+            camOn={camOn}
+            setCamOn={setCamOn}
+            showPanel={showPanel}
+            onToggleBuild={toggleBuild}
+            onOpenSettings={() => setIsSettingsOpen(true)}
+            onChooseEmoji={emoji => {
+              setChatInput(prev => prev + emoji);
+              setActiveTab('chat');
+              setShowUsers(true);
+              closeBuild();
+            }}
           />
         </main>
 
         {/* ── Elements Side Builder Panel ── */}
-        <ElementsPanel 
+        <ElementsPanel
           showPanel={showPanel}
-          setShowPanel={setShowPanel}
+          setShowPanel={open => { if (!open) closeBuild(); else setShowPanel(true); }}
           panelMsg={panelMsg}
           addingElement={addingElement}
           setAddingElement={setAddingElement}
+          builderMode={builderMode}
+          setBuilderMode={setBuilderMode}
           availableElements={availableElements}
           elements={elements}
           addX={addX}
@@ -367,20 +607,23 @@ export function Arena() {
           handleAddElement={handleAddElement}
           handleRemoveElement={handleRemoveElement}
           dimensions={dimensions}
+          hiddenElementIds={hiddenElementIds}
+          toggleHideElement={toggleHideElement}
+          handleUpdateDimensions={handleUpdateDimensions}
+          handleStampPrefab={handleStampPrefab}
         />
 
         {/* ── Tabbed Gather Settings Modal ── */}
-        <SettingsModal 
+        <SettingsModal
           isOpen={isSettingsOpen}
           onClose={() => setIsSettingsOpen(false)}
           myStoredUsername={myStoredUsername}
           myAvatarUrl={myAvatarUrl || undefined}
-          micOn={false} 
-          setMicOn={() => {}}
-          camOn={false} 
-          setCamOn={() => {}}
+          micOn={micOn}
+          setMicOn={setMicOn}
+          camOn={camOn}
+          setCamOn={setCamOn}
         />
-      </div>
     </div>
   );
 }

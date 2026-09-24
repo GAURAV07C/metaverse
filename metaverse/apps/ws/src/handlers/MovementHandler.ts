@@ -2,7 +2,7 @@ import { RoomManager } from "../RoomManager";
 import { User } from "../User";
 
 export class MovementHandler {
-  static handleMove(user: User, parsedData: any) {
+  static async handleMove(user: User, parsedData: any) {
     const moveX = parsedData?.payload?.x;
     const moveY = parsedData?.payload?.y;
 
@@ -12,6 +12,14 @@ export class MovementHandler {
       !Number.isFinite(moveX) ||
       !Number.isFinite(moveY)
     ) {
+      user.send({
+        type: "movement-rejected",
+        payload: { x: user.x, y: user.y },
+      });
+      return;
+    }
+
+    if (!Number.isInteger(moveX) || !Number.isInteger(moveY)) {
       user.send({
         type: "movement-rejected",
         payload: { x: user.x, y: user.y },
@@ -34,7 +42,8 @@ export class MovementHandler {
       (xDisplacement === 1 && yDisplacement === 0) ||
       (xDisplacement === 0 && yDisplacement === 1);
 
-    if (isOneBlockMove) {
+    const canOccupy = await RoomManager.getInstance().canOccupy(user.spaceId, moveX, moveY);
+    if (isOneBlockMove && canOccupy) {
       user.x = moveX;
       user.y = moveY;
       RoomManager.getInstance().broadcast(

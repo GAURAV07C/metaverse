@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="32" viewBox="0 0 64 32" shape-rendering="crispEdges">
+  <!-- Shadow -->
+  <rect x="2" y="4" width="60" height="26" fill="#000000" opacity="0.3" rx="4"/>
+  
+  <!-- Backrest -->
+  <rect x="4" y="2" width="56" height="12" fill="#3B82F6" />
+  <rect x="4" y="2" width="56" height="4" fill="#60A5FA" /> <!-- Highlight -->
+  
+  <!-- Seat Cushions -->
+  <rect x="8" y="14" width="23" height="14" fill="#2563EB" />
+  <rect x="33" y="14" width="23" height="14" fill="#2563EB" />
+  
+  <!-- Armrests -->
+  <rect x="2" y="8" width="6" height="20" fill="#3B82F6" />
+  <rect x="2" y="8" width="6" height="4" fill="#60A5FA" />
+  
+  <rect x="56" y="8" width="6" height="20" fill="#3B82F6" />
+  <rect x="56" y="8" width="6" height="4" fill="#60A5FA" />
+</svg>

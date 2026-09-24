@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" shape-rendering="crispEdges">
+  <!-- Shadow -->
+  <rect x="2" y="4" width="28" height="26" fill="#000000" opacity="0.3" />
+  
+  <!-- Table Top -->
+  <rect x="2" y="2" width="28" height="26" fill="#FDE68A" />
+  <!-- Table edge -->
+  <rect x="2" y="24" width="28" height="4" fill="#D97706" />
+</svg>

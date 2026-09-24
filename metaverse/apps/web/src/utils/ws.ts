@@ -5,7 +5,16 @@ export type WsIncomingMessage =
   | { type: 'user-joined'; payload: { userId: string; username?: string; avatarUrl?: string; x: number; y: number } }
   | { type: 'user-left'; payload: { userId: string } }
   | { type: 'movement'; payload: { userId: string; x: number; y: number } }
-  | { type: 'movement-rejected'; payload: { x: number; y: number } };
+  | { type: 'movement-rejected'; payload: { x: number; y: number } }
+  | { type: 'chat-receive'; payload: { userId?: string; username?: string; message: string; timestamp: string } }
+  | { type: 'proximity-entered'; payload: { userId: string } }
+  | { type: 'proximity-left'; payload: { userId: string } }
+  | { type: 'webrtc-router-rtp-capabilities'; payload: { rtpCapabilities: any } }
+  | { type: 'webrtc-transport-created'; payload: { id: string; iceParameters: any; iceCandidates: any; dtlsParameters: any } }
+  | { type: 'webrtc-transport-connected' }
+  | { type: 'webrtc-produced'; payload: { id: string } }
+  | { type: 'new-producer'; payload: { producerId: string; userId: string; appData: any } }
+  | { type: 'webrtc-consumed'; payload: { id: string; producerId: string; kind: string; rtpParameters: any } };
 
 export class WsClient {
   private ws: WebSocket | null = null;
@@ -44,6 +53,10 @@ export class WsClient {
 
   move(x: number, y: number) {
     this.send({ type: 'move', payload: { x, y } });
+  }
+
+  sendChat(message: string) {
+    this.send({ type: 'chat-message', payload: { message } });
   }
 
   onMessage(cb: (msg: WsIncomingMessage) => void) {

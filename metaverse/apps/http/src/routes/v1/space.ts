@@ -4,6 +4,18 @@ import client from "@repo/db/client";
 import { userMiddleware } from "../../middleware/user.js";
 export const spaceRouter = Router();
 
+function parseDimensions(dimensions: string) {
+  const [rawWidth, rawHeight] = dimensions.split("x");
+  const width = Number(rawWidth);
+  const height = Number(rawHeight);
+
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 8 || height < 8 || width > 500 || height > 500) {
+    return null;
+  }
+
+  return { width, height };
+}
+
 spaceRouter.post("/", userMiddleware, async (req, res) => {
   const parsedData = CreateSpaceSchema.safeParse(req.body);
   if (!parsedData.success) {
@@ -14,11 +26,17 @@ spaceRouter.post("/", userMiddleware, async (req, res) => {
   }
 
   if (!parsedData.data?.mapId) {
+    const size = parseDimensions(parsedData.data.dimensions);
+    if (!size) {
+      res.status(400).json({ message: "Invalid dimensions" });
+      return;
+    }
+
     const space = await client.space.create({
       data: {
         name: parsedData.data.name,
-        width: parseInt(parsedData.data.dimensions.split("x")[0]!),
-        height: parseInt(parsedData.data.dimensions.split("x")[1]!),
+        width: size.width,
+        height: size.height,
         creatorId: req.userId!,
       },
     });
@@ -43,8 +61,8 @@ spaceRouter.post("/", userMiddleware, async (req, res) => {
       return;
     }
 
-    let space = await client.$transaction(async () => {
-      const space = await client.space.create({
+    const space = await client.$transaction(async (tx) => {
+      const space = await tx.space.create({
         data: {
           name: parsedData.data.name,
           width: map.width,
@@ -53,7 +71,7 @@ spaceRouter.post("/", userMiddleware, async (req, res) => {
           creatorId: req.userId!,
         },
       });
-      await client.spaceElements.createMany({
+      await tx.spaceElements.createMany({
         data: map.mapElements.map((e) => ({
           spaceId: space.id,
           elementId: e.elementId,
@@ -108,7 +126,7 @@ spaceRouter.put("/:spaceId", userMiddleware, async (req, res) => {
 
   const space = await client.space.findUnique({
     where: { id: req.params.spaceId as string },
-    select: { creatorId: true },
+    select: { creatorId: true, width: true, height: true },
   });
 
   if (!space) {
@@ -121,6 +139,35 @@ spaceRouter.put("/:spaceId", userMiddleware, async (req, res) => {
 
   const updateData: any = {};
   if (parseData.data.name) updateData.name = parseData.data.name;
+  if (parseData.data.dimensions) {
+    const size = parseDimensions(parseData.data.dimensions);
+    if (!size) {
+      return res.status(400).json({ message: "Invalid dimensions" });
+    }
+
+    const placements = await client.spaceElements.findMany({
+      where: { spaceId: req.params.spaceId as string },
+      select: {
+        x: true,
+        y: true,
+        element: {
+          select: { width: true, height: true },
+        },
+      },
+    });
+
+    const elementOutOfBounds = placements.some((placement) =>
+      placement.x + placement.element.width > size.width ||
+      placement.y + placement.element.height > size.height
+    );
+
+    if (elementOutOfBounds) {
+      return res.status(400).json({ message: "Existing elements exceed the requested dimensions" });
+    }
+
+    updateData.width = size.width;
+    updateData.height = size.height;
+  }
 
   if (Object.keys(updateData).length === 0) {
     return res.json({ message: "No updates provided" });
@@ -157,17 +204,20 @@ spaceRouter.delete("/:spaceId", userMiddleware, async (req, res) => {
     return res.status(403).json({ message: "Unauthorized" });
   }
 
-  // Delete all space elements first due to foreign key constraint
-  await client.spaceElements.deleteMany({
-    where: {
-      spaceId: req.params.spaceId as string,
-    },
-  });
-
-  await client.space.delete({
-    where: {
-      id: req.params.spaceId as string,
-    },
+  await client.$transaction(async (tx) => {
+    await tx.spaceElements.deleteMany({ where: { spaceId: req.params.spaceId as string } });
+    await tx.privateZone.deleteMany({ where: { spaceId: req.params.spaceId as string } });
+    await tx.meeting.deleteMany({ where: { spaceId: req.params.spaceId as string } });
+    await tx.deskAssignment.deleteMany({ where: { spaceId: req.params.spaceId as string } });
+    await tx.inviteLink.deleteMany({ where: { spaceId: req.params.spaceId as string } });
+    await tx.smartObject.deleteMany({ where: { spaceId: req.params.spaceId as string } });
+    await tx.spaceDraft.deleteMany({ where: { spaceId: req.params.spaceId as string } });
+    await tx.spaceSettings.deleteMany({ where: { spaceId: req.params.spaceId as string } });
+    await tx.space.delete({
+      where: {
+        id: req.params.spaceId as string,
+      },
+    });
   });
 
   return res.json({ message: "space deleted" });
@@ -202,28 +252,38 @@ spaceRouter.post("/element", userMiddleware, async (req, res) => {
   const space = await client.space.findUnique({
     where: {
         id: parsedData.data.spaceId,
-        creatorId: req.userId
     }, select : {
         width: true,
-        height: true
+        height: true,
+        creatorId: true,
     }
   })
-
-    if (
-      req.body.x < 0 ||
-      req.body.y < 0 ||
-      req.body.x > space?.width! ||
-      req.body.y > space?.height!
-    ) {
-      res.status(400).json({ message: "Point is outside of the boundary" });
-      return;
-    }
 
   if(!space) {
     return res.status(400).json({ message: "Space not found" });
   }
 
-  
+  if (space.creatorId !== req.userId) {
+    return res.status(403).json({ message: "Unauthorized" });
+  }
+
+  const element = await client.element.findUnique({
+    where: { id: parsedData.data.elementId },
+    select: { width: true, height: true },
+  });
+
+  if (!element) {
+    return res.status(400).json({ message: "Element not found" });
+  }
+
+  const spaceHeight = space.height ?? 0;
+  if (
+    parsedData.data.x + element.width > space.width ||
+    parsedData.data.y + element.height > spaceHeight
+  ) {
+    res.status(400).json({ message: "Point is outside of the boundary" });
+    return;
+  }
 
   await client.spaceElements.create({
     data:{
@@ -264,8 +324,11 @@ spaceRouter.get("/:spaceId", userMiddleware, async (req, res) => {
     }
 
     res.json({
+        id: space.id,
+        name: space.name,
         thumbnail: space.thumbnail,
         dimensions: `${space.width}x${space.height}`,
+        ownerId: space.creatorId,
         elements: space.elements.map((e) => ({
             id: e.id,
             element: {
@@ -274,6 +337,8 @@ spaceRouter.get("/:spaceId", userMiddleware, async (req, res) => {
                 width: e.element.width,
                 height: e.element.height,
                 static: e.element.static,
+                name: e.element.name,
+                category: e.element.category,
                 interactiveObjects: e.element.interactiveObjects,
             },
             x: e.x,

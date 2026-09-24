@@ -25,6 +25,7 @@
     "packages/*"
   ],
   "dependencies": {
+    "image-size": "^2.0.4",
     "yarn": "^1.22.22"
   }
 }

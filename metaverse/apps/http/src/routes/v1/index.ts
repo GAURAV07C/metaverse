@@ -6,6 +6,7 @@ import { SigninSchema, SignupSchema } from "../../types/index.js";
 import bcrypt from "bcrypt";
 import { client } from "@repo/db/client";
 import { organizationRouter } from "./organization.js";
+import { officeRouter } from "./office.js";
 import jwt from "jsonwebtoken";
 import { JWT_PASSWORD } from "../../config.js";
 
@@ -90,7 +91,9 @@ router.post("/signin", async (req, res) => {
 
     return res.json({
       token,
+      userId: user.id,
       username: user.username,
+      type: user.role === "Admin" ? "admin" : "user",
     });
   } catch (e) {
     res.status(500).json({ message: "Internal server error" });
@@ -106,7 +109,7 @@ router.get("/elements", async (req, res) => {
       imageUrl: e.imageUrl,
       width: e.width,
       height: e.height,
-      static: e.static,
+      static: e.static, name: e.name, category: e.category,
     })),
   });
 });
@@ -157,3 +160,4 @@ router.use("/user", userRouter);
 router.use("/admin", adminRouter);
 router.use("/space", spaceRouter);
 router.use("/organization", organizationRouter);
+router.use("/office", officeRouter);

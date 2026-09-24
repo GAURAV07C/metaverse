@@ -35,3 +35,19 @@ yarn-error.log*
 # Misc
 .DS_Store
 *.pem
+
+# Local Codex/browser test artifacts
+.tmp/
+
+# TypeScript incremental build metadata
+*.tsbuildinfo
+
+# Workspace package build outputs
+apps/*/dist/
+packages/*/dist/
+
+# One-off local maintenance/debug scripts
+scratch.js
+add_rooms.ts
+clean_db.ts
+clear_spaces.ts

@@ -4,6 +4,10 @@ import { Login } from './components/Login';
 import { Dashboard } from './components/Dashboard';
 import { Arena } from './components/Arena';
 import { AdminDashboard } from './components/AdminDashboard';
+import { CreateOfficeWizard } from './components/CreateOfficeWizard';
+import { Studio } from './components/Studio';
+import { DeskManager } from './components/DeskManager';
+import { JoinSpace } from './components/JoinSpace';
 import './index.css';
 
 function App() {
@@ -25,6 +29,10 @@ function App() {
           path="/dashboard"
           element={token ? <Dashboard /> : <Navigate to="/login" />}
         />
+        <Route path="/create" element={token ? <CreateOfficeWizard /> : <Navigate to="/login" />} />
+        <Route path="/space/:spaceId/join" element={token ? <JoinSpace /> : <Navigate to="/login" />} />
+        <Route path="/studio/:spaceId" element={token ? <Studio /> : <Navigate to="/login" />} />
+        <Route path="/desk-manager/:spaceId" element={token ? <DeskManager /> : <Navigate to="/login" />} />
         <Route
           path="/admin"
           element={token && type === 'admin' ? <AdminDashboard /> : <Navigate to={token ? '/dashboard' : '/login'} />}

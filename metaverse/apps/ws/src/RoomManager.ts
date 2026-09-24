@@ -5,6 +5,7 @@ import { OutgoingMessage } from "./types";
 export class RoomManager {
   rooms: Map<string, User[]> = new Map();
   zones: Map<string, any[]> = new Map();
+  spaceBounds: Map<string, { width: number; height: number; blocked: Set<string> }> = new Map();
   static instance: RoomManager;
 
   private constructor() {
@@ -26,9 +27,16 @@ export class RoomManager {
       spaceId,
       this.rooms.get(spaceId)?.filter((u) => u.id !== user.id) ?? [],
     );
+    if ((this.rooms.get(spaceId)?.length ?? 0) === 0) {
+      this.rooms.delete(spaceId);
+      this.zones.delete(spaceId);
+      this.spaceBounds.delete(spaceId);
+    }
   }
 
   public addUser(spaceId: string, user: User) {
+    const current = this.rooms.get(spaceId) ?? [];
+    if (current.some((u) => u.id === user.id)) return;
     if (!this.rooms.has(spaceId)) {
       this.rooms.set(spaceId, [user]);
       return;
@@ -51,6 +59,48 @@ export class RoomManager {
     if (this.zones.has(spaceId)) return;
     const zones = await client.privateZone.findMany({ where: { spaceId } });
     this.zones.set(spaceId, zones);
+  }
+
+  public async loadSpaceBounds(spaceId: string) {
+    if (this.spaceBounds.has(spaceId)) return this.spaceBounds.get(spaceId);
+
+    const space = await client.space.findUnique({
+      where: { id: spaceId },
+      select: {
+        width: true,
+        height: true,
+        elements: {
+          include: {
+            element: {
+              select: { width: true, height: true, static: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!space || !space.height) return undefined;
+
+    const blocked = new Set<string>();
+    for (const placement of space.elements) {
+      if (!placement.element.static) continue;
+      for (let x = placement.x; x < placement.x + placement.element.width; x++) {
+        for (let y = placement.y; y < placement.y + placement.element.height; y++) {
+          blocked.add(`${x}:${y}`);
+        }
+      }
+    }
+
+    const bounds = { width: space.width, height: space.height, blocked };
+    this.spaceBounds.set(spaceId, bounds);
+    return bounds;
+  }
+
+  public async canOccupy(spaceId: string, x: number, y: number) {
+    const bounds = await this.loadSpaceBounds(spaceId);
+    if (!bounds) return false;
+    if (x < 0 || y < 0 || x >= bounds.width || y >= bounds.height) return false;
+    return !bounds.blocked.has(`${x}:${y}`);
   }
 
   public checkProximity(user: User, spaceId: string) {

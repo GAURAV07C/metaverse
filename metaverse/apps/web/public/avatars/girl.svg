@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" shape-rendering="crispEdges">
+  <!-- Shadow -->
+  <ellipse cx="16" cy="28" rx="8" ry="3" fill="#000000" opacity="0.3" />
+  
+  <!-- Body (Purple dress) -->
+  <rect x="11" y="24" width="2" height="4" fill="#FDE047" /> <!-- Left Leg -->
+  <rect x="19" y="24" width="2" height="4" fill="#FDE047" /> <!-- Right Leg -->
+  <path d="M 10 24 L 22 24 L 20 14 L 12 14 Z" fill="#9333EA" /> <!-- Dress -->
+  
+  <!-- Arms -->
+  <rect x="8" y="14" width="2" height="7" fill="#C084FC" /> <!-- Left Arm -->
+  <rect x="22" y="14" width="2" height="7" fill="#C084FC" /> <!-- Right Arm -->
+  
+  <!-- Hands -->
+  <rect x="8" y="21" width="2" height="2" fill="#FDE047" /> <!-- Left Hand -->
+  <rect x="22" y="21" width="2" height="2" fill="#FDE047" /> <!-- Right Hand -->
+  
+  <!-- Head -->
+  <rect x="12" y="6" width="8" height="8" fill="#FDE047" /> <!-- Face -->
+  
+  <!-- Hair (Long hair) -->
+  <rect x="11" y="4" width="10" height="3" fill="#B45309" /> <!-- Top Hair -->
+  <rect x="10" y="7" width="2" height="10" fill="#B45309" /> <!-- Left Hair Fall -->
+  <rect x="20" y="7" width="2" height="10" fill="#B45309" /> <!-- Right Hair Fall -->
+  
+  <!-- Eyes -->
+  <rect x="13" y="9" width="2" height="2" fill="#000000" />
+  <rect x="17" y="9" width="2" height="2" fill="#000000" />
+</svg>

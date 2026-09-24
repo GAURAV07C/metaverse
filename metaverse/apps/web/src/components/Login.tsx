@@ -68,56 +68,63 @@ export function Login({ mode = 'user' }: LoginProps) {
   };
 
   return (
-    <div className="auth-page">
-      <div className="auth-bg">
-        <div className="orb orb-1" />
-        <div className="orb orb-2" />
-        <div className="orb orb-3" />
+    <div className="login-split-page">
+      <div className="login-hero-side">
+        <div className="hero-overlay" />
+        <img src="/login-hero.jpg" alt="Virtual Office" className="hero-image" />
+        <div className="hero-content">
+          <div className="hero-logo-badge">Clone</div>
+          <h1>The virtual office<br/>that feels real.</h1>
+          <p>Collaborate, create, and connect in a pixel-perfect world.</p>
+        </div>
       </div>
-
-      <div className="glass auth-card animate-fade-in">
-        <div className="auth-logo">{isAdmin ? '🛡️' : '🌐'}</div>
-        <h1 className="auth-title">{isLogin ? 'Welcome Back' : 'Join Metaverse'}</h1>
-        <p className="auth-subtitle">{isLogin ? 'Enter your world' : 'Create your presence'}</p>
-
-        {error && <div className="error-banner">{error}</div>}
-
-        <form onSubmit={handleSubmit} className="auth-form">
-          <div className="field">
-            <label className="field-label">Username</label>
-            <input
-              type="text"
-              className="input"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder={isAdmin ? 'Admin username' : 'e.g. Gaurav'}
-              autoComplete="username"
-            />
+      <div className="login-form-side">
+        <div className="login-form-container animate-fade-in">
+          <div className="login-header">
+            <div className="auth-logo">{isAdmin ? '🛡️' : '🌐'}</div>
+            <h2 className="auth-title">{isLogin ? 'Welcome Back' : 'Join the Metaverse'}</h2>
+            <p className="auth-subtitle">{isLogin ? 'Log in to your workspace' : 'Create your account to get started'}</p>
           </div>
-          <div className="field">
-            <label className="field-label">Password</label>
-            <input
-              type="password"
-              className="input"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              autoComplete="current-password"
-            />
-          </div>
-          <button type="submit" className="btn btn-full" disabled={loading}>
-            {loading ? <span className="spinner" /> : isLogin ? 'Sign In →' : 'Sign Up →'}
-          </button>
-        </form>
 
-        {!isAdmin && (
-          <p className="auth-switch">
-            {isLogin ? "Don't have an account? " : 'Already have an account? '}
-            <button type="button" className="link-btn" onClick={() => { setIsLogin(!isLogin); setError(''); }}>
-              {isLogin ? 'Sign up' : 'Sign in'}
+          {error && <div className="error-banner">{error}</div>}
+
+          <form onSubmit={handleSubmit} className="auth-form">
+            <div className="field">
+              <label className="field-label">Username</label>
+              <input
+                type="text"
+                className="input"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder={isAdmin ? 'Admin username' : 'e.g. Gaurav'}
+                autoComplete="username"
+              />
+            </div>
+            <div className="field">
+              <label className="field-label">Password</label>
+              <input
+                type="password"
+                className="input"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="current-password"
+              />
+            </div>
+            <button type="submit" className="btn btn-full login-btn" disabled={loading}>
+              {loading ? <span className="spinner" /> : isLogin ? 'Sign In →' : 'Sign Up →'}
             </button>
-          </p>
-        )}
+          </form>
+
+          {!isAdmin && (
+            <p className="auth-switch">
+              {isLogin ? "Don't have an account? " : 'Already have an account? '}
+              <button type="button" className="link-btn" onClick={() => { setIsLogin(!isLogin); setError(''); }}>
+                {isLogin ? 'Sign up' : 'Sign in'}
+              </button>
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

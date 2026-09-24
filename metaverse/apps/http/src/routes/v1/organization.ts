@@ -25,7 +25,7 @@ organizationRouter.post("/:orgId/team", userMiddleware, async (req, res) => {
         const team = await client.team.create({
             data: {
                 name,
-                orgId: req.params.orgId
+                orgId: req.params.orgId as string
             }
         });
         res.json({ teamId: team.id });

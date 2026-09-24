@@ -1,0 +1,50 @@
+[
+  {
+    "url": "https://app.v2.gather.town/images/fakeAreasPreviews/fake_public_room.png",
+    "file": "/gather-v2/fake_public_room.png",
+    "bytes": 1261,
+    "sha256": "f782de384582a1d115917c4ce14ec682aaf1a881ff6757be7f7f7f946a8d2cac"
+  },
+  {
+    "url": "https://app.v2.gather.town/images/fakeAreasPreviews/fake_meeting_room.png",
+    "file": "/gather-v2/fake_meeting_room.png",
+    "bytes": 4559,
+    "sha256": "58766495fd0680e25e6d0afc25797e0bb511db879e64c2845dc8b96b03c4c1b9"
+  },
+  {
+    "url": "https://app.v2.gather.town/images/fakeAreasPreviews/fake_private_desk.png",
+    "file": "/gather-v2/fake_private_desk.png",
+    "bytes": 2600,
+    "sha256": "68628b6277a68333946fefed153db0db3cd6c8ac87284293244f3442cd3fd77e"
+  },
+  {
+    "url": "https://app.v2.gather.town/images/fakeAreasPreviews/fake_team_area.png",
+    "file": "/gather-v2/fake_team_area.png",
+    "bytes": 2913,
+    "sha256": "a6d8400f4590e0933a21e72076052154c638bc4c306514f4bb49966ba7686966"
+  },
+  {
+    "url": "https://app.v2.gather.town/images/fakeAreasPreviews/fake_common_area.png",
+    "file": "/gather-v2/fake_common_area.png",
+    "bytes": 2289,
+    "sha256": "13d6cbc0998231a440eed5500d1bed66aad5ce085d86856ce4023617d1b41cab"
+  },
+  {
+    "url": "https://app.v2.gather.town/images/fakeAreasPreviews/fake_open_desk.png",
+    "file": "/gather-v2/fake_open_desk.png",
+    "bytes": 1055,
+    "sha256": "9b4853d9d0feebd6157cd6b26061de283ecbc7c76b7fa8290f2a31d80b881dc3"
+  },
+  {
+    "url": "https://app.v2.gather.town/images/game/fx/smoke-appear.png",
+    "file": "/gather-v2/smoke-appear.png",
+    "bytes": 1366,
+    "sha256": "be88c75051a424a81c0a8daa21a2b5fd3651936156176b3c110ceb853c824121"
+  },
+  {
+    "url": "https://app.v2.gather.town/images/pre-packed-texture/pre-packed-texture-v20.png",
+    "file": "/gather-v2/pre-packed-texture-v20.png",
+    "bytes": 39343,
+    "sha256": "95cbc4a5487458530fbe151d8693e17786f566693b6be8e60c0aec404ba88851"
+  }
+]

@@ -12,7 +12,14 @@ const allowedOrigins = process.env.CORS_ORIGIN
 const isProduction = process.env.NODE_ENV === 'production';
 
 app.use(cors({
-  origin: allowedOrigins,
+  origin(origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    if (!isProduction && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error(`Origin not allowed by CORS: ${origin}`));
+  },
   credentials: true,
 }));
 
@@ -27,7 +34,20 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
   next();
 });
 
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok", service: "metaverse-http", uptime: process.uptime() });
+});
+
 app.use("/api/v1", router);
+
+app.use((_req, res) => {
+  res.status(404).json({ message: "Route not found" });
+});
+
+app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error(err);
+  res.status(500).json({ message: isProduction ? "Internal server error" : err.message });
+});
 
 app.listen(process.env.PORT || 3000, () => {
   console.log(`HTTP server running on port ${process.env.PORT || 3000}`);
