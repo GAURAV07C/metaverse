@@ -1,12 +1,12 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { ZoomIn, ZoomOut } from 'lucide-react';
-import type { Prefab } from './prefabs';
-import { prefabs } from './prefabs';
+import type { Prefab } from './types';
 import type { SpaceElement } from '../arena/ElementsPanel';
 import { StudioElement } from './StudioElement';
 
 interface Props {
   tool: string;
+  availableElements: Prefab[];
   elements: SpaceElement[];
   setElements: React.Dispatch<React.SetStateAction<SpaceElement[]>>;
   mapImage: string;
@@ -19,7 +19,7 @@ interface Props {
 
 const TILE = 32;
 
-export function StudioCanvas({ tool, elements, setElements, mapImage, dimensions, selectedElId, setSelectedElId, setStatus, onExit }: Props) {
+export function StudioCanvas({ tool, availableElements, elements, setElements, mapImage, dimensions, selectedElId, setSelectedElId, setStatus, onExit }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Pan
@@ -120,7 +120,7 @@ export function StudioCanvas({ tool, elements, setElements, mapImage, dimensions
           id: 'draft',
           width: parseInt(card.size.split(' x ')[0]) || 2,
           height: parseInt(card.size.split(' x ')[1]) || 2,
-          imageUrl: card.thumb || '/elements/chair.svg',
+          imageUrl: card.thumb || '',
           static: true,
           name: card.title,
           category: card.area,
@@ -131,7 +131,7 @@ export function StudioCanvas({ tool, elements, setElements, mapImage, dimensions
       // Child elements
       if (card.items) {
         card.items.forEach((item, idx) => {
-          const childPrefab = prefabs.find(p => p.kind === item.kind);
+          const childPrefab = availableElements.find(p => p.kind === item.kind);
           if (childPrefab) {
             newEls.push({
               id: `${baseId}-child-${idx}`,
@@ -141,7 +141,7 @@ export function StudioCanvas({ tool, elements, setElements, mapImage, dimensions
                 id: `draft-child-${idx}`,
                 width: parseInt(childPrefab.size.split(' x ')[0]) || 1,
                 height: parseInt(childPrefab.size.split(' x ')[1]) || 1,
-                imageUrl: childPrefab.thumb || '/elements/chair.svg',
+                imageUrl: childPrefab.thumb || '',
                 static: true,
                 name: childPrefab.title,
                 category: childPrefab.area,

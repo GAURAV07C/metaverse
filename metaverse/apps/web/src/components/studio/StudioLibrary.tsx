@@ -1,17 +1,24 @@
 import { useMemo, useState } from 'react';
-import { Search, X, ChevronDown } from 'lucide-react';
-import { categories, prefabs, type Prefab } from './prefabs';
+import { Search, X, ChevronDown, Settings, Monitor, Lamp, UtensilsCrossed } from 'lucide-react';
+import type { Prefab } from './types';
 
+const categories = [
+  { id: 'Desks', icon: Monitor },
+  { id: 'Machines', icon: Settings },
+  { id: 'Decorations', icon: Lamp },
+  { id: 'food', icon: UtensilsCrossed },
+];
 interface Props {
-  selectedPrefab: Prefab;
+  prefabs: Prefab[];
+  selectedPrefab?: Prefab;
   onSelect: (card: Prefab) => void;
   onClose: () => void;
   name?: string;
   status?: string;
 }
 
-export function StudioLibrary({ selectedPrefab, onSelect, onClose, name = 'Office', status = 'Ready' }: Props) {
-  const [activeCategory, setActiveCategory] = useState('Rooms');
+export function StudioLibrary({ prefabs, selectedPrefab, onSelect, onClose, name = 'Office', status = 'Ready' }: Props) {
+  const [activeCategory, setActiveCategory] = useState('Machines');
   const [search, setSearch] = useState('');
 
   const cards = useMemo(() => {
@@ -21,7 +28,7 @@ export function StudioLibrary({ selectedPrefab, onSelect, onClose, name = 'Offic
       filtered = prefabs.filter(c => c.title.toLowerCase().includes(q) || c.kind.toLowerCase().includes(q));
     }
     return filtered;
-  }, [activeCategory, search]);
+  }, [activeCategory, search, prefabs]);
 
   const handleDragStart = (e: React.DragEvent, card: Prefab) => {
     e.dataTransfer.setData('application/json', JSON.stringify(card));

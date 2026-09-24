@@ -1,6 +1,5 @@
 import { Trash2, GripVertical } from 'lucide-react';
 import type { SpaceElement } from '../arena/ElementsPanel';
-import { needsCapacity } from './prefabs';
 import React, { useState } from 'react';
 
 interface Props {
@@ -68,7 +67,7 @@ export function StudioElement({ el, isSelected, tool, TILE, onSelect, onDelete, 
           </div>
 
           {/* Settings (only for Rooms/Areas) */}
-          {needsCapacity(el.element.category || '') && (
+          {el.element.category === 'Rooms' && (
             <div style={{ display: 'flex', alignItems: 'center', padding: '0 12px', gap: 16 }}>
               {/* Floor Picker */}
               <div 

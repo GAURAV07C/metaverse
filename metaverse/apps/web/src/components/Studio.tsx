@@ -6,8 +6,7 @@ import type { SpaceElement } from './arena/ElementsPanel';
 import { StudioRail, type StudioTool } from './studio/StudioRail';
 import { StudioLibrary } from './studio/StudioLibrary';
 import { StudioCanvas } from './studio/StudioCanvas';
-import { prefabs, type Prefab } from './studio/prefabs';
-
+import type { Prefab } from './studio/types';
 export function Studio() {
   const { spaceId } = useParams();
   const navigate = useNavigate();
@@ -15,7 +14,8 @@ export function Studio() {
   // UI state
   const [welcome, setWelcome] = useState(() => sessionStorage.getItem('studio-welcome-seen') !== '1');
   const [tool, setTool] = useState<StudioTool>('select');
-  const [selectedPrefab, setSelectedPrefab] = useState<Prefab>(prefabs[1]);
+  const [availableElements, setAvailableElements] = useState<Prefab[]>([]);
+  const [selectedPrefab, setSelectedPrefab] = useState<Prefab | undefined>(undefined);
   const [selectedElId, setSelectedElId] = useState<string | null>(null);
   const [status, setStatus] = useState('Ready');
 
@@ -28,6 +28,20 @@ export function Studio() {
 
   useEffect(() => {
     let mounted = true;
+    api.get('/elements').then(res => {
+      if (!mounted) return;
+      const mapped = res.data.element.map((e: any) => ({
+        title: e.name,
+        kind: e.id,
+        area: e.category || 'Machines',
+        size: `${e.width} x ${e.height}`,
+        color: '#aaaaaa',
+        thumb: e.imageUrl.startsWith('/') ? e.imageUrl : `/${e.imageUrl}`,
+      }));
+      setAvailableElements(mapped);
+      if (mapped.length > 0 && !selectedPrefab) setSelectedPrefab(mapped[0]);
+    }).catch(() => console.error('Failed to load elements'));
+
     api.get(`/space/${spaceId}`).then(space => {
       if (!mounted) return;
       setName(space.data.name ?? 'Office');
@@ -74,6 +88,7 @@ export function Studio() {
       />
 
       <StudioLibrary
+        prefabs={availableElements}
         selectedPrefab={selectedPrefab}
         onSelect={selectPrefab}
         onClose={goBack}
@@ -83,6 +98,7 @@ export function Studio() {
 
       <StudioCanvas
         tool={tool}
+        availableElements={availableElements}
         elements={elements}
         setElements={setElements}
         mapImage={mapImage}
