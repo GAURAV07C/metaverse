@@ -71,7 +71,7 @@ officeRouter.post("/:spaceId/invites", async (req, res) => {
 officeRouter.get("/:spaceId/desks", async (req, res) => {
   const space = await getSpaceForUser(req.params.spaceId, req.userId);
   if (!space) return res.status(404).json({ message: "Space not found" });
-  const desks = await client.deskAssignment.findMany({ where: { spaceId: space.id }, include: { user: { select: { id: true, username: true, avatar: true } } }, orderBy: [{ teamName: "asc" }, { label: "asc" }] });
+  const desks = await client.deskAssignment.findMany({ where: { spaceId: space.id }, include: { user: { select: { id: true, username: true, avatar: true } } } });
   res.json({ desks });
 });
 
@@ -88,6 +88,46 @@ officeRouter.post("/:spaceId/desks", async (req, res) => {
   const deskData = Object.fromEntries(Object.entries(parsed.data).filter(([, value]) => value !== undefined));
   const desk = await client.deskAssignment.create({ data: { spaceId: space.id, ...deskData } as any });
   res.json({ desk });
+});
+
+officeRouter.put("/:spaceId/desks/:deskId", async (req, res) => {
+  const space = await getSpaceForUser(req.params.spaceId, req.userId);
+  if (!space) return res.status(404).json({ message: "Space not found" });
+  try {
+    let dataToUpdate = { ...req.body };
+    
+    // If username is provided, lookup the user ID
+    if (dataToUpdate.username) {
+      const user = await client.user.findUnique({ where: { username: dataToUpdate.username } });
+      if (!user) return res.status(404).json({ message: "User not found with that username" });
+      dataToUpdate.userId = user.id;
+      delete dataToUpdate.username;
+    } else if (dataToUpdate.username === "") {
+      dataToUpdate.userId = null;
+      delete dataToUpdate.username;
+    }
+
+    const updated = await client.deskAssignment.update({
+      where: { id: req.params.deskId, spaceId: space.id },
+      data: dataToUpdate,
+    });
+    res.json({ desk: updated });
+  } catch(e) {
+    res.status(400).json({ message: "Failed to update desk" });
+  }
+});
+
+officeRouter.delete("/:spaceId/desks/:deskId", async (req, res) => {
+  const space = await getSpaceForUser(req.params.spaceId, req.userId);
+  if (!space) return res.status(404).json({ message: "Space not found" });
+  try {
+    await client.deskAssignment.delete({
+      where: { id: req.params.deskId, spaceId: space.id },
+    });
+    res.json({ success: true });
+  } catch(e) {
+    res.status(400).json({ message: "Failed to delete desk" });
+  }
 });
 
 officeRouter.get("/:spaceId/draft", async (req, res) => {
