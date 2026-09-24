@@ -5,7 +5,7 @@ export interface SpaceElement {
   id: string;
   x: number;
   y: number;
-  element: { id: string; imageUrl: string; width: number; height: number; static: boolean; name?: string | null; category?: string | null };
+  element: { id: string; imageUrl: string; width: number; height: number; static: boolean; name?: string | null; category?: string | null; color?: string | null; floor?: string | null; wall?: string | null };
 }
 
 export interface AvailableElement {
@@ -16,6 +16,9 @@ export interface AvailableElement {
   static: boolean;
   name?: string;
   category?: string;
+  color?: string;
+  floor?: string;
+  wall?: string;
 }
 
 export interface RoomPrefab {

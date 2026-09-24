@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Check, Copy, Link as LinkIcon, Mail, Sparkles } from 'lucide-react';
+import { ArrowLeft, Copy, Link as LinkIcon, Mail, Sparkles } from 'lucide-react';
 import { api } from '../utils/api';
 
 interface MapTemplate { id: string; name: string; dimensions: string; thumbnail?: string; elementCount: number; }
-const sizes = ['1-10', '11-20', '21-50', '51-80', '81-100'];
 
 export function CreateOfficeWizard() {
   const navigate = useNavigate();
@@ -21,7 +20,6 @@ export function CreateOfficeWizard() {
       .then(res => { const list = res.data.maps ?? []; setMaps(list); setMapId(list.find((m: MapTemplate) => /gather/i.test(m.name))?.id ?? list[0]?.id ?? ''); })
       .catch(() => setMaps([]));
   }, []);
-  const selectedMap = useMemo(() => maps.find(m => m.id === mapId), [maps, mapId]);
 
   const create = async () => {
     setBusy(true);

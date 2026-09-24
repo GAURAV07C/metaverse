@@ -1589,37 +1589,37 @@ kbd {
 @media (max-width: 920px) { .join-page, .create-office-page { flex-direction: column; } .join-left-panel, .create-left-panel { width: 100%; padding: 20px; } .join-card { flex-direction: column; } .join-video-preview { width: 100%; } }
 
 /* Gather Studio v2 polish */
-.studio-v2 { grid-template-columns: 56px 348px 1fr; background: #d9d6cf; color: #222; }
-.studio-v2 .studio-rail { background: #171717; gap: 10px; padding: 10px 0; box-shadow: inset -1px 0 0 #ffffff10; }
-.studio-v2 .studio-rail button { width: 38px; height: 38px; border-radius: 11px; color: #d8d8d8; }
-.studio-v2 .studio-rail button:hover, .studio-v2 .studio-rail button.active { background: #ffffff18; color: #fff; }
+.studio-pro { grid-template-columns: 56px 348px 1fr; background: #d9d6cf; color: #222; }
+.studio-pro .studio-rail { background: #171717; gap: 10px; padding: 10px 0; box-shadow: inset -1px 0 0 #ffffff10; }
+.studio-pro .studio-rail button { width: 38px; height: 38px; border-radius: 11px; color: #d8d8d8; }
+.studio-pro .studio-rail button:hover, .studio-pro .studio-rail button.active { background: #ffffff18; color: #fff; }
 .studio-rail-divider { width: 28px; height: 1px; background: #ffffff20; }
 .studio-rail-spacer { flex: 1; }
-.studio-v2 .publish-dot { background: #6f55d8 !important; color: #fff !important; box-shadow: 0 8px 18px #6f55d855; }
-.studio-v2 .studio-panel { background: #f7f4ec; border-right: 1px solid #cac3b8; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.studio-pro .publish-dot { background: #6f55d8 !important; color: #fff !important; box-shadow: 0 8px 18px #6f55d855; }
+.studio-pro .studio-panel { background: #f7f4ec; border-right: 1px solid #cac3b8; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
 .studio-panel-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
 .studio-panel-head h2 { margin: 0; font-size: 22px; letter-spacing: -.03em; }
 .studio-panel-head p { margin: 4px 0 0; color: #797068; font-size: 12px; }
 .studio-panel-head button { border: 0; width: 32px; height: 32px; border-radius: 10px; background: #ebe5da; }
-.studio-v2 .studio-search { border-radius: 10px; background: #fff; border-color: #ded6ca; padding: 11px; }
+.studio-pro .studio-search { border-radius: 10px; background: #fff; border-color: #ded6ca; padding: 11px; }
 .studio-category-icons { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .studio-category-icons button { border: 1px solid #ded6ca; border-radius: 11px; padding: 10px; background: #fffdf8; color: #514b45; font-weight: 750; }
 .studio-category-icons button.active { background: #191919; border-color: #191919; color: #fff; }
 .studio-section-title { display: flex; align-items: baseline; justify-content: space-between; margin-top: 2px; }
 .studio-section-title span { font-weight: 800; }
 .studio-section-title small { color: #827970; }
-.studio-v2 .studio-prefabs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-.studio-v2 .studio-prefabs button { min-height: 132px; border-radius: 16px; border: 1px solid #d9d0c2; background: var(--card, #fff); padding: 14px; box-shadow: 0 6px 16px #6a4b2410; transition: transform .14s ease, box-shadow .14s ease; }
-.studio-v2 .studio-prefabs button:hover { transform: translateY(-2px); box-shadow: 0 10px 22px #6a4b2420; }
-.studio-v2 .studio-prefabs span { font-size: 30px; width: 42px; height: 42px; display: grid; place-items: center; border-radius: 13px; background: #ffffffb8; }
-.studio-v2 .studio-prefabs b { font-size: 13px; }
-.studio-v2 .studio-prefabs small { color: #6f665e; line-height: 1.3; }
-.studio-v2 .studio-canvas { padding: 34px; background: #d3d0c9; overflow: hidden; }
+.studio-pro .studio-prefabs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.studio-pro .studio-prefabs button { min-height: 132px; border-radius: 16px; border: 1px solid #d9d0c2; background: var(--card, #fff); padding: 14px; box-shadow: 0 6px 16px #6a4b2410; transition: transform .14s ease, box-shadow .14s ease; }
+.studio-pro .studio-prefabs button:hover { transform: translateY(-2px); box-shadow: 0 10px 22px #6a4b2420; }
+.studio-pro .studio-prefabs span { font-size: 30px; width: 42px; height: 42px; display: grid; place-items: center; border-radius: 13px; background: #ffffffb8; }
+.studio-pro .studio-prefabs b { font-size: 13px; }
+.studio-pro .studio-prefabs small { color: #6f665e; line-height: 1.3; }
+.studio-pro .studio-canvas { padding: 34px; background: #d3d0c9; overflow: hidden; }
 .studio-top-toast { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); z-index: 4; border-radius: 999px; background: #222; color: #fff; padding: 9px 16px; font-size: 13px; box-shadow: 0 10px 25px #0002; }
 .studio-publish-card { position: absolute; right: 44px; top: 44px; z-index: 4; display: grid; gap: 4px; min-width: 230px; border-radius: 16px; background: #fff; border: 1px solid #ded6ca; box-shadow: 0 12px 32px #0002; padding: 13px; }
 .studio-publish-card span { color: #6e665f; font-size: 12px; }
 .studio-publish-card button { justify-self: start; border: 0; border-radius: 999px; background: #6f55d8; color: #fff; font-weight: 800; padding: 8px 13px; margin-top: 6px; }
-.studio-v2 .studio-map-surface { border: 8px solid #fdfcf8; border-radius: 24px; background: #bc9a62; box-shadow: inset 0 0 0 1px #0002, 0 18px 50px #5b4a382c; }
+.studio-pro .studio-map-surface { border: 8px solid #fdfcf8; border-radius: 24px; background: #bc9a62; box-shadow: inset 0 0 0 1px #0002, 0 18px 50px #5b4a382c; }
 .studio-map-floor { position: absolute; inset: 0; overflow: hidden; background: linear-gradient(135deg, #d7ba80, #caa56c 52%, #b98d57); }
 .studio-map-floor::before { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, rgba(84,49,18,.16) 0 1px, transparent 1px 28px), repeating-linear-gradient(90deg, rgba(84,49,18,.08) 0 1px, transparent 1px 112px); }
 .studio-map-floor::after { content: ''; position: absolute; inset: 12px; border: 8px solid #5c4a36; border-radius: 16px; box-shadow: inset 0 0 0 2px #ffffff2a; pointer-events: none; }
@@ -1631,15 +1631,15 @@ kbd {
 .studio-room-label.team { left: 12%; bottom: 18%; }
 .studio-room-label.coffee { right: 15%; bottom: 22%; }
 .studio-modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(10,10,10,.58); backdrop-filter: blur(5px); }
-.studio-v2 .studio-welcome { width: min(560px, 92vw); padding: 30px; background: #fff; border-radius: 22px; color: #222; box-shadow: 0 24px 80px #0005; }
-.studio-v2 .studio-welcome h1 { margin: 0 0 8px; font-size: 32px; letter-spacing: -.04em; }
-.studio-v2 .studio-welcome p { color: #494540; line-height: 1.45; }
+.studio-pro .studio-welcome { width: min(560px, 92vw); padding: 30px; background: #fff; border-radius: 22px; color: #222; box-shadow: 0 24px 80px #0005; }
+.studio-pro .studio-welcome h1 { margin: 0 0 8px; font-size: 32px; letter-spacing: -.04em; }
+.studio-pro .studio-welcome p { color: #494540; line-height: 1.45; }
 
 /* Replace playful Studio emoji tiles with cleaner Gather-style prefab thumbnails */
-.studio-v2 .studio-prefabs button { justify-content: flex-start; color: #24211d; }
-.studio-v2 .studio-prefabs span.studio-prefab-thumb { position: relative; width: 100%; height: 74px; display: block; border-radius: 12px; background: #c6a978; overflow: hidden; border: 1px solid rgba(70,48,24,.16); }
-.studio-v2 .studio-prefabs span.studio-prefab-thumb::before { content: ''; position: absolute; inset: 8px; border-radius: 9px; background: rgba(255,255,255,.18); box-shadow: inset 0 0 0 2px rgba(64,44,22,.2); }
-.studio-v2 .studio-prefabs span.studio-prefab-thumb::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, rgba(80,50,20,.1) 0 1px, transparent 1px 14px), repeating-linear-gradient(90deg, rgba(80,50,20,.07) 0 1px, transparent 1px 28px); }
+.studio-pro .studio-prefabs button { justify-content: flex-start; color: #24211d; }
+.studio-pro .studio-prefabs span.studio-prefab-thumb { position: relative; width: 100%; height: 74px; display: block; border-radius: 12px; background: #c6a978; overflow: hidden; border: 1px solid rgba(70,48,24,.16); }
+.studio-pro .studio-prefabs span.studio-prefab-thumb::before { content: ''; position: absolute; inset: 8px; border-radius: 9px; background: rgba(255,255,255,.18); box-shadow: inset 0 0 0 2px rgba(64,44,22,.2); }
+.studio-pro .studio-prefabs span.studio-prefab-thumb::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, rgba(80,50,20,.1) 0 1px, transparent 1px 14px), repeating-linear-gradient(90deg, rgba(80,50,20,.07) 0 1px, transparent 1px 28px); }
 .studio-prefab-thumb i { position: absolute; z-index: 2; display: block; border-radius: 4px; background: #6d5a43; box-shadow: 0 2px 5px rgba(0,0,0,.18); }
 .studio-prefab-thumb.public i:nth-child(1) { width: 42px; height: 16px; left: 18px; top: 22px; }
 .studio-prefab-thumb.public i:nth-child(2) { width: 18px; height: 18px; right: 20px; top: 18px; border-radius: 50%; background: #6e8f66; }
@@ -1658,7 +1658,7 @@ kbd {
 .studio-prefab-thumb.open i:nth-child(1) { width: 28px; height: 18px; left: 22px; top: 24px; }
 .studio-prefab-thumb.open i:nth-child(2) { width: 28px; height: 18px; right: 22px; top: 24px; }
 .studio-prefab-thumb.open i:nth-child(3) { width: 56px; height: 10px; left: 29px; bottom: 16px; background: #4c5360; }
-.studio-v2 .studio-prefabs b { margin-top: 2px; }
+.studio-pro .studio-prefabs b { margin-top: 2px; }
 
 /* Studio v3: tighter, functional edit screen */
 .studio-v3 .studio-prefabs button.selected { outline: 3px solid rgba(111,85,216,.32); border-color: #6f55d8; }
@@ -1766,7 +1766,7 @@ kbd {
 .office-menu-popover button.danger:hover { background: rgba(239, 68, 68, 0.1); }
 
 /* Professional Studio editor */
-.studio-pro { grid-template-columns: 58px 354px 1fr 286px; background: #d5d1c8; color: #24211e; }
+.studio-pro { grid-template-columns: 58px 354px 1fr; background: #d5d1c8; color: #24211e; }
 .studio-pro .studio-rail { background: #1b1b1c; box-shadow: inset -1px 0 0 #ffffff10; }
 .studio-pro .studio-rail button { cursor: pointer; }
 .studio-pro .publish-dot { background: #6f55d8 !important; color: #fff !important; box-shadow: 0 10px 24px #6f55d85f; }
