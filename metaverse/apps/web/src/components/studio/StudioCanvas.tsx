@@ -19,7 +19,7 @@ interface Props {
 
 const TILE = 32;
 
-export function StudioCanvas({ tool, availableElements, elements, setElements, mapImage, dimensions, selectedElId, setSelectedElId, setStatus, onExit }: Props) {
+export function StudioCanvas({ tool, availableElements, elements, setElements, dimensions, selectedElId, setSelectedElId, setStatus, onExit }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Pan
@@ -35,7 +35,7 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, m
 
   // Element drag (repositioning placed elements)
   const [draggingElId, setDraggingElId] = useState<string | null>(null);
-  const dragStart = useRef({ x: 0, y: 0, elX: 0, elY: 0 });
+  const dragStart = useRef({ x: 0, y: 0 });
 
   // --- Screen coords to grid ---
   const screenToGrid = useCallback((clientX: number, clientY: number) => {
@@ -94,6 +94,9 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, m
     return () => container.removeEventListener('wheel', onWheel);
   }, [pan.x, pan.y]);
 
+  const [pendingRoom, setPendingRoom] = useState<{ x: number, y: number, prefab: Prefab } | null>(null);
+  const [roomConfig, setRoomConfig] = useState({ people: 4, floor: '#f3f4f6', wall: '#64748b', tint: '' });
+
   // --- Place from sidebar drop ---
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -109,6 +112,11 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, m
         return;
       }
 
+      if (card.area === 'Rooms') {
+        setPendingRoom({ x, y, prefab: card });
+        return;
+      }
+
       const newEls: SpaceElement[] = [];
       const baseId = `draft-${Date.now()}`;
 
@@ -117,14 +125,14 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, m
         id: baseId,
         x, y,
         element: {
-          id: 'draft',
+          id: card.kind,
           width: parseInt(card.size.split(' x ')[0]) || 2,
           height: parseInt(card.size.split(' x ')[1]) || 2,
           imageUrl: card.thumb || '',
           static: true,
           name: card.title,
           category: card.area,
-          floor: card.items ? '#f3f4f6' : null, // Add a generic light floor color to composite areas by default
+          floor: card.items ? '#f3f4f6' : null,
         },
       });
 
@@ -138,7 +146,7 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, m
               x: x + item.dx,
               y: y + item.dy,
               element: {
-                id: `draft-child-${idx}`,
+                id: childPrefab.kind,
                 width: parseInt(childPrefab.size.split(' x ')[0]) || 1,
                 height: parseInt(childPrefab.size.split(' x ')[1]) || 1,
                 imageUrl: childPrefab.thumb || '',
@@ -157,7 +165,90 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, m
     } catch { /* ignore */ }
   };
 
-  const handleDragOver = (e: React.DragEvent) => { 
+  const handleGenerateRoom = () => {
+    if (!pendingRoom) return;
+    
+    const { x, y, prefab } = pendingRoom;
+    const newEls: SpaceElement[] = [];
+    const baseId = `room-${Date.now()}`;
+    
+    // Calculate dynamic size based on people
+    let width = parseInt(prefab.size.split(' x ')[0]) || 4;
+    let height = parseInt(prefab.size.split(' x ')[1]) || 4;
+    
+    // Scale room size up if there are more people
+    if (roomConfig.people > 4) {
+      width += Math.floor((roomConfig.people - 4) / 2);
+      height += Math.floor((roomConfig.people - 4) / 2);
+    }
+    
+    // Base Floor (Logical area for AV/Private Zone)
+    newEls.push({
+      id: baseId,
+      x, y,
+      element: {
+        id: prefab.kind,
+        width, height,
+        imageUrl: '', // NO thumbnail on canvas for logical rooms
+        static: true,
+        name: `${prefab.title} (${roomConfig.people} pax)`,
+        category: prefab.area,
+        floor: roomConfig.floor,
+        wall: roomConfig.wall,
+        color: roomConfig.tint || null,
+      },
+    });
+    
+    // Pick some default table and chair for the room
+    const tables = availableElements.filter(e => e.area === 'Tables');
+    const chairs = availableElements.filter(e => e.area === 'Seating');
+    
+    const defaultTable = tables[0] || null;
+    const defaultChair = chairs[0] || null;
+    
+    if (defaultTable && defaultChair) {
+      // Place a table in the center
+      const tableW = parseInt(defaultTable.size.split(' x ')[0]) || 1;
+      const tableH = parseInt(defaultTable.size.split(' x ')[1]) || 1;
+      const tableX = x + Math.floor((width - tableW) / 2);
+      const tableY = y + Math.floor((height - tableH) / 2);
+      
+      newEls.push({
+        id: `${baseId}-table`,
+        x: tableX,
+        y: tableY,
+        element: {
+          id: defaultTable.kind, width: tableW, height: tableH, imageUrl: defaultTable.thumb || '', static: true, name: defaultTable.title, category: defaultTable.area
+        }
+      });
+      
+      // Place chairs around the table based on people count
+      for (let i = 0; i < roomConfig.people; i++) {
+        // Simple logic to distribute chairs around table
+        let cx = tableX;
+        let cy = tableY;
+        if (i % 4 === 0) { cx -= 1; cy += i/4; }
+        else if (i % 4 === 1) { cx += tableW; cy += Math.floor(i/4); }
+        else if (i % 4 === 2) { cx += Math.floor(i/4); cy -= 1; }
+        else { cx += Math.floor(i/4); cy += tableH; }
+        
+        newEls.push({
+          id: `${baseId}-chair-${i}`,
+          x: cx, y: cy,
+          element: {
+            id: defaultChair.kind, width: 1, height: 1, imageUrl: defaultChair.thumb || '', static: true, name: defaultChair.title, category: defaultChair.area
+          }
+        });
+      }
+    }
+    
+    setElements(prev => [...prev, ...newEls]);
+    setSelectedElId(baseId);
+    setStatus(`${prefab.title} generated as a Private Area!`);
+    setPendingRoom(null);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {  
     e.preventDefault(); 
     e.dataTransfer.dropEffect = 'copy'; 
     const { x, y } = screenToGrid(e.clientX, e.clientY);
@@ -194,33 +285,62 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, m
   const handlePointerUp = () => setIsPanning(false);
 
   // --- Element drag (reposition) ---
+  const dragGroup = useRef<{ id: string, sx: number, sy: number }[]>([]);
+
   const startElDrag = (elId: string, e: React.PointerEvent) => {
     e.stopPropagation();
     const el = elements.find(e => e.id === elId);
     if (!el) return;
+    
     setDraggingElId(elId);
-    dragStart.current = { x: e.clientX, y: e.clientY, elX: el.x, elY: el.y };
+    dragStart.current = { x: e.clientX, y: e.clientY };
+    
+    if (el.element.category === 'Rooms') {
+      const roomRight = el.x + (el.element.width || 1);
+      const roomBottom = el.y + (el.element.height || 1);
+      const insideEls = elements.filter(other => {
+         const cx = other.x + (other.element.width || 1)/2;
+         const cy = other.y + (other.element.height || 1)/2;
+         return cx >= el.x && cx <= roomRight && cy >= el.y && cy <= roomBottom;
+      });
+      dragGroup.current = insideEls.map(x => ({ id: x.id, sx: x.x, sy: x.y }));
+    } else {
+      dragGroup.current = [{ id: el.id, sx: el.x, sy: el.y }];
+    }
+    
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
 
   const moveEl = (e: React.PointerEvent) => {
-    if (!draggingElId) return;
+    if (!draggingElId || dragGroup.current.length === 0) return;
     const dx = (e.clientX - dragStart.current.x) / zoom;
     const dy = (e.clientY - dragStart.current.y) / zoom;
-    const newX = dragStart.current.elX + Math.round(dx / TILE);
-    const newY = dragStart.current.elY + Math.round(dy / TILE);
-    setElements(prev => prev.map(el => el.id === draggingElId ? { ...el, x: newX, y: newY } : el));
+    const diffX = Math.round(dx / TILE);
+    const diffY = Math.round(dy / TILE);
+    
+    setElements(prev => prev.map(el => {
+      const gItem = dragGroup.current.find(g => g.id === el.id);
+      if (gItem) {
+        return { ...el, x: gItem.sx + diffX, y: gItem.sy + diffY };
+      }
+      return el;
+    }));
   };
 
   const endElDrag = () => {
     if (draggingElId) {
-      const el = elements.find(e => e.id === draggingElId);
-      if (el && isOccupied(el.x, el.y, el.id)) {
-        // Snap back
-        setElements(prev => prev.map(e => e.id === draggingElId ? { ...e, x: dragStart.current.elX, y: dragStart.current.elY } : e));
+      const primary = elements.find(e => e.id === draggingElId);
+      if (primary && isOccupied(primary.x, primary.y, primary.id)) {
+        // Snap ALL back if primary is blocked
+        setElements(prev => prev.map(e => {
+          const gItem = dragGroup.current.find(g => g.id === e.id);
+          if (gItem) return { ...e, x: gItem.sx, y: gItem.sy };
+          return e;
+        }));
         setStatus("Can't place here — space is occupied!");
       }
       setDraggingElId(null);
+      dragGroup.current = [];
     }
   };
 
@@ -231,7 +351,7 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, m
   };
 
   const visibleElements = elements.filter(
-    el => !String(el.element.category ?? '').toLowerCase().includes('floor') && el.element.imageUrl
+    el => !String(el.element.category ?? '').toLowerCase().includes('floor') && (el.element.imageUrl || el.element.category === 'Rooms')
   );
 
   const mapW = dimensions.w * TILE;
@@ -258,11 +378,6 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, m
         }}
         onClick={handleCanvasClick}
       >
-        {/* Map image */}
-        {mapImage && (
-          <img src={mapImage} alt="Map" draggable={false}
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'fill', imageRendering: 'pixelated', pointerEvents: 'none' }} />
-        )}
 
         {/* Subtle grid */}
         <div style={{
@@ -339,6 +454,64 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, m
         <span>No one else can edit or decorate the office until you exit Studio.</span>
         <button onClick={onExit} style={{ background: '#6366f1', color: '#fff', border: 'none', padding: '5px 14px', borderRadius: 999, fontWeight: 600, cursor: 'pointer', fontSize: 12 }}>Got it</button>
       </div>
+      {/* Room Configuration Modal */}
+      {pendingRoom && (
+        <div style={{
+          position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 100,
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <div style={{
+            background: '#fff', borderRadius: 12, padding: 24, width: 400,
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+          }}>
+            <h2 style={{ margin: '0 0 16px', fontSize: 18, color: '#111' }}>Configure {pendingRoom.prefab.title}</h2>
+            
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Capacity (People)</label>
+              <input 
+                type="number" min={1} max={20}
+                value={roomConfig.people}
+                onChange={e => setRoomConfig(prev => ({ ...prev, people: parseInt(e.target.value) || 1 }))}
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 14 }}
+              />
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Floor Color</label>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {['#ffffff', '#f3f4f6', '#d1d5db', '#fef3c7', '#fde68a', '#ffedd5', '#fed7aa', '#ccfbf1', '#a7f3d0'].map(c => (
+                  <button key={c} onClick={() => setRoomConfig(prev => ({ ...prev, floor: c }))} style={{ width: 24, height: 24, borderRadius: 12, background: c, border: roomConfig.floor === c ? '2px solid #6366f1' : '1px solid #e5e5e5', cursor: 'pointer' }} />
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Tint Color</label>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {['', '#ffffff', '#e0f2fe', '#d1d5db', '#fbcfe8', '#bfdbfe', '#86efac', '#fef08a', '#fed7aa', '#fca5a5'].map(c => (
+                  <button key={c || 'none'} onClick={() => setRoomConfig(prev => ({ ...prev, tint: c }))} style={{ width: 24, height: 24, borderRadius: 12, background: c || '#f9fafb', border: roomConfig.tint === c ? '2px solid #6366f1' : '1px solid #e5e5e5', cursor: 'pointer', position: 'relative' }}>
+                    {!c && <span style={{ position: 'absolute', top: 2, left: 6, fontSize: 14, color: '#888' }}>×</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Wall Color</label>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {['#64748b', '#334155', '#78350f', '#92400e', '#b45309', '#1e3a8a', '#1e40af', '#3730a3', '#4c1d95'].map(c => (
+                  <button key={c} onClick={() => setRoomConfig(prev => ({ ...prev, wall: c }))} style={{ width: 24, height: 24, borderRadius: 12, background: c, border: roomConfig.wall === c ? '2px solid #6366f1' : '1px solid transparent', cursor: 'pointer' }} />
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
+              <button onClick={() => setPendingRoom(null)} style={{ flex: 1, padding: '10px', background: '#f3f4f6', border: 'none', borderRadius: 6, color: '#374151', fontWeight: 500, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={handleGenerateRoom} style={{ flex: 1, padding: '10px', background: '#6366f1', border: 'none', borderRadius: 6, color: '#fff', fontWeight: 500, cursor: 'pointer' }}>Generate Room</button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

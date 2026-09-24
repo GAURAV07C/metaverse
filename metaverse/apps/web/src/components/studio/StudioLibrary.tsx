@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Search, X, ChevronDown, Settings, Monitor, Lamp, UtensilsCrossed, TreePine, Image as ImageIcon, Archive, Table, Armchair, MousePointerClick, Cpu } from 'lucide-react';
+import { Search, X, ChevronDown, Settings, Monitor, Lamp, UtensilsCrossed, TreePine, Image as ImageIcon, Archive, Table, Armchair, MousePointerClick, Cpu, Map as MapIcon } from 'lucide-react';
 import type { Prefab } from './types';
 
 const categories = [
+  { id: 'Rooms', icon: MapIcon },
   { id: 'Desks', icon: Monitor },
   { id: 'Machines', icon: Settings },
   { id: 'Decorations', icon: Lamp },
@@ -115,7 +116,7 @@ export function StudioLibrary({ prefabs, selectedPrefab, onSelect, onClose, name
             >
               <div style={{
                 width: '100%', aspectRatio: '4/3', borderRadius: 8,
-                border: selectedPrefab.title === card.title ? '2px solid #6366f1' : '1px solid #e5e5e5',
+                border: selectedPrefab?.title === card.title ? '2px solid #6366f1' : '1px solid #e5e5e5',
                 overflow: 'hidden', background: '#f9fafb',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>

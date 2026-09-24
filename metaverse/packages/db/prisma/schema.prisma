@@ -61,6 +61,7 @@ model spaceElements {
   spaceId   String
   x         Int
   y         Int
+  customData Json?
 
   space Space @relation(fields: [spaceId], references: [id])
   element Element @relation(fields: [elementId], references: [id])
@@ -76,6 +77,7 @@ model Element {
   height   Int
   static   Boolean
   imageUrl String
+  colorMaskUrl String?
   name     String?
   category String?
   space    spaceElements[]

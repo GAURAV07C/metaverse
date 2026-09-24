@@ -107,6 +107,7 @@ router.get("/elements", async (req, res) => {
     element: elements.map((e) => ({
       id: e.id,
       imageUrl: e.imageUrl,
+      colorMaskUrl: e.colorMaskUrl,
       width: e.width,
       height: e.height,
       static: e.static, name: e.name, category: e.category,

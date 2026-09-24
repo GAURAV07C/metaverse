@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../utils/api';
 import type { SpaceElement } from './arena/ElementsPanel';
@@ -26,6 +26,34 @@ export function Studio() {
   const [elements, setElements] = useState<SpaceElement[]>([]);
   const [publishing, setPublishing] = useState(false);
 
+  // History state for Undo/Redo
+  const [history, setHistory] = useState<SpaceElement[][]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const isUndoRedoActive = useRef(false);
+
+  // Auto-save & History tracking
+  useEffect(() => {
+    if (elements.length === 0 && history.length === 0) return;
+    
+    // Auto-save to draft (debounce to avoid spamming API)
+    const timer = setTimeout(() => {
+      api.put(`/office/${spaceId}/draft`, { data: { elements, elementCount: elements.length, savedAt: new Date().toISOString() } }).catch(() => null);
+    }, 1500);
+
+    // Track history
+    if (!isUndoRedoActive.current) {
+      setHistory(prev => {
+        const newHist = prev.slice(0, historyIndex + 1);
+        newHist.push(elements);
+        return newHist.slice(-20); // Keep last 20 actions
+      });
+      setHistoryIndex(prev => Math.min(19, prev + 1));
+    }
+    isUndoRedoActive.current = false;
+
+    return () => clearTimeout(timer);
+  }, [elements]);
+
   useEffect(() => {
     let mounted = true;
     api.get('/elements').then(res => {
@@ -48,7 +76,27 @@ export function Studio() {
       setMapImage(space.data.thumbnail || '/map-template.jpg');
       const dim = (space.data.dimensions || '100x100').split('x');
       setDimensions({ w: parseInt(dim[0]) || 100, h: parseInt(dim[1]) || 100 });
-      setElements(space.data.elements ?? []);
+      
+      // Look for draft first, otherwise load published elements
+      api.get(`/office/${spaceId}/draft`).then(draftRes => {
+        if (!mounted) return;
+        if (draftRes.data.draft?.data?.elements) {
+          const draftEls = draftRes.data.draft.data.elements;
+          setElements(draftEls);
+          setHistory([draftEls]);
+          setHistoryIndex(0);
+        } else {
+          setElements(space.data.elements ?? []);
+          setHistory([space.data.elements ?? []]);
+          setHistoryIndex(0);
+        }
+      }).catch(() => {
+        if (!mounted) return;
+        setElements(space.data.elements ?? []);
+        setHistory([space.data.elements ?? []]);
+        setHistoryIndex(0);
+      });
+      
     }).catch(() => setStatus('Preview mode'));
     return () => { mounted = false; };
   }, [spaceId]);
@@ -63,7 +111,7 @@ export function Studio() {
   const publish = async () => {
     setPublishing(true);
     setStatus('Publishing...');
-    await api.put(`/office/${spaceId}/draft`, { data: { elementCount: elements.length, savedAt: new Date().toISOString() } }).catch(() => null);
+    await api.put(`/office/${spaceId}/draft`, { data: { elements, elementCount: elements.length, savedAt: new Date().toISOString() } }).catch(() => null);
     await api.post(`/office/${spaceId}/publish`, {}).catch(() => null);
     setPublishing(false);
     setStatus('Published!');
@@ -75,6 +123,22 @@ export function Studio() {
     setStatus(`${card.title} selected — click or drag onto the map`);
   };
 
+  const handleUndo = () => {
+    if (historyIndex > 0) {
+      isUndoRedoActive.current = true;
+      setHistoryIndex(prev => prev - 1);
+      setElements(history[historyIndex - 1]);
+    }
+  };
+
+  const handleRedo = () => {
+    if (historyIndex < history.length - 1) {
+      isUndoRedoActive.current = true;
+      setHistoryIndex(prev => prev + 1);
+      setElements(history[historyIndex + 1]);
+    }
+  };
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '56px 280px 1fr', height: '100vh', overflow: 'hidden', fontFamily: 'Inter, sans-serif' }}>
 
@@ -84,6 +148,10 @@ export function Studio() {
         onBack={goBack}
         onPublish={publish}
         onHelp={() => setWelcome(true)}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        canUndo={historyIndex > 0}
+        canRedo={historyIndex < history.length - 1}
         publishing={publishing}
       />
 

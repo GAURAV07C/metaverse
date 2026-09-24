@@ -329,21 +329,28 @@ spaceRouter.get("/:spaceId", userMiddleware, async (req, res) => {
         thumbnail: space.thumbnail,
         dimensions: `${space.width}x${space.height}`,
         ownerId: space.creatorId,
-        elements: space.elements.map((e) => ({
-            id: e.id,
-            element: {
-                id: e.element.id,
-                imageUrl: e.element.imageUrl,
-                width: e.element.width,
-                height: e.element.height,
-                static: e.element.static,
-                name: e.element.name,
-                category: e.element.category,
-                interactiveObjects: e.element.interactiveObjects,
-            },
-            x: e.x,
-            y: e.y,
-        })),
+        elements: space.elements.map((e: any) => {
+            const customData = typeof e.customData === 'string' ? JSON.parse(e.customData) : (e.customData || {});
+            return {
+                id: e.id,
+                element: {
+                    id: e.element.id,
+                    imageUrl: customData.imageUrl ?? e.element.imageUrl,
+                    colorMaskUrl: e.element.colorMaskUrl,
+                    width: customData.width ?? e.element.width,
+                    height: customData.height ?? e.element.height,
+                    static: e.element.static,
+                    name: customData.name ?? e.element.name,
+                    category: customData.category ?? e.element.category,
+                    floor: customData.floor ?? null,
+                    wall: customData.wall ?? null,
+                    color: customData.color ?? null,
+                    interactiveObjects: e.element.interactiveObjects,
+                },
+                x: e.x,
+                y: e.y,
+            };
+        }),
         privateZones: space.privateZones,
     });
 });

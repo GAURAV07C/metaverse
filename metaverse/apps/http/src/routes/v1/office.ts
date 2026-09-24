@@ -154,6 +154,44 @@ officeRouter.put("/:spaceId/draft", async (req, res) => {
 officeRouter.post("/:spaceId/publish", async (req, res) => {
   const space = await getSpaceForUser(req.params.spaceId, req.userId);
   if (!space) return res.status(404).json({ message: "Space not found" });
-  const draft = await client.spaceDraft.update({ where: { spaceId: space.id }, data: { publishedAt: new Date() } }).catch(() => null);
-  res.json({ message: "Office draft published", draft });
+
+  const draft = await client.spaceDraft.findUnique({ where: { spaceId: space.id } });
+  if (!draft || !draft.data) {
+    return res.status(400).json({ message: "Nothing to publish" });
+  }
+
+  const data = draft.data as any;
+  if (data.elements && Array.isArray(data.elements)) {
+    // Delete all existing spaceElements for this space
+    await client.spaceElements.deleteMany({ where: { spaceId: space.id } });
+
+    // Insert all draft elements
+    const elementsToInsert = data.elements
+      .filter((e: any) => e.element && e.element.id)
+      .map((e: any) => ({
+        spaceId: space.id,
+        elementId: e.element.id,
+        x: e.x,
+        y: e.y,
+        customData: {
+          width: e.element.width,
+          height: e.element.height,
+          color: e.element.color,
+          floor: e.element.floor,
+          wall: e.element.wall,
+          name: e.element.name,
+          category: e.element.category,
+          imageUrl: e.element.imageUrl
+        }
+      }));
+
+    if (elementsToInsert.length > 0) {
+      await client.spaceElements.createMany({
+        data: elementsToInsert
+      });
+    }
+  }
+
+  const updatedDraft = await client.spaceDraft.update({ where: { spaceId: space.id }, data: { publishedAt: new Date() } }).catch(() => null);
+  res.json({ message: "Office draft published", draft: updatedDraft });
 });
