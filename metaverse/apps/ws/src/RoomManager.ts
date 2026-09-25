@@ -61,8 +61,12 @@ export class RoomManager {
     this.zones.set(spaceId, zones);
   }
 
-  public async loadSpaceBounds(spaceId: string) {
-    if (this.spaceBounds.has(spaceId)) return this.spaceBounds.get(spaceId);
+  public clearSpaceBounds(spaceId: string) {
+    this.spaceBounds.delete(spaceId);
+  }
+
+  public async loadSpaceBounds(spaceId: string, forceReload = false) {
+    if (!forceReload && this.spaceBounds.has(spaceId)) return this.spaceBounds.get(spaceId);
 
     const space = await client.space.findUnique({
       where: { id: spaceId },
@@ -70,9 +74,13 @@ export class RoomManager {
         width: true,
         height: true,
         elements: {
-          include: {
+          select: {
+            x: true,
+            y: true,
+            elementId: true,
+            customData: true,
             element: {
-              select: { width: true, height: true, static: true },
+              select: { id: true, name: true, category: true, width: true, height: true, static: true },
             },
           },
         },
@@ -84,8 +92,24 @@ export class RoomManager {
     const blocked = new Set<string>();
     for (const placement of space.elements) {
       if (!placement.element.static) continue;
-      for (let x = placement.x; x < placement.x + placement.element.width; x++) {
-        for (let y = placement.y; y < placement.y + placement.element.height; y++) {
+
+      const customData = typeof placement.customData === 'string' ? JSON.parse(placement.customData) : (placement.customData || {});
+      const category = String(customData.category || placement.element.category || '').toLowerCase();
+      const name = String(customData.name || placement.element.name || '').toLowerCase();
+      const elementId = String(placement.elementId || placement.element.id || '').toLowerCase();
+
+      // Room floors and areas are WALKABLE
+      if (category.includes('room') || category.includes('floor')) continue;
+
+      // Seating (chairs, sofas, couches, benches, stools) are WALKABLE so avatars can sit!
+      const isSeating = category.includes('seating') || name.includes('chair') || name.includes('sofa') || name.includes('couch') || name.includes('bench') || name.includes('stool') || name.includes('seat') || elementId.includes('chair');
+      if (isSeating) continue;
+
+      const w = customData.width ?? placement.element.width;
+      const h = customData.height ?? placement.element.height;
+
+      for (let x = placement.x; x < placement.x + w; x++) {
+        for (let y = placement.y; y < placement.y + h; y++) {
           blocked.add(`${x}:${y}`);
         }
       }
@@ -98,7 +122,7 @@ export class RoomManager {
 
   public async canOccupy(spaceId: string, x: number, y: number) {
     const bounds = await this.loadSpaceBounds(spaceId);
-    if (!bounds) return false;
+    if (!bounds) return true; // If no bounds, allow move inside space
     if (x < 0 || y < 0 || x >= bounds.width || y >= bounds.height) return false;
     return !bounds.blocked.has(`${x}:${y}`);
   }

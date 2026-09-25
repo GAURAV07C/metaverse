@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { PlusCircle, MinusCircle, Navigation } from 'lucide-react';
+import { PlusCircle, MinusCircle, Navigation, Map as MapIcon } from 'lucide-react';
 import type { OtherUser } from '../Arena';
 import type { SpaceElement } from './ElementsPanel';
 import { findPath } from '../../utils/pathfinding';
@@ -65,6 +65,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const initialPanRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const currentCamRef = useRef<{ camX: number; camY: number; zoom: number }>({ camX: 0, camY: 0, zoom: 1 });
   const imageCacheRef = useRef<Record<string, HTMLImageElement>>({});
+  const userAnimStateRef = useRef<Record<string, { lastX: number; lastY: number; facing: 'down' | 'up' | 'left' | 'right'; step: number; isMoving: boolean }>>({});
   const [renderTrigger, setRenderTrigger] = useState(0);
 
   // Handle window resize
@@ -181,7 +182,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       dimensions.h,
       (x, y) => {
         const visibleElements = elements.filter(el => !hiddenElementIds.includes(el.id));
-        const isStaticEl = visibleElements.some(el => el.element.static && x >= el.x && x < el.x + el.element.width && y >= el.y && y < el.y + el.element.height);
+        const isStaticEl = visibleElements.some(el => {
+          if (el.element.category === 'Rooms' || String(el.element.category).toLowerCase().includes('floor')) return false;
+          const text = `${el.element.id} ${el.element.name ?? ''} ${el.element.category ?? ''}`.toLowerCase();
+          const isSeat = text.includes('seating') || text.includes('chair') || text.includes('sofa') || text.includes('couch') || text.includes('bench') || text.includes('stool') || text.includes('seat');
+          if (isSeat) return false;
+          return el.element.static && x >= el.x && x < el.x + el.element.width && y >= el.y && y < el.y + el.element.height;
+        });
         if (isStaticEl) return false;
         return true;
       }
@@ -208,10 +215,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const worldW = dimensions.w * TILE;
     const worldH = dimensions.h * TILE;
 
-    // Active zoom factor
-    const fitScaleX = viewW / worldW;
-    const fitScaleY = viewH / worldH;
-    const activeZoom = Math.max(fitScaleX, fitScaleY, zoom);
+    // Active zoom factor (allow zoom out down to 0.15 without force-clamping to screen fit)
+    const activeZoom = Math.max(0.15, Math.min(3.0, zoom));
 
     // Camera follows player (centered) + mouse drag panOffset
     const playerPx = myPos.x * TILE + TILE / 2;
@@ -220,11 +225,21 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     let camX = playerPx - (viewW / activeZoom) / 2 + panOffset.x;
     let camY = playerPy - (viewH / activeZoom) / 2 + panOffset.y;
 
-    // Clamp camera to map boundaries so user NEVER sees outside the map graphic
-    const maxCamX = Math.max(0, worldW - viewW / activeZoom);
-    const maxCamY = Math.max(0, worldH - viewH / activeZoom);
-    camX = Math.max(0, Math.min(camX, maxCamX));
-    camY = Math.max(0, Math.min(camY, maxCamY));
+    // Handle camera bounds: if map is smaller than screen when zoomed out, center it!
+    const visibleWorldW = viewW / activeZoom;
+    const visibleWorldH = viewH / activeZoom;
+
+    if (worldW <= visibleWorldW) {
+      camX = -(visibleWorldW - worldW) / 2;
+    } else {
+      camX = Math.max(0, Math.min(camX, worldW - visibleWorldW));
+    }
+
+    if (worldH <= visibleWorldH) {
+      camY = -(visibleWorldH - worldH) / 2;
+    } else {
+      camY = Math.max(0, Math.min(camY, worldH - visibleWorldH));
+    }
 
     // Save current camera transform parameters for mouse click calculations
     currentCamRef.current = { camX, camY, zoom: activeZoom };
@@ -260,50 +275,91 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, worldH); ctx.stroke();
     }
 
-    // Room carpets, walls, and labels from DB zones so the canvas looks like an office map.
-    privateZones.forEach((z, index) => {
+    // Gather Town Diagram style Room carpets, walls, and labels
+    privateZones.forEach((z) => {
       const zx = z.startX * TILE;
       const zy = z.startY * TILE;
       const zw = (z.endX - z.startX + 1) * TILE;
       const zh = (z.endY - z.startY + 1) * TILE;
       const isInside = myPos.x >= z.startX && myPos.x <= z.endX && myPos.y >= z.startY && myPos.y <= z.endY;
-      const palettes = [
-        ['#8aa186', '#6f866c'],
-        ['#617f90', '#4b6979'],
-        ['#927f60', '#74664d'],
-        ['#8b7464', '#725f51'],
-      ];
-      const [roomFill, roomStroke] = palettes[index % palettes.length];
+      
+      const isLounge = z.name.toLowerCase().includes('lounge') || z.name.toLowerCase().includes('breakout');
+      const isTeam = z.name.toLowerCase().includes('team') || z.name.toLowerCase().includes('engineering');
+
+      const roomFill = isLounge ? '#fdf2f8' : (isTeam ? '#ffffff' : '#eef2ff');
+      const roomStroke = isLounge ? '#fbcfe8' : (isTeam ? '#e5e7eb' : '#c7d2fe');
+      const borderCol = isInside ? '#6366f1' : roomStroke;
 
       ctx.save();
-      ctx.shadowColor = 'rgba(50, 35, 20, 0.18)';
-      ctx.shadowBlur = 6;
-      ctx.shadowOffsetY = 3;
       ctx.fillStyle = roomFill;
       ctx.beginPath();
-      ctx.roundRect(zx, zy, zw, zh, 10);
+      ctx.roundRect(zx, zy, zw, zh, 8);
       ctx.fill();
-      ctx.restore();
 
-      ctx.strokeStyle = isInside ? '#55d184' : roomStroke;
-      ctx.lineWidth = isInside ? 5 : 4;
+      ctx.strokeStyle = borderCol;
+      ctx.lineWidth = isInside ? 3 : 2;
       ctx.beginPath();
-      ctx.roundRect(zx + 2, zy + 2, zw - 4, zh - 4, 8);
+      ctx.roundRect(zx + 1, zy + 1, zw - 2, zh - 2, 7);
       ctx.stroke();
 
-      // Door gap marker.
-      ctx.fillStyle = '#d6ba83';
-      ctx.fillRect(zx + Math.max(40, zw / 2 - 28), zy + zh - 7, 56, 10);
+      // Centered Icon Badge / Label Pill
+      const isZoomedOut = zoom < 0.75;
+      const icon = isLounge ? '🛋️' : (isTeam ? '👥' : '🚪');
+      
+      if (isTeam) {
+        // Team Header Pill
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#e5e7eb';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(zx + zw / 2 - 40, zy + 12, 80, 24, 12);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#374151';
+        ctx.font = '600 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`👥 ${z.name || 'Team'}`, zx + zw / 2, zy + 24);
 
-      ctx.fillStyle = 'rgba(22, 26, 22, 0.58)';
-      ctx.beginPath();
-      ctx.roundRect(zx + 10, zy + 8, Math.min(170, z.name.length * 8 + 34), 24, 8);
-      ctx.fill();
-      ctx.fillStyle = '#fff6df';
-      ctx.font = 'bold 12px sans-serif';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(z.name, zx + 22, zy + 20);
+        // Draw Gather Desk Dot Clusters (4 dots)
+        ctx.fillStyle = '#d1d5db';
+        const cx = zx + zw / 2;
+        const cy = zy + zh / 2 + 8;
+        [[-20, -12], [20, -12], [-20, 12], [20, 12]].forEach(([dx, dy]) => {
+          ctx.beginPath();
+          ctx.arc(cx + dx, cy + dy, 4, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      } else {
+        // Private Office / Lounge Centered Icon Badge
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = 'rgba(0,0,0,0.08)';
+        ctx.shadowBlur = 6;
+        ctx.shadowOffsetY = 2;
+        ctx.beginPath();
+        ctx.roundRect(zx + zw / 2 - 16, zy + zh / 2 - 16, 32, 32, 8);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.fillStyle = '#4b5563';
+        ctx.font = '14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(icon, zx + zw / 2, zy + zh / 2);
+
+        // Room title pill
+        if (!isZoomedOut) {
+          ctx.fillStyle = 'rgba(30, 41, 59, 0.75)';
+          ctx.beginPath();
+          ctx.roundRect(zx + 8, zy + 8, Math.min(zw - 16, z.name.length * 7 + 16), 20, 6);
+          ctx.fill();
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '600 10px sans-serif';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(z.name, zx + 14, zy + 18);
+        }
+      }
     });
 
     // Outer office shell walls.
@@ -333,6 +389,18 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const w = el.element.width * TILE;
       const h = el.element.height * TILE;
 
+      // Draw custom floor background if specified
+      if (el.element.floor) {
+        ctx.fillStyle = el.element.floor;
+        ctx.fillRect(px, py, w, h);
+      }
+
+      // Draw custom wall top border if specified
+      if (el.element.wall) {
+        ctx.fillStyle = el.element.wall;
+        ctx.fillRect(px, py, w, Math.min(12, h));
+      }
+
       if (el.element.imageUrl) {
         let img = imageCacheRef.current[el.element.imageUrl];
         if (!img) {
@@ -349,22 +417,34 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             ctx.fill();
           }
           ctx.drawImage(img, px, py, w, h);
+
+          // Apply color tint if specified
+          if (el.element.color) {
+            ctx.save();
+            ctx.fillStyle = el.element.color;
+            ctx.globalAlpha = 0.35;
+            ctx.fillRect(px, py, w, h);
+            ctx.restore();
+          }
           return;
         }
       }
 
-      ctx.fillStyle = el.element.static ? 'rgba(100,116,139,0.5)' : 'rgba(16,185,129,0.3)';
-      ctx.strokeStyle = el.element.static ? '#475569' : '#10b981';
+      // Fallback for custom objects without images (e.g. dynamic room areas)
+      ctx.fillStyle = el.element.color || (el.element.static ? 'rgba(100,116,139,0.5)' : 'rgba(16,185,129,0.3)');
+      ctx.strokeStyle = el.element.wall || (el.element.static ? '#475569' : '#10b981');
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.roundRect(px + 4, py + 4, w - 8, h - 8, 6);
+      ctx.roundRect(px + 2, py + 2, w - 4, h - 4, 6);
       ctx.fill();
       ctx.stroke();
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = `${Math.min(w, h) * 0.45}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(el.element.static ? '🪑' : '🟢', px + w / 2, py + h / 2);
+      if (el.element.name) {
+        ctx.fillStyle = '#1e293b';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(el.element.name, px + w / 2, py + h / 2);
+      }
     };
 
     floors.forEach(el => drawElement(el, true));
@@ -408,35 +488,54 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       ctx.restore();
     }
 
-    const drawAvatar = (x: number, y: number, url?: string, fallback: string = '👤', color: string = '#6366f1', isSitting: boolean = false) => {
-      const userTileX = Math.floor(x / TILE);
-      const userTileY = Math.floor(y / TILE);
-      const inZone = (userTileX >= 15 && userTileX <= 32 && userTileY >= 6 && userTileY <= 16);
+    const updateAnim = (id: string, rx: number, ry: number) => {
+      const cx = Math.round(rx);
+      const cy = Math.round(ry);
+      const prev = userAnimStateRef.current[id] || { lastX: cx, lastY: cy, facing: 'down', step: 0, isMoving: false };
+      let facing = prev.facing;
+      let isMoving = false;
+      let step = prev.step;
 
-      if (inZone) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.roundRect(x - 18, y - 18, 36, 36, 8);
-        ctx.strokeStyle = '#2dce89';
-        ctx.lineWidth = 2.5;
-        ctx.setLineDash([4, 4]);
-        ctx.shadowColor = '#2dce89';
-        ctx.shadowBlur = 10;
-        ctx.stroke();
-        ctx.restore();
-      }
+      if (cx > prev.lastX + 2) { facing = 'right'; isMoving = true; step++; }
+      else if (cx < prev.lastX - 2) { facing = 'left'; isMoving = true; step++; }
+      else if (cy > prev.lastY + 2) { facing = 'down'; isMoving = true; step++; }
+      else if (cy < prev.lastY - 2) { facing = 'up'; isMoving = true; step++; }
 
-      const drawY = isSitting ? y + 8 : y;
+      userAnimStateRef.current[id] = { lastX: cx, lastY: cy, facing, step, isMoving };
+      return userAnimStateRef.current[id];
+    };
 
+    const drawHumanCharacter = (
+      x: number,
+      y: number,
+      userId: string,
+      username: string,
+      url?: string,
+      isSitting: boolean = false,
+      isMe: boolean = false
+    ) => {
+      const anim = updateAnim(userId, x, y);
+
+      const shirtColors = ['#3b82f6', '#10b981', '#ec4899', '#8b5cf6', '#f59e0b', '#06b6d4', '#ef4444'];
+      const hairColors = ['#1e293b', '#78350f', '#451a03', '#111827', '#b45309'];
+      const skinColors = ['#fcd34d', '#fed7aa', '#f59e0b', '#d97706'];
+
+      const charHash = Math.abs((userId || username || 'user').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0));
+      const shirtColor = isMe ? '#3b82f6' : shirtColors[charHash % shirtColors.length];
+      const hairColor = hairColors[charHash % hairColors.length];
+      const skinColor = skinColors[charHash % skinColors.length];
+
+      ctx.save();
+
+      // Shadow at feet
       if (!isSitting) {
-        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
         ctx.beginPath();
-        ctx.ellipse(x, drawY + TILE / 2, 10, 4, 0, 0, Math.PI * 2);
+        ctx.ellipse(x, y + 10, 8, 3.5, 0, 0, Math.PI * 2);
         ctx.fill();
       }
 
-      const avSize = 26;
-      const r = 8;
+      // If custom image avatar URL is uploaded
       if (url) {
         let img = imageCacheRef.current[url];
         if (!img) {
@@ -446,63 +545,132 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           imageCacheRef.current[url] = img;
         }
         if (img.complete && img.naturalWidth > 0) {
+          const drawY = isSitting ? y + 4 : y - 4;
+          const bobY = (anim.isMoving && !isSitting) ? (anim.step % 2 === 0 ? -2 : 0) : 0;
+          const avSize = 28;
           ctx.save();
           ctx.beginPath();
-          ctx.roundRect(x - avSize/2, drawY - avSize/2, avSize, avSize, r);
-          ctx.closePath();
+          ctx.arc(x, drawY + bobY, avSize / 2, 0, Math.PI * 2);
           ctx.clip();
-          ctx.drawImage(img, x - avSize/2, drawY - avSize/2, avSize, avSize);
+          ctx.drawImage(img, x - avSize / 2, drawY + bobY - avSize / 2, avSize, avSize);
           ctx.restore();
 
-          ctx.strokeStyle = color;
-          ctx.lineWidth = 2;
+          ctx.strokeStyle = shirtColor;
+          ctx.lineWidth = 2.5;
           ctx.beginPath();
-          ctx.roundRect(x - avSize/2, drawY - avSize/2, avSize, avSize, r);
+          ctx.arc(x, drawY + bobY, avSize / 2, 0, Math.PI * 2);
           ctx.stroke();
+          ctx.restore();
           return;
         }
       }
 
-      ctx.fillStyle = color;
+      // ── Full Gather 2D Human Pixel Character ──
+      const bob = (anim.isMoving && !isSitting) ? (anim.step % 2 === 0 ? -2 : 0) : 0;
+      const legStep = (anim.isMoving && !isSitting) ? (anim.step % 2 === 0 ? 3 : -3) : 0;
+      const centerY = isSitting ? y + 4 : y - 2 + bob;
+
+      // 1. LEGS & SHOES (when standing/walking)
+      if (!isSitting) {
+        ctx.fillStyle = '#1e293b'; // Pants
+        ctx.fillRect(x - 5 + (anim.facing === 'left' ? -legStep : 0), centerY + 4, 4, 7);
+        ctx.fillRect(x + 1 + (anim.facing === 'right' ? legStep : 0), centerY + 4, 4, 7);
+
+        ctx.fillStyle = '#ffffff'; // White Sneakers
+        ctx.fillRect(x - 6 + (anim.facing === 'left' ? -legStep : 0), centerY + 9, 5, 3);
+        ctx.fillRect(x + 1 + (anim.facing === 'right' ? legStep : 0), centerY + 9, 5, 3);
+      }
+
+      // 2. SHIRT / TORSO
+      ctx.fillStyle = shirtColor;
       ctx.beginPath();
-      ctx.roundRect(x - avSize/2, drawY - avSize/2, avSize, avSize, r);
+      ctx.roundRect(x - 7, centerY - 5, 14, 10, 3);
       ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.font = '14px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(fallback, x, drawY);
+
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.fillRect(x - 2, centerY - 5, 4, 3);
+
+      // Arms
+      ctx.fillStyle = skinColor;
+      if (anim.facing === 'left') {
+        ctx.fillRect(x - 8, centerY - 2, 3, 6);
+      } else if (anim.facing === 'right') {
+        ctx.fillRect(x + 5, centerY - 2, 3, 6);
+      } else {
+        ctx.fillRect(x - 9, centerY - 2, 3, 6);
+        ctx.fillRect(x + 6, centerY - 2, 3, 6);
+      }
+
+      // 3. HEAD & FACE
+      ctx.fillStyle = skinColor;
+      ctx.beginPath();
+      ctx.arc(x, centerY - 11, 7.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Face Features (Eyes)
+      if (anim.facing !== 'up') {
+        ctx.fillStyle = '#0f172a';
+        if (anim.facing === 'down') {
+          ctx.fillRect(x - 3, centerY - 12, 2, 2.5);
+          ctx.fillRect(x + 1, centerY - 12, 2, 2.5);
+        } else if (anim.facing === 'left') {
+          ctx.fillRect(x - 4, centerY - 12, 2, 2.5);
+        } else if (anim.facing === 'right') {
+          ctx.fillRect(x + 2, centerY - 12, 2, 2.5);
+        }
+      }
+
+      // 4. HAIR & HAIRSTYLE
+      ctx.fillStyle = hairColor;
+      if (anim.facing === 'up') {
+        ctx.beginPath();
+        ctx.arc(x, centerY - 12, 8, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.beginPath();
+        ctx.arc(x, centerY - 14, 8, Math.PI, Math.PI * 2);
+        ctx.fill();
+        ctx.fillRect(x - 7.5, centerY - 16, 15, 5);
+      }
+
+      ctx.restore();
     };
 
-    const isChair = (tx: number, ty: number) => visibleElements.some(el => el.element.id.includes('chair') && el.x === tx && el.y === ty);
+    const isChair = (tx: number, ty: number) => visibleElements.some(el => {
+      const text = `${el.element.id} ${el.element.name ?? ''} ${el.element.category ?? ''}`.toLowerCase();
+      const isSeat = text.includes('seating') || text.includes('chair') || text.includes('sofa') || text.includes('couch') || text.includes('bench') || text.includes('stool') || text.includes('seat');
+      return isSeat && tx >= el.x && tx < el.x + el.element.width && ty >= el.y && ty < el.y + el.element.height;
+    });
 
     // Other users
     otherUsers.forEach((u) => {
       const px = u.x * TILE + TILE / 2;
       const py = u.y * TILE + TILE / 2 - 4;
       const sitting = isChair(u.x, u.y);
-
-      drawAvatar(px, py, u.avatarUrl, '👤', '#6366f1', sitting);
-      ctx.fillStyle = 'rgba(99,102,241,0.85)';
       const name = u.username || u.userId.slice(0, 5);
-      const tagW = name.length * 6 + 6;
+
+      drawHumanCharacter(px, py, u.userId, name, u.avatarUrl, sitting, false);
+
+      ctx.fillStyle = 'rgba(99,102,241,0.88)';
+      const tagW = name.length * 6 + 8;
       ctx.beginPath();
-      ctx.roundRect(px - tagW / 2, py - (sitting ? 12 : 20), tagW, 12, 3);
+      ctx.roundRect(px - tagW / 2, py - (sitting ? 22 : 30), tagW, 14, 4);
       ctx.fill();
       ctx.fillStyle = '#fff';
-      ctx.font = 'bold 8px sans-serif';
+      ctx.font = 'bold 9px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(name, px, py - (sitting ? 6 : 14));
+      ctx.fillText(name, px, py - (sitting ? 15 : 23));
     });
 
     const mx = myPos.x * TILE + TILE / 2;
     const my = myPos.y * TILE + TILE / 2 - 4;
     const mySitting = isChair(myPos.x, myPos.y);
+    const myName = (window as any).__myStoredUsername || 'You';
 
     if (!mySitting) {
       const grd = ctx.createRadialGradient(mx, my, 0, mx, my, 18);
-      grd.addColorStop(0, 'rgba(59,130,246,0.4)');
+      grd.addColorStop(0, 'rgba(59,130,246,0.35)');
       grd.addColorStop(1, 'rgba(59,130,246,0)');
       ctx.fillStyle = grd;
       ctx.beginPath();
@@ -510,7 +678,19 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       ctx.fill();
     }
 
-    drawAvatar(mx, my, myAvatarUrl ?? undefined, '🧑', '#3b82f6', mySitting);
+    drawHumanCharacter(mx, my, 'me', myName, myAvatarUrl ?? undefined, mySitting, true);
+
+    // My name pill badge
+    ctx.fillStyle = '#3b82f6';
+    const tagW = myName.length * 6 + 12;
+    ctx.beginPath();
+    ctx.roundRect(mx - tagW / 2, my - (mySitting ? 22 : 30), tagW, 14, 4);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(myName, mx, my - (mySitting ? 15 : 23));
   }, [canvasRef, wrapperRef, myPos, otherUsers, elements, hiddenElementIds, privateZones, dimensions, myAvatarUrl, renderTrigger, autoPath, zoom, panOffset]);
 
   return (
@@ -545,19 +725,23 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             onDropElement?.(elementId, tileX, tileY);
           }}
           onWheel={(e) => {
-            if (e.deltaY < 0) setZoom(z => Math.min(z + 0.1, 2.5));
-            else setZoom(z => Math.max(z - 0.1, 0.6));
+            e.preventDefault();
+            const factor = e.deltaY < 0 ? 1.2 : 0.8;
+            setZoom(z => Math.max(0.15, Math.min(3.0, z * factor)));
           }}
           style={{ display: 'block', width: '100%', height: '100%', cursor: isDragging ? 'grabbing' : addingElement ? 'crosshair' : autoPath.length > 0 ? 'crosshair' : 'grab' }}
         />
       </div>
 
       <div className="map-controls">
-        <button className="map-ctrl-btn" onClick={() => setZoom(z => Math.min(z + 0.25, 2.5))} title="Zoom In">
+        <button className="map-ctrl-btn" onClick={() => setZoom(z => Math.min(z * 1.25, 3.0))} title="Zoom In">
           <PlusCircle size={20} />
         </button>
-        <button className="map-ctrl-btn" onClick={() => setZoom(z => Math.max(z - 0.25, 0.5))} title="Zoom Out">
+        <button className="map-ctrl-btn" onClick={() => setZoom(z => Math.max(z / 1.25, 0.15))} title="Zoom Out (Diagram View)">
           <MinusCircle size={20} />
+        </button>
+        <button className="map-ctrl-btn" onClick={() => setZoom(0.35)} title="Layout Overview (Gather View)">
+          <MapIcon size={20} />
         </button>
         <button className="map-ctrl-btn" onClick={handleLocateUser} title="Locate Me">
           <Navigation size={20} />

@@ -9,7 +9,7 @@ export const officeRouter = Router();
 officeRouter.use(userMiddleware);
 
 async function getSpaceForUser(spaceId: string, userId: string) {
-  return client.space.findFirst({ where: { id: spaceId, creatorId: userId }, select: { id: true, name: true, width: true, height: true } });
+  return client.space.findUnique({ where: { id: spaceId }, select: { id: true, name: true, width: true, height: true, creatorId: true } });
 }
 
 function publicSettings(settings: any) {
@@ -162,28 +162,40 @@ officeRouter.post("/:spaceId/publish", async (req, res) => {
 
   const data = draft.data as any;
   if (data.elements && Array.isArray(data.elements)) {
+    // Fetch all existing element IDs in database
+    const dbElements = await client.element.findMany({ select: { id: true } });
+    const validElementIds = new Set(dbElements.map(e => e.id));
+    const fallbackElementId = dbElements[0]?.id;
+
     // Delete all existing spaceElements for this space
     await client.spaceElements.deleteMany({ where: { spaceId: space.id } });
 
-    // Insert all draft elements
+    // Insert all draft elements safely
     const elementsToInsert = data.elements
-      .filter((e: any) => e.element && e.element.id)
-      .map((e: any) => ({
-        spaceId: space.id,
-        elementId: e.element.id,
-        x: e.x,
-        y: e.y,
-        customData: {
-          width: e.element.width,
-          height: e.element.height,
-          color: e.element.color,
-          floor: e.element.floor,
-          wall: e.element.wall,
-          name: e.element.name,
-          category: e.element.category,
-          imageUrl: e.element.imageUrl
-        }
-      }));
+      .filter((e: any) => e.element)
+      .map((e: any) => {
+        const targetElementId = validElementIds.has(e.element.id) ? e.element.id : fallbackElementId;
+        if (!targetElementId) return null;
+
+        return {
+          spaceId: space.id,
+          elementId: targetElementId,
+          x: e.x,
+          y: e.y,
+          customData: {
+            width: e.element.width,
+            height: e.element.height,
+            color: e.element.color,
+            floor: e.element.floor,
+            wall: e.element.wall,
+            name: e.element.name,
+            category: e.element.category,
+            imageUrl: e.element.imageUrl,
+            colorMaskUrl: e.element.colorMaskUrl
+          }
+        };
+      })
+      .filter((e: any): e is NonNullable<typeof e> => e !== null);
 
     if (elementsToInsert.length > 0) {
       await client.spaceElements.createMany({

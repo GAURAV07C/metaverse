@@ -38,12 +38,10 @@ export class MovementHandler {
     const xDisplacement = Math.abs(user.x - moveX);
     const yDisplacement = Math.abs(user.y - moveY);
 
-    const isOneBlockMove =
-      (xDisplacement === 1 && yDisplacement === 0) ||
-      (xDisplacement === 0 && yDisplacement === 1);
+    const isWithinValidMove = (xDisplacement <= 5 && yDisplacement <= 5);
 
     const canOccupy = await RoomManager.getInstance().canOccupy(user.spaceId, moveX, moveY);
-    if (isOneBlockMove && canOccupy) {
+    if (isWithinValidMove && canOccupy) {
       user.x = moveX;
       user.y = moveY;
       RoomManager.getInstance().broadcast(

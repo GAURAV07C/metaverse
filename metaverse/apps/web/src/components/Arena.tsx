@@ -243,6 +243,14 @@ export function Arena() {
 
     // Static collision check
     const isCollidingWithElement = elements.some((el) => {
+      // Room floors and logical rooms are WALKABLE so avatars can step inside rooms
+      if (el.element.category === 'Rooms' || String(el.element.category).toLowerCase().includes('floor')) return false;
+
+      // Seating elements (chairs, sofas, couches, benches) are WALKABLE so avatars can sit on them!
+      const text = `${el.element.id} ${el.element.name ?? ''} ${el.element.category ?? ''}`.toLowerCase();
+      const isSeat = text.includes('seating') || text.includes('chair') || text.includes('sofa') || text.includes('couch') || text.includes('bench') || text.includes('stool') || text.includes('seat');
+      if (isSeat) return false;
+
       if (!el.element.static) return false;
       return (
         nx >= el.x &&

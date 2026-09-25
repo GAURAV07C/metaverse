@@ -190,7 +190,7 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, d
         id: prefab.kind,
         width, height,
         imageUrl: '', // NO thumbnail on canvas for logical rooms
-        static: true,
+        static: false,
         name: `${prefab.title} (${roomConfig.people} pax)`,
         category: prefab.area,
         floor: roomConfig.floor,
@@ -415,7 +415,7 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, d
             isSelected={selectedElId === el.id}
             tool={tool}
             TILE={TILE}
-            onSelect={() => setSelectedElId(selectedElId === el.id ? null : el.id)}
+            onSelect={() => setSelectedElId(el.id)}
             onDelete={() => {
               setElements(prev => prev.filter(x => x.id !== el.id));
               setSelectedElId(null);

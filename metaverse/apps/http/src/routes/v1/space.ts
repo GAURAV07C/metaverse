@@ -336,7 +336,7 @@ spaceRouter.get("/:spaceId", userMiddleware, async (req, res) => {
                 element: {
                     id: e.element.id,
                     imageUrl: customData.imageUrl ?? e.element.imageUrl,
-                    colorMaskUrl: e.element.colorMaskUrl,
+                    colorMaskUrl: customData.colorMaskUrl ?? e.element.colorMaskUrl,
                     width: customData.width ?? e.element.width,
                     height: customData.height ?? e.element.height,
                     static: e.element.static,
