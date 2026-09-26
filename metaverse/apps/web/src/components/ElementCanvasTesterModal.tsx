@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, useCallback } from "react";
-import { X, UserCheck, ShieldAlert, Sparkles, SlidersHorizontal, ZoomIn, ZoomOut, RotateCcw, Move, ArrowLeft, Layers } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { X, UserCheck, ShieldAlert, Sparkles, SlidersHorizontal, ZoomIn, ZoomOut, RotateCcw, Layers } from "lucide-react";
 import { getElementCategory } from "./admin/adminTypes";
 
 interface ElementCanvasTesterModalProps {
@@ -288,7 +289,7 @@ export function ElementCanvasTesterModal({ element, onClose }: ElementCanvasTest
       if (element.imageUrl.startsWith("http")) {
         img.crossOrigin = "anonymous";
       }
-      img.src = element.imageUrl;
+      img.src = element.imageUrl.startsWith('http') || element.imageUrl.startsWith('/') ? element.imageUrl : `/${element.imageUrl}`;
       img.onload = () => render(img);
       img.onerror = () => render();
     }
@@ -312,7 +313,7 @@ export function ElementCanvasTesterModal({ element, onClose }: ElementCanvasTest
     });
   };
 
-  return (
+  const modalContent = (
     <div
       className="modal-overlay"
       onClick={onClose}
@@ -624,4 +625,6 @@ export function ElementCanvasTesterModal({ element, onClose }: ElementCanvasTest
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }
