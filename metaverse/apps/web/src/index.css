@@ -1842,3 +1842,112 @@ kbd {
 .desk-info small { color: #6b7280; font-size: 13px; font-weight: 500; }
 .assign-btn { border: 1px solid #e5e7eb; background: #fff; padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: 0.2s; color: #4b5563; }
 .assign-btn:hover { background: #f9fafb; color: #111; border-color: #d1d5db; }
+
+/* ── Modals & Admin Overlay ──────────────── */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(6, 11, 24, 0.78);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  z-index: 10000;
+  padding: 2.5rem 1.5rem 2rem;
+  overflow-y: auto;
+}
+
+.modal, .modal-large {
+  width: 100%;
+  max-width: 500px;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid var(--glass-border);
+  border-radius: 20px;
+  padding: 1.75rem;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
+  position: relative;
+  max-height: calc(100vh - 4rem);
+  overflow-y: auto;
+  margin-top: 0;
+}
+
+.modal-large {
+  max-width: 680px;
+}
+
+/* ── Admin Dashboard Form & Grid Styles ──── */
+.admin-form-card {
+  padding: 1.5rem;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--glass-border);
+}
+
+.admin-grid-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.admin-items-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1.25rem;
+}
+
+.admin-item-card {
+  padding: 1rem;
+  border-radius: 14px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.admin-item-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
+
+.panel-del-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.panel-del-btn:hover {
+  background: rgba(239, 68, 68, 0.3);
+}
+
+.map-el-builder {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.map-el-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.map-el-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.6rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+}
+

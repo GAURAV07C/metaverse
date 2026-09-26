@@ -34,7 +34,7 @@ function App() {
         <Route path="/studio/:spaceId" element={token ? <Studio /> : <Navigate to="/login" />} />
         <Route path="/desk-manager/:spaceId" element={token ? <DeskManager /> : <Navigate to="/login" />} />
         <Route
-          path="/admin"
+          path="/admin/*"
           element={token && type === 'admin' ? <AdminDashboard /> : <Navigate to={token ? '/dashboard' : '/login'} />}
         />
         <Route

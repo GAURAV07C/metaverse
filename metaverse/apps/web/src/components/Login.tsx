@@ -47,7 +47,6 @@ export function Login({ mode = 'user' }: LoginProps) {
         setAuth(res.data.token, payload?.userId ?? '', userRole, res.data.username);
         navigate(returnTo ?? (userRole === 'admin' ? '/admin' : '/dashboard'));
       } else {
-        if (isAdmin) return;
         SignupSchema.parse({ username, password, type: role });
         const signupRes = await api.post('/signup', { username, password, type: role });
         if (signupRes.data?.message) throw new Error(signupRes.data.message);
@@ -56,7 +55,7 @@ export function Login({ mode = 'user' }: LoginProps) {
         const payload = decodeToken(loginRes.data.token);
         const userRole: Role = payload?.role === 'Admin' ? 'admin' : 'user';
         setAuth(loginRes.data.token, payload?.userId ?? signupRes.data.userId, userRole, loginRes.data.username);
-        navigate(returnTo ?? '/dashboard');
+        navigate(returnTo ?? (userRole === 'admin' ? '/admin' : '/dashboard'));
       }
     } catch (err: unknown) {
       if (err instanceof z.ZodError) setError(getZodMessage(err));
@@ -73,7 +72,7 @@ export function Login({ mode = 'user' }: LoginProps) {
         <div className="hero-overlay" />
         <img src="/login-hero.jpg" alt="Virtual Office" className="hero-image" />
         <div className="hero-content">
-          <div className="hero-logo-badge">Clone</div>
+          <div className="hero-logo-badge">{isAdmin ? 'Admin Console' : 'Clone'}</div>
           <h1>The virtual office<br/>that feels real.</h1>
           <p>Collaborate, create, and connect in a pixel-perfect world.</p>
         </div>
@@ -82,7 +81,7 @@ export function Login({ mode = 'user' }: LoginProps) {
         <div className="login-form-container animate-fade-in">
           <div className="login-header">
             <div className="auth-logo">{isAdmin ? '🛡️' : '🌐'}</div>
-            <h2 className="auth-title">{isLogin ? 'Welcome Back' : 'Join the Metaverse'}</h2>
+            <h2 className="auth-title">{isLogin ? (isAdmin ? 'Admin Portal' : 'Welcome Back') : (isAdmin ? 'Create Admin Account' : 'Join the Metaverse')}</h2>
             <p className="auth-subtitle">{isLogin ? 'Log in to your workspace' : 'Create your account to get started'}</p>
           </div>
 
@@ -116,14 +115,12 @@ export function Login({ mode = 'user' }: LoginProps) {
             </button>
           </form>
 
-          {!isAdmin && (
-            <p className="auth-switch">
-              {isLogin ? "Don't have an account? " : 'Already have an account? '}
-              <button type="button" className="link-btn" onClick={() => { setIsLogin(!isLogin); setError(''); }}>
-                {isLogin ? 'Sign up' : 'Sign in'}
-              </button>
-            </p>
-          )}
+          <p className="auth-switch">
+            {isLogin ? "Don't have an account? " : 'Already have an account? '}
+            <button type="button" className="link-btn" onClick={() => { setIsLogin(!isLogin); setError(''); }}>
+              {isLogin ? 'Sign up' : 'Sign in'}
+            </button>
+          </p>
         </div>
       </div>
     </div>

@@ -3,12 +3,16 @@ import { ZoomIn, ZoomOut } from 'lucide-react';
 import type { Prefab } from './types';
 import type { SpaceElement } from '../arena/ElementsPanel';
 import { StudioElement } from './StudioElement';
+import { StudioArea } from './StudioArea';
+import type { AreaType } from './types';
 
 interface Props {
   tool: string;
   availableElements: Prefab[];
   elements: SpaceElement[];
   setElements: React.Dispatch<React.SetStateAction<SpaceElement[]>>;
+  areas?: AreaType[];
+  setAreas?: React.Dispatch<React.SetStateAction<AreaType[]>>;
   mapImage: string;
   dimensions: { w: number; h: number };
   selectedElId: string | null;
@@ -19,7 +23,7 @@ interface Props {
 
 const TILE = 32;
 
-export function StudioCanvas({ tool, availableElements, elements, setElements, dimensions, selectedElId, setSelectedElId, setStatus, onExit }: Props) {
+export function StudioCanvas({ tool, availableElements, elements, setElements, areas = [], setAreas, dimensions, selectedElId, setSelectedElId, setStatus, onExit }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Pan
@@ -35,7 +39,12 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, d
 
   // Element drag (repositioning placed elements)
   const [draggingElId, setDraggingElId] = useState<string | null>(null);
+  const [draggingAreaId, setDraggingAreaId] = useState<string | null>(null);
   const dragStart = useRef({ x: 0, y: 0 });
+
+  // Area drawing state
+  const [drawingArea, setDrawingArea] = useState<{ startX: number, startY: number, curX: number, curY: number } | null>(null);
+  const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
 
   // --- Screen coords to grid ---
   const screenToGrid = useCallback((clientX: number, clientY: number) => {
@@ -265,24 +274,64 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, d
     setDragHoverPos(null);
   };
 
-  // --- Pan (middle-click, right-click, or hand tool) ---
+  // --- Pointer down ---
   const handlePointerDown = (e: React.PointerEvent) => {
     if (draggingElId) return;
+
     if (e.button === 1 || e.button === 2 || (e.button === 0 && tool === 'hand')) {
       e.preventDefault();
       setIsPanning(true);
       panStart.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y };
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      return;
+    }
+
+    if (e.button === 0 && tool === 'area') {
+      const { x, y } = screenToGrid(e.clientX, e.clientY);
+      setDrawingArea({ startX: x, startY: y, curX: x, curY: y });
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      return;
     }
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
     if (isPanning) {
       setPan({ x: panStart.current.px + e.clientX - panStart.current.x, y: panStart.current.py + e.clientY - panStart.current.y });
+    } else if (drawingArea) {
+      const { x, y } = screenToGrid(e.clientX, e.clientY);
+      setDrawingArea(prev => prev ? { ...prev, curX: x, curY: y } : null);
     }
   };
 
-  const handlePointerUp = () => setIsPanning(false);
+  const handlePointerUp = () => {
+    setIsPanning(false);
+    if (drawingArea && setAreas) {
+      const minX = Math.min(drawingArea.startX, drawingArea.curX);
+      const minY = Math.min(drawingArea.startY, drawingArea.curY);
+      const maxX = Math.max(drawingArea.startX, drawingArea.curX);
+      const maxY = Math.max(drawingArea.startY, drawingArea.curY);
+      
+      const w = Math.max(1, maxX - minX);
+      const h = Math.max(1, maxY - minY);
+
+      const newArea: AreaType = {
+        id: `area-${Date.now()}`,
+        name: 'New Area',
+        floor: '#f3f4f6',
+        color: 'rgba(59, 130, 246, 0.4)',
+        x: minX,
+        y: minY,
+        w,
+        h
+      };
+
+      setAreas(prev => [...prev, newArea]);
+      setSelectedAreaId(newArea.id);
+      setSelectedElId(null);
+      setDrawingArea(null);
+      setStatus("Area created! Give it a name.");
+    }
+  };
 
   // --- Element drag (reposition) ---
   const dragGroup = useRef<{ id: string, sx: number, sy: number }[]>([]);
@@ -311,8 +360,41 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, d
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
 
+  const startAreaDrag = (areaId: string, e: React.PointerEvent) => {
+    e.stopPropagation();
+    const area = areas.find(a => a.id === areaId);
+    if (!area) return;
+    
+    setDraggingAreaId(areaId);
+    dragStart.current = { x: e.clientX, y: e.clientY };
+    
+    const areaRight = area.x + area.w;
+    const areaBottom = area.y + area.h;
+    
+    const insideEls = elements.filter(other => {
+       const cx = other.x + (other.element.width || 1)/2;
+       const cy = other.y + (other.element.height || 1)/2;
+       return cx >= area.x && cx <= areaRight && cy >= area.y && cy <= areaBottom;
+    });
+    
+    // Find smaller areas inside this area
+    const insideAreas = areas.filter(other => {
+       if (other.id === area.id) return false;
+       return other.x >= area.x && other.x + other.w <= areaRight && other.y >= area.y && other.y + other.h <= areaBottom;
+    });
+    
+    dragGroup.current = [
+      { id: area.id, sx: area.x, sy: area.y },
+      ...insideEls.map(x => ({ id: x.id, sx: x.x, sy: x.y })),
+      ...insideAreas.map(x => ({ id: x.id, sx: x.x, sy: x.y }))
+    ];
+    
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
   const moveEl = (e: React.PointerEvent) => {
-    if (!draggingElId || dragGroup.current.length === 0) return;
+    if (!draggingElId && !draggingAreaId) return;
+    if (dragGroup.current.length === 0) return;
     const dx = (e.clientX - dragStart.current.x) / zoom;
     const dy = (e.clientY - dragStart.current.y) / zoom;
     const diffX = Math.round(dx / TILE);
@@ -325,6 +407,14 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, d
       }
       return el;
     }));
+
+    if (draggingAreaId && setAreas) {
+      setAreas(prev => prev.map(a => {
+        const gItem = dragGroup.current.find(g => g.id === a.id);
+        if (gItem) return { ...a, x: gItem.sx + diffX, y: gItem.sy + diffY };
+        return a;
+      }));
+    }
   };
 
   const endElDrag = () => {
@@ -341,13 +431,29 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, d
       }
       setDraggingElId(null);
       dragGroup.current = [];
+    } else if (draggingAreaId) {
+      // Allow areas to overlap (no strict collision check for areas)
+      setDraggingAreaId(null);
+      dragGroup.current = [];
     }
   };
 
   // --- Canvas click (deselect) ---
   const handleCanvasClick = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('[data-element-id]')) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-element-id]')) return;
+    if (target.closest('[data-area-id]')) return;
+    
+    // Deselect elements
     setSelectedElId(null);
+    
+    // If we are clicking on empty space (not a resize handle or toolbar), deselect area
+    if (tool !== 'area' || !target.closest('input')) {
+      // Very basic click outside to deselect
+      // but wait, StudioArea has pointerDown to select itself, 
+      // so if we click canvas, we just deselect both.
+      setSelectedAreaId(null);
+    }
   };
 
   const visibleElements = elements.filter(
@@ -406,6 +512,45 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, d
             }} />
           );
         })()}
+
+        {/* Render Areas */}
+        {areas.map(area => (
+          <StudioArea
+            key={area.id}
+            area={area}
+            isSelected={selectedAreaId === area.id}
+            onSelect={() => {
+              setSelectedAreaId(area.id);
+              setSelectedElId(null);
+            }}
+            onDragStart={(e) => startAreaDrag(area.id, e)}
+            onChange={(updated) => {
+              if (setAreas) setAreas(prev => prev.map(a => a.id === area.id ? updated : a));
+            }}
+            onDelete={() => {
+              if (setAreas) setAreas(prev => prev.filter(a => a.id !== area.id));
+              setSelectedAreaId(null);
+            }}
+            zoom={zoom}
+          />
+        ))}
+
+        {/* Drawing Area Preview */}
+        {drawingArea && (
+          <div
+            style={{
+              position: 'absolute',
+              left: Math.min(drawingArea.startX, drawingArea.curX) * TILE,
+              top: Math.min(drawingArea.startY, drawingArea.curY) * TILE,
+              width: Math.max(1, Math.max(drawingArea.startX, drawingArea.curX) - Math.min(drawingArea.startX, drawingArea.curX)) * TILE,
+              height: Math.max(1, Math.max(drawingArea.startY, drawingArea.curY) - Math.min(drawingArea.startY, drawingArea.curY)) * TILE,
+              backgroundColor: 'rgba(59, 130, 246, 0.3)',
+              border: '2px dashed #fff',
+              pointerEvents: 'none',
+              zIndex: 99
+            }}
+          />
+        )}
 
         {/* Elements */}
         {visibleElements.map(el => (

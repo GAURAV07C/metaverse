@@ -12,25 +12,32 @@ const rooms = [
 ];
 
 async function main() {
+  console.log("Cleaning up old Room elements...");
+  // Archive old elements that were saved as "Rooms" to avoid foreign key issues
+  await prisma.element.updateMany({
+    where: { category: "Rooms" },
+    data: { category: "Archived_Rooms" }
+  });
+  console.log("Old Room elements archived.");
+
   for (const room of rooms) {
-    const existing = await prisma.element.findFirst({
-      where: { name: room.name, category: "Rooms" }
+    const existing = await prisma.map.findFirst({
+      where: { name: room.name, type: "room" }
     });
 
     if (!existing) {
-      await prisma.element.create({
+      await prisma.map.create({
         data: {
           name: room.name,
-          category: "Rooms",
           width: room.width,
           height: room.height,
-          imageUrl: room.imageUrl,
-          static: true
+          thumbnails: room.imageUrl,
+          type: "room"
         }
       });
-      console.log(`Created room: ${room.name}`);
+      console.log(`Created room template: ${room.name}`);
     } else {
-      console.log(`Room already exists: ${room.name}`);
+      console.log(`Room template already exists: ${room.name}`);
     }
   }
 }

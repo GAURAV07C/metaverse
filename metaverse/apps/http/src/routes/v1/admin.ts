@@ -18,13 +18,18 @@ adminRouter.post("/element", adminMiddleware, async (req, res) => {
     res.status(400).json({ message: "validation failed" });
     return;
   }
+  const createData: any = {
+    width: parseData.data.width,
+    height: parseData.data.height,
+    static: parseData.data.static,
+    imageUrl: parseData.data.imageUrl,
+  };
+  if (parseData.data.name) createData.name = parseData.data.name;
+  if (parseData.data.category) createData.category = parseData.data.category;
+  if (parseData.data.colorMaskUrl) createData.colorMaskUrl = parseData.data.colorMaskUrl;
+
   const element = await client.element.create({
-    data: {
-      width: parseData.data.width,
-      height: parseData.data.height,
-      static: parseData.data.static,
-      imageUrl: parseData.data.imageUrl,
-    },
+    data: createData,
   });
 
   return res.json({
@@ -40,13 +45,20 @@ adminRouter.put("/element/:elementId", adminMiddleware, async (req, res) => {
     return;
   }
 
+  const updateData: any = {};
+  if (parseData.data.imageUrl !== undefined) updateData.imageUrl = parseData.data.imageUrl;
+  if (parseData.data.width !== undefined) updateData.width = parseData.data.width;
+  if (parseData.data.height !== undefined) updateData.height = parseData.data.height;
+  if (parseData.data.static !== undefined) updateData.static = parseData.data.static;
+  if (parseData.data.name !== undefined) updateData.name = parseData.data.name;
+  if (parseData.data.category !== undefined) updateData.category = parseData.data.category;
+  if (parseData.data.colorMaskUrl !== undefined) updateData.colorMaskUrl = parseData.data.colorMaskUrl;
+
   await client.element.update({
     where: {
       id: req.params.elementId! as string,
     },
-    data: {
-      imageUrl: parseData.data.imageUrl,
-    },
+    data: updateData,
   });
 
   return res.json({
@@ -83,6 +95,7 @@ adminRouter.post("/map", adminMiddleware, async (req, res) => {
   const map = await client.map.create({
     data: {
       name: parseData.data.name as string,
+      type: parseData.data.type || "map",
       width: parseInt(parseData.data.dimensions.split("x")[0]!),
       height: parseInt(parseData.data.dimensions.split("x")[1]!),
       thumbnails: parseData.data.thumbnail,
@@ -110,6 +123,7 @@ adminRouter.put("/map/:mapId", adminMiddleware, async (req, res) => {
   
   const updateData: any = {};
   if (parseData.data.name) updateData.name = parseData.data.name;
+  if (parseData.data.type) updateData.type = parseData.data.type;
   if (parseData.data.thumbnail) updateData.thumbnails = parseData.data.thumbnail;
   
   try {

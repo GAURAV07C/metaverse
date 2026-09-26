@@ -7,3 +7,15 @@ export interface Prefab {
   thumb?: string;
   items?: { kind: string; dx: number; dy: number }[];
 }
+
+export interface AreaType {
+  id: string;
+  name: string;
+  floor: string; // hex color or texture id
+  color: string; // border/fill color
+  texture?: 'solid' | 'grid' | 'checker' | 'lines'; // type of floor pattern
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useUserStore } from "../store";
 import { api } from "../utils/api";
 import {
@@ -12,18 +12,15 @@ import {
   Pencil,
   X,
   Trash2,
+  Sparkles,
 } from "lucide-react";
 import { useToast } from "../utils/toast";
+import { ElementsTab } from "./admin/ElementsTab";
+import { RoomLabTab } from "./admin/lab/RoomLabTab";
+import type { ElementItem } from "./admin/adminTypes";
 
-type Tab = "elements" | "maps" | "avatars";
+type Tab = "elements" | "lab" | "maps" | "avatars";
 
-interface Element {
-  id: string;
-  imageUrl: string;
-  width: number;
-  height: number;
-  static: boolean;
-}
 interface Avatar {
   id: string;
   imageUrl: string;
@@ -53,24 +50,27 @@ interface MapData {
 }
 
 export function AdminDashboard() {
-  const [tab, setTab] = useState<Tab>("elements");
-  const { logout } = useUserStore();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Sync active tab with route URL (/admin/elements, /admin/lab, /admin/maps, /admin/avatars)
+  const getTabFromPath = (): Tab => {
+    const path = location.pathname.toLowerCase();
+    if (path.includes("/admin/lab")) return "lab";
+    if (path.includes("/admin/maps")) return "maps";
+    if (path.includes("/admin/avatars")) return "avatars";
+    return "elements";
+  };
+
+  const tab = getTabFromPath();
+  const { logout } = useUserStore();
   const { toast, confirm } = useToast();
 
   // Elements state
-  const [elements, setElements] = useState<Element[]>([]);
-  const [elImageUrl, setElImageUrl] = useState("");
-  const [elWidth, setElWidth] = useState("1");
-  const [elHeight, setElHeight] = useState("1");
-  const [elStatic, setElStatic] = useState(true);
+  const [elements, setElements] = useState<ElementItem[]>([]);
   const [elLoading, setElLoading] = useState(false);
   const [elError, setElError] = useState("");
   const [deletingEl, setDeletingEl] = useState<string | null>(null);
-
-  // Update element state
-  const [editingElementId, setEditingElementId] = useState<string | null>(null);
-  const [editImageUrl, setEditImageUrl] = useState("");
   const [updateLoading, setUpdateLoading] = useState(false);
   const [updateMsg, setUpdateMsg] = useState("");
 
@@ -90,13 +90,21 @@ export function AdminDashboard() {
   const [mapLoading, setMapLoading] = useState(false);
   const [mapError, setMapError] = useState("");
   const [mapSuccess, setMapSuccess] = useState("");
-  const [mapDefaultElements, setMapDefaultElements] = useState<
-    MapDefaultElement[]
-  >([]);
+  const [mapDefaultElements, setMapDefaultElements] = useState<MapDefaultElement[]>([]);
   const [addElId, setAddElId] = useState("");
   const [addElX, setAddElX] = useState("0");
   const [addElY, setAddElY] = useState("0");
   const [deletingMap, setDeletingMap] = useState<string | null>(null);
+
+  // Map edit state
+  const [editingMapId, setEditingMapId] = useState<string | null>(null);
+  const [editMapName, setEditMapName] = useState("");
+  const [editMapThumb, setEditMapThumb] = useState("");
+  const [editMapElements, setEditMapElements] = useState<MapDefaultElement[]>([]);
+  const [editAddElId, setEditAddElId] = useState("");
+  const [editAddElX, setEditAddElX] = useState("0");
+  const [editAddElY, setEditAddElY] = useState("0");
+  const [updateMapLoading, setUpdateMapLoading] = useState(false);
 
   const fetchElements = async () => {
     try {
@@ -126,45 +134,51 @@ export function AdminDashboard() {
   }, []);
 
   // ── CREATE ELEMENT ────────────────────
-  const createElement = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreateElement = async (data: {
+    imageUrl: string;
+    width: number;
+    height: number;
+    static: boolean;
+    name?: string;
+    category?: string;
+    colorMaskUrl?: string;
+  }) => {
     setElError("");
     setElLoading(true);
     try {
-      if (!elImageUrl) throw new Error("Image URL is required");
-      await api.post("/admin/element", {
-        imageUrl: elImageUrl,
-        width: parseInt(elWidth),
-        height: parseInt(elHeight),
-        static: elStatic,
-      });
-      setElImageUrl("");
-      setElWidth("1");
-      setElHeight("1");
-      setElStatic(true);
+      await api.post("/admin/element", data);
+      toast("Element created successfully!", "success");
       await fetchElements();
     } catch (err: any) {
-      setElError(err.response?.data?.message || err.message || "Failed");
+      setElError(err.response?.data?.message || err.message || "Failed to create element");
+      throw err;
     } finally {
       setElLoading(false);
     }
   };
 
   // ── UPDATE ELEMENT ────────────────────
-  const handleUpdateElement = async () => {
-    if (!editingElementId) return;
+  const handleUpdateElement = async (
+    id: string,
+    data: {
+      imageUrl: string;
+      width: number;
+      height: number;
+      static: boolean;
+      name?: string;
+      category?: string;
+      colorMaskUrl?: string;
+    }
+  ) => {
     setUpdateLoading(true);
     setUpdateMsg("");
     try {
-      if (!editImageUrl) throw new Error("Image URL is required");
-      await api.put(`/admin/element/${editingElementId}`, {
-        imageUrl: editImageUrl,
-      });
-      setUpdateMsg("Updated!");
-      setEditingElementId(null);
+      await api.put(`/admin/element/${id}`, data);
+      toast("Element updated successfully!", "success");
       await fetchElements();
     } catch (err: any) {
-      setUpdateMsg(err.response?.data?.message || err.message || "Failed");
+      setUpdateMsg(err.response?.data?.message || err.message || "Failed to update element");
+      throw err;
     } finally {
       setUpdateLoading(false);
     }
@@ -172,13 +186,14 @@ export function AdminDashboard() {
 
   // ── DELETE ELEMENT ────────────────────
   const deleteElement = async (id: string) => {
-    if (!await confirm("Are you sure you want to delete this element?")) return;
+    if (!(await confirm("Are you sure you want to delete this element?"))) return;
     setDeletingEl(id);
     try {
       await api.delete(`/admin/element/${id}`);
       await fetchElements();
+      toast("Element deleted successfully!", "success");
     } catch (e: any) {
-      toast(e.response?.data?.message || "Failed to delete element", 'error');
+      toast(e.response?.data?.message || "Failed to delete element", "error");
     } finally {
       setDeletingEl(null);
     }
@@ -195,6 +210,7 @@ export function AdminDashboard() {
       setAvImageUrl("");
       setAvName("");
       await fetchAvatars();
+      toast("Avatar created successfully!", "success");
     } catch (err: any) {
       setAvError(err.response?.data?.message || err.message || "Failed");
     } finally {
@@ -204,19 +220,20 @@ export function AdminDashboard() {
 
   // ── DELETE AVATAR ─────────────────────
   const deleteAvatar = async (id: string) => {
-    if (!await confirm("Are you sure you want to delete this avatar?")) return;
+    if (!(await confirm("Are you sure you want to delete this avatar?"))) return;
     setDeletingAv(id);
     try {
       await api.delete(`/admin/avatar/${id}`);
       await fetchAvatars();
+      toast("Avatar deleted successfully!", "success");
     } catch (e: any) {
-      toast(e.response?.data?.message || "Failed to delete avatar", 'error');
+      toast(e.response?.data?.message || "Failed to delete avatar", "error");
     } finally {
       setDeletingAv(null);
     }
   };
 
-  // ── CREATE MAP ────────────────────────
+  // ── MAP BUILDER HELPERS ────────────────
   const addMapElement = () => {
     if (!addElId) return;
     setMapDefaultElements((prev) => [
@@ -245,6 +262,7 @@ export function AdminDashboard() {
     setEditMapElements((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  // ── CREATE MAP ────────────────────────
   const createMap = async (e: React.FormEvent) => {
     e.preventDefault();
     setMapError("");
@@ -262,6 +280,7 @@ export function AdminDashboard() {
       setMapName("");
       setMapDefaultElements([]);
       await fetchMaps();
+      toast("Map created successfully!", "success");
     } catch (err: any) {
       setMapError(err.response?.data?.message || err.message || "Failed");
     } finally {
@@ -270,15 +289,6 @@ export function AdminDashboard() {
   };
 
   // ── UPDATE MAP ────────────────────────
-  const [editingMapId, setEditingMapId] = useState<string | null>(null);
-  const [editMapName, setEditMapName] = useState("");
-  const [editMapThumb, setEditMapThumb] = useState("");
-  const [editMapElements, setEditMapElements] = useState<MapDefaultElement[]>([]);
-  const [editAddElId, setEditAddElId] = useState("");
-  const [editAddElX, setEditAddElX] = useState("0");
-  const [editAddElY, setEditAddElY] = useState("0");
-  const [updateMapLoading, setUpdateMapLoading] = useState(false);
-
   const handleUpdateMap = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingMapId || !editMapName) return;
@@ -293,7 +303,7 @@ export function AdminDashboard() {
       await fetchMaps();
       toast("Map updated successfully!", "success");
     } catch (err: any) {
-      toast(err.response?.data?.message || "Failed to update map", 'error');
+      toast(err.response?.data?.message || "Failed to update map", "error");
     } finally {
       setUpdateMapLoading(false);
     }
@@ -301,20 +311,54 @@ export function AdminDashboard() {
 
   // ── DELETE MAP ────────────────────────
   const deleteMap = async (id: string) => {
-    if (!await confirm("Are you sure you want to delete this map?")) return;
+    if (!(await confirm("Are you sure you want to delete this map?"))) return;
     setDeletingMap(id);
     try {
       await api.delete(`/admin/map/${id}`);
       await fetchMaps();
+      toast("Map deleted successfully!", "success");
     } catch (e: any) {
-      toast(e.response?.data?.message || "Failed to delete map", 'error');
+      toast(e.response?.data?.message || "Failed to delete map", "error");
     } finally {
       setDeletingMap(null);
     }
   };
 
+  // ── ROOM LAB MAP HANDLERS ────────────────
+  const handleCreateMapData = async (data: {
+    name: string;
+    dimensions: string;
+    thumbnail: string;
+    defaultElements: { elementId: string; x: number; y: number }[];
+  }) => {
+    await api.post("/admin/map", { ...data, type: "room" });
+    await fetchMaps();
+    toast("Room template published successfully!", "success");
+  };
+
+  const handleUpdateMapData = async (
+    id: string,
+    data: {
+      name: string;
+      thumbnail?: string;
+      defaultElements: { elementId: string; x: number; y: number }[];
+    }
+  ) => {
+    await api.put(`/admin/map/${id}`, data);
+    await fetchMaps();
+    toast("Room template updated successfully!", "success");
+  };
+
+  const handleDeleteMapData = async (id: string) => {
+    if (!(await confirm("Are you sure you want to delete this room template?"))) return;
+    await api.delete(`/admin/map/${id}`);
+    await fetchMaps();
+    toast("Room template deleted successfully!", "success");
+  };
+
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: "elements", label: "Elements", icon: <Layers size={16} /> },
+    { key: "lab", label: "🧪 Room Lab Studio", icon: <Sparkles size={16} /> },
     { key: "maps", label: "Maps", icon: <Map size={16} /> },
     { key: "avatars", label: "Avatars", icon: <User2 size={16} /> },
   ];
@@ -331,20 +375,13 @@ export function AdminDashboard() {
             <button
               key={t.key}
               className={`nav-item ${tab === t.key ? "active" : ""}`}
-              onClick={() => setTab(t.key)}
+              onClick={() => navigate(`/admin/${t.key}`)}
             >
               {t.icon} {t.label}
-              {tab === t.key && (
-                <ChevronRight size={14} style={{ marginLeft: "auto" }} />
-              )}
+              {tab === t.key && <ChevronRight size={14} style={{ marginLeft: "auto" }} />}
             </button>
           ))}
-          <div
-            style={{
-              borderTop: "1px solid var(--glass-border)",
-              margin: "1rem 0",
-            }}
-          />
+          <div style={{ borderTop: "1px solid var(--glass-border)", margin: "1rem 0" }} />
           <button className="nav-item" onClick={() => navigate("/dashboard")}>
             👤 User View
           </button>
@@ -360,226 +397,33 @@ export function AdminDashboard() {
         </button>
       </aside>
 
-      {/* Main */}
+      {/* Main Content */}
       <main className="dash-main">
         {/* ══ ELEMENTS TAB ══ */}
         {tab === "elements" && (
-          <div className="animate-fade-in">
-            <div className="dash-header">
-              <h1>🪑 Elements</h1>
-            </div>
-
-            {/* Create form */}
-            <div className="glass admin-form-card">
-              <h3 style={{ marginBottom: "1.25rem", fontWeight: 600 }}>
-                <Plus size={16} style={{ display: "inline", marginRight: 6 }} />{" "}
-                Create Element
-              </h3>
-              <form onSubmit={createElement} className="admin-grid-form">
-                {elError && (
-                  <div className="error-banner" style={{ gridColumn: "1/-1" }}>
-                    {elError}
-                  </div>
-                )}
-                <div className="field">
-                  <label className="field-label">Image URL</label>
-                  <input
-                    className="input"
-                    value={elImageUrl}
-                    onChange={(e) => setElImageUrl(e.target.value)}
-                    placeholder="https://..."
-                  />
-                </div>
-                <div className="field">
-                  <label className="field-label">Width (tiles)</label>
-                  <input
-                    className="input"
-                    type="number"
-                    value={elWidth}
-                    onChange={(e) => setElWidth(e.target.value)}
-                    min={1}
-                  />
-                </div>
-                <div className="field">
-                  <label className="field-label">Height (tiles)</label>
-                  <input
-                    className="input"
-                    type="number"
-                    value={elHeight}
-                    onChange={(e) => setElHeight(e.target.value)}
-                    min={1}
-                  />
-                </div>
-                <div className="field" style={{ justifyContent: "flex-end" }}>
-                  <label className="field-label">Static?</label>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "0.5rem",
-                      marginTop: "0.5rem",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={elStatic}
-                      onChange={(e) => setElStatic(e.target.checked)}
-                      style={{
-                        width: 18,
-                        height: 18,
-                        accentColor: "var(--accent)",
-                        cursor: "pointer",
-                      }}
-                    />
-                    <span
-                      style={{
-                        color: "var(--text-secondary)",
-                        fontSize: "0.85rem",
-                      }}
-                    >
-                      Non-walkable
-                    </span>
-                  </div>
-                </div>
-                <button
-                  type="submit"
-                  className="btn"
-                  style={{ gridColumn: "1/-1" }}
-                  disabled={elLoading}
-                >
-                  {elLoading ? (
-                    <span className="spinner" />
-                  ) : (
-                    "Create Element →"
-                  )}
-                </button>
-              </form>
-            </div>
-
-            {/* Elements list with edit & delete */}
-            <h3
-              style={{ margin: "2rem 0 1rem", color: "var(--text-secondary)" }}
-            >
-              All Elements ({elements.length})
-            </h3>
-            {updateMsg && (
-              <div
-                className={
-                  updateMsg === "Updated!" ? "success-banner" : "error-banner"
-                }
-                style={{ marginBottom: "1rem" }}
-              >
-                {updateMsg}
-              </div>
-            )}
-            <div className="admin-items-grid">
-              {elements.map((el) => (
-                <div key={el.id} className="glass admin-item-card">
-                  <div className="admin-item-thumb">
-                    <img
-                      src={el.imageUrl}
-                      alt=""
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src =
-                          "https://placehold.co/60x60/1e293b/94a3b8?text=?";
-                      }}
-                    />
-                  </div>
-                  <div className="admin-item-info" style={{ flex: 1 }}>
-                    <p className="admin-item-id">{el.id.slice(0, 12)}…</p>
-                    <p className="admin-item-meta">
-                      {el.width}×{el.height} •{" "}
-                      {el.static ? "🚫 Static" : "✅ Walkable"}
-                    </p>
-                  </div>
-                  <div style={{ display: "flex", gap: "0.3rem" }}>
-                    <button
-                      className="panel-del-btn"
-                      title="Edit image"
-                      onClick={() => {
-                        setEditingElementId(el.id);
-                        setEditImageUrl(el.imageUrl);
-                      }}
-                    >
-                      <Pencil size={13} />
-                    </button>
-                    <button
-                      className="panel-del-btn"
-                      title="Delete element"
-                      onClick={() => deleteElement(el.id)}
-                      disabled={deletingEl === el.id}
-                    >
-                      {deletingEl === el.id ? (
-                        <span className="spinner" />
-                      ) : (
-                        <Trash2 size={13} />
-                      )}
-                    </button>
-                  </div>
-                </div>
-              ))}
-              {elements.length === 0 && (
-                <p
-                  style={{ color: "var(--text-secondary)", padding: "1rem 0" }}
-                >
-                  No elements yet.
-                </p>
-              )}
-            </div>
-          </div>
+          <ElementsTab
+            elements={elements}
+            onCreateElement={handleCreateElement}
+            onUpdateElement={handleUpdateElement}
+            onDeleteElement={deleteElement}
+            isCreating={elLoading}
+            createError={elError}
+            isUpdating={updateLoading}
+            updateMsg={updateMsg}
+            deletingElId={deletingEl}
+          />
         )}
 
-        {/* Edit Element Modal (must render outside the Elements tab so it can open reliably) */}
-        {editingElementId && (
-          <div
-            className="modal-overlay"
-            onClick={() => setEditingElementId(null)}
-          >
-            <div
-              className="modal glass animate-fade-in"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: "1rem",
-                }}
-              >
-                <h2>Update Element Image</h2>
-                <button
-                  className="btn-icon"
-                  onClick={() => setEditingElementId(null)}
-                >
-                  <X size={18} />
-                </button>
-              </div>
-              <div className="field" style={{ marginBottom: "1rem" }}>
-                <label className="field-label">New Image URL</label>
-                <input
-                  className="input"
-                  value={editImageUrl}
-                  onChange={(e) => setEditImageUrl(e.target.value)}
-                />
-              </div>
-              <div style={{ display: "flex", gap: "0.75rem" }}>
-                <button
-                  className="btn btn-ghost btn-full"
-                  onClick={() => setEditingElementId(null)}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="btn btn-full"
-                  onClick={handleUpdateElement}
-                  disabled={updateLoading}
-                >
-                  {updateLoading ? <span className="spinner" /> : "Update →"}
-                </button>
-              </div>
-            </div>
-          </div>
+        {/* ══ ROOM LAB TAB ══ */}
+        {tab === "lab" && (
+          <RoomLabTab
+            maps={maps.filter((m: any) => m.type === "room")}
+            elements={elements}
+            onCreateMap={handleCreateMapData}
+            onUpdateMap={handleUpdateMapData}
+            onDeleteMap={handleDeleteMapData}
+            isDeletingMapId={deletingMap}
+          />
         )}
 
         {/* ══ MAPS TAB ══ */}
@@ -590,8 +434,7 @@ export function AdminDashboard() {
             </div>
             <div className="glass admin-form-card">
               <h3 style={{ marginBottom: "1.25rem", fontWeight: 600 }}>
-                <Plus size={16} style={{ display: "inline", marginRight: 6 }} />{" "}
-                Create Map
+                <Plus size={16} style={{ display: "inline", marginRight: 6 }} /> Create Map
               </h3>
               <form onSubmit={createMap} className="admin-grid-form">
                 {mapError && (
@@ -600,10 +443,7 @@ export function AdminDashboard() {
                   </div>
                 )}
                 {mapSuccess && (
-                  <div
-                    className="success-banner"
-                    style={{ gridColumn: "1/-1" }}
-                  >
+                  <div className="success-banner" style={{ gridColumn: "1/-1" }}>
                     {mapSuccess}
                   </div>
                 )}
@@ -644,20 +484,13 @@ export function AdminDashboard() {
                     marginTop: "0.5rem",
                   }}
                 >
-                  <p
-                    className="field-label"
-                    style={{ marginBottom: "0.75rem" }}
-                  >
-                    <Layers
-                      size={13}
-                      style={{ display: "inline", marginRight: 4 }}
-                    />
-                    Default Elements (placed when space is created from this
-                    map)
+                  <p className="field-label" style={{ marginBottom: "0.75rem" }}>
+                    <Layers size={13} style={{ display: "inline", marginRight: 4 }} />
+                    Default Elements (placed when space is created from this map)
                   </p>
 
                   {/* Element picker */}
-                  {elements.length > 0 && (
+                  {elements.length > 0 ? (
                     <div className="map-el-builder">
                       <select
                         className="input"
@@ -668,7 +501,7 @@ export function AdminDashboard() {
                         <option value="">Select element…</option>
                         {elements.map((el) => (
                           <option key={el.id} value={el.id}>
-                            {el.id.slice(0, 8)}… ({el.width}×{el.height},{" "}
+                            {el.name ? `${el.name} (${el.id.slice(0, 6)})` : `${el.id.slice(0, 8)}…`} ({el.width}×{el.height},{" "}
                             {el.static ? "static" : "walkable"})
                           </option>
                         ))}
@@ -699,14 +532,8 @@ export function AdminDashboard() {
                         <Plus size={14} />
                       </button>
                     </div>
-                  )}
-                  {elements.length === 0 && (
-                    <p
-                      style={{
-                        color: "var(--text-secondary)",
-                        fontSize: "0.8rem",
-                      }}
-                    >
+                  ) : (
+                    <p style={{ color: "var(--text-secondary)", fontSize: "0.8rem" }}>
                       Create elements first (Elements tab)
                     </p>
                   )}
@@ -716,12 +543,7 @@ export function AdminDashboard() {
                     <div className="map-el-list">
                       {mapDefaultElements.map((mel, i) => (
                         <div key={i} className="map-el-chip">
-                          <span
-                            style={{
-                              fontSize: "0.75rem",
-                              fontFamily: "monospace",
-                            }}
-                          >
+                          <span style={{ fontSize: "0.75rem", fontFamily: "monospace" }}>
                             {mel.elementId.slice(0, 6)}… @ ({mel.x},{mel.y})
                           </span>
                           <button
@@ -758,22 +580,18 @@ export function AdminDashboard() {
               </form>
             </div>
 
-            {/* Maps list with edit & delete */}
-            <h3
-              style={{ margin: "2rem 0 1rem", color: "var(--text-secondary)" }}
-            >
-              All Maps ({maps.length})
+            {/* Maps list */}
+            <h3 style={{ margin: "2rem 0 1rem", color: "var(--text-secondary)" }}>
+              All Maps ({maps.filter((m: any) => m.type !== "room").length})
             </h3>
             <div className="admin-items-grid">
-              {maps.map((m) => (
+              {maps.filter((m: any) => m.type !== "room").map((m) => (
                 <div key={m.id} className="glass admin-item-card">
                   <div className="admin-item-thumb">
                     <span style={{ fontSize: "1.5rem" }}>🗺️</span>
                   </div>
                   <div className="admin-item-info" style={{ flex: 1 }}>
-                    <p style={{ fontWeight: 600, fontSize: "0.9rem" }}>
-                      {m.name}
-                    </p>
+                    <p style={{ fontWeight: 600, fontSize: "0.9rem" }}>{m.name}</p>
                     <p className="admin-item-meta">
                       {m.dimensions} • {m.elementCount} elements
                     </p>
@@ -786,7 +604,13 @@ export function AdminDashboard() {
                         setEditingMapId(m.id);
                         setEditMapName(m.name);
                         setEditMapThumb(m.thumbnail || "");
-                        setEditMapElements(m.elements.map(el => ({ elementId: el.element.id, x: el.x, y: el.y })));
+                        setEditMapElements(
+                          (m.elements || []).map((el) => ({
+                            elementId: el.element?.id || "",
+                            x: el.x,
+                            y: el.y,
+                          }))
+                        );
                       }}
                     >
                       <Pencil size={13} />
@@ -797,30 +621,19 @@ export function AdminDashboard() {
                       onClick={() => deleteMap(m.id)}
                       disabled={deletingMap === m.id}
                     >
-                      {deletingMap === m.id ? (
-                        <span className="spinner" />
-                      ) : (
-                        <Trash2 size={13} />
-                      )}
+                      {deletingMap === m.id ? <span className="spinner" /> : <Trash2 size={13} />}
                     </button>
                   </div>
                 </div>
               ))}
-              {maps.length === 0 && (
-                <p
-                  style={{ color: "var(--text-secondary)", padding: "1rem 0" }}
-                >
-                  No maps yet.
-                </p>
+              {maps.filter((m: any) => m.type !== "room").length === 0 && (
+                <p style={{ color: "var(--text-secondary)", padding: "1rem 0" }}>No maps yet.</p>
               )}
             </div>
 
             {/* Edit Map Modal */}
             {editingMapId && (
-              <div
-                className="modal-overlay"
-                onClick={() => setEditingMapId(null)}
-              >
+              <div className="modal-overlay" onClick={() => setEditingMapId(null)}>
                 <div
                   className="modal-large glass animate-fade-in"
                   onClick={(e) => e.stopPropagation()}
@@ -834,10 +647,7 @@ export function AdminDashboard() {
                     }}
                   >
                     <h2 style={{ fontWeight: 700 }}>Edit Map</h2>
-                    <button
-                      className="btn-icon"
-                      onClick={() => setEditingMapId(null)}
-                    >
+                    <button className="btn-icon" onClick={() => setEditingMapId(null)}>
                       <X size={18} />
                     </button>
                   </div>
@@ -862,7 +672,6 @@ export function AdminDashboard() {
                       />
                     </div>
 
-                    {/* Default Elements */}
                     <div
                       style={{
                         borderTop: "1px solid var(--glass-border)",
@@ -870,14 +679,8 @@ export function AdminDashboard() {
                         marginTop: "0.5rem",
                       }}
                     >
-                      <p
-                        className="field-label"
-                        style={{ marginBottom: "0.75rem" }}
-                      >
-                        <Layers
-                          size={13}
-                          style={{ display: "inline", marginRight: 4 }}
-                        />
+                      <p className="field-label" style={{ marginBottom: "0.75rem" }}>
+                        <Layers size={13} style={{ display: "inline", marginRight: 4 }} />
                         Default Elements ({editMapElements.length})
                       </p>
 
@@ -892,7 +695,7 @@ export function AdminDashboard() {
                             <option value="">Select element…</option>
                             {elements.map((el) => (
                               <option key={el.id} value={el.id}>
-                                {el.id.slice(0, 8)}… ({el.width}×{el.height},{" "}
+                                {el.name ? `${el.name} (${el.id.slice(0, 6)})` : `${el.id.slice(0, 8)}…`} ({el.width}×{el.height},{" "}
                                 {el.static ? "static" : "walkable"})
                               </option>
                             ))}
@@ -924,12 +727,7 @@ export function AdminDashboard() {
                           </button>
                         </div>
                       ) : (
-                        <p
-                          style={{
-                            color: "var(--text-secondary)",
-                            fontSize: "0.8rem",
-                          }}
-                        >
+                        <p style={{ color: "var(--text-secondary)", fontSize: "0.8rem" }}>
                           Create elements first (Elements tab)
                         </p>
                       )}
@@ -938,12 +736,7 @@ export function AdminDashboard() {
                         <div className="map-el-list">
                           {editMapElements.map((mel, i) => (
                             <div key={i} className="map-el-chip">
-                              <span
-                                style={{
-                                  fontSize: "0.75rem",
-                                  fontFamily: "monospace",
-                                }}
-                              >
+                              <span style={{ fontSize: "0.75rem", fontFamily: "monospace" }}>
                                 {mel.elementId.slice(0, 6)}… @ ({mel.x},{mel.y})
                               </span>
                               <button
@@ -986,11 +779,7 @@ export function AdminDashboard() {
                         className="btn btn-full"
                         disabled={updateMapLoading}
                       >
-                        {updateMapLoading ? (
-                          <span className="spinner" />
-                        ) : (
-                          "Save Changes →"
-                        )}
+                        {updateMapLoading ? <span className="spinner" /> : "Save Changes →"}
                       </button>
                     </div>
                   </form>
@@ -1008,8 +797,7 @@ export function AdminDashboard() {
             </div>
             <div className="glass admin-form-card">
               <h3 style={{ marginBottom: "1.25rem", fontWeight: 600 }}>
-                <Plus size={16} style={{ display: "inline", marginRight: 6 }} />{" "}
-                Create Avatar
+                <Plus size={16} style={{ display: "inline", marginRight: 6 }} /> Create Avatar
               </h3>
               <form onSubmit={createAvatar} className="admin-grid-form">
                 {avError && (
@@ -1046,9 +834,7 @@ export function AdminDashboard() {
               </form>
             </div>
 
-            <h3
-              style={{ margin: "2rem 0 1rem", color: "var(--text-secondary)" }}
-            >
+            <h3 style={{ margin: "2rem 0 1rem", color: "var(--text-secondary)" }}>
               All Avatars ({avatars.length})
             </h3>
             <div className="admin-items-grid">
@@ -1065,9 +851,7 @@ export function AdminDashboard() {
                     />
                   </div>
                   <div className="admin-item-info" style={{ flex: 1 }}>
-                    <p style={{ fontWeight: 600, fontSize: "0.9rem" }}>
-                      {av.name}
-                    </p>
+                    <p style={{ fontWeight: 600, fontSize: "0.9rem" }}>{av.name}</p>
                     <p className="admin-item-id">{av.id.slice(0, 12)}…</p>
                   </div>
                   <button
@@ -1076,20 +860,12 @@ export function AdminDashboard() {
                     onClick={() => deleteAvatar(av.id)}
                     disabled={deletingAv === av.id}
                   >
-                    {deletingAv === av.id ? (
-                      <span className="spinner" />
-                    ) : (
-                      <Trash2 size={13} />
-                    )}
+                    {deletingAv === av.id ? <span className="spinner" /> : <Trash2 size={13} />}
                   </button>
                 </div>
               ))}
               {avatars.length === 0 && (
-                <p
-                  style={{ color: "var(--text-secondary)", padding: "1rem 0" }}
-                >
-                  No avatars yet.
-                </p>
+                <p style={{ color: "var(--text-secondary)", padding: "1rem 0" }}>No avatars yet.</p>
               )}
             </div>
           </div>

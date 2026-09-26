@@ -44,11 +44,20 @@ export const CreateElementSchema = z.object({
   width: z.number(),
   height: z.number(),
   static: z.boolean(),
+  name: z.string().optional(),
+  category: z.string().optional(),
+  colorMaskUrl: z.string().optional(),
 });
 
 export const UpdateElementSchema = z.object({
-    imageUrl:z.string()
-})
+  imageUrl: z.string().optional(),
+  width: z.number().optional(),
+  height: z.number().optional(),
+  static: z.boolean().optional(),
+  name: z.string().optional(),
+  category: z.string().optional(),
+  colorMaskUrl: z.string().optional(),
+});
 
 export const CreateAvatarSchema = z.object({
     name:z.string(),
@@ -58,6 +67,7 @@ export const CreateAvatarSchema = z.object({
 export const CreateMapSchema = z.object({
   thumbnail: z.string(),
   name:z.string(),
+  type: z.string().optional(),
   dimensions: z.string().regex(/^[0-9]{1,4}x[0-9]{1,4}$/),
   defaultElements: z.array(z.object({
     elementId:z.string(),
@@ -69,6 +79,7 @@ export const CreateMapSchema = z.object({
 export const UpdateMapSchema = z.object({
   name: z.string().optional(),
   thumbnail: z.string().optional(),
+  type: z.string().optional(),
   defaultElements: z.array(z.object({
     elementId: z.string(),
     x: z.number(),

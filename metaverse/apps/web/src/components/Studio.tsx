@@ -6,7 +6,7 @@ import type { SpaceElement } from './arena/ElementsPanel';
 import { StudioRail, type StudioTool } from './studio/StudioRail';
 import { StudioLibrary } from './studio/StudioLibrary';
 import { StudioCanvas } from './studio/StudioCanvas';
-import type { Prefab } from './studio/types';
+import type { Prefab, AreaType } from './studio/types';
 export function Studio() {
   const { spaceId } = useParams();
   const navigate = useNavigate();
@@ -24,6 +24,7 @@ export function Studio() {
   const [mapImage, setMapImage] = useState('');
   const [dimensions, setDimensions] = useState({ w: 100, h: 100 });
   const [elements, setElements] = useState<SpaceElement[]>([]);
+  const [areas, setAreas] = useState<AreaType[]>([]);
   const [publishing, setPublishing] = useState(false);
 
   // History state for Undo/Redo
@@ -33,11 +34,11 @@ export function Studio() {
 
   // Auto-save & History tracking
   useEffect(() => {
-    if (elements.length === 0 && history.length === 0) return;
+    if (elements.length === 0 && areas.length === 0 && history.length === 0) return;
     
     // Auto-save to draft (debounce to avoid spamming API)
     const timer = setTimeout(() => {
-      api.put(`/office/${spaceId}/draft`, { data: { elements, elementCount: elements.length, savedAt: new Date().toISOString() } }).catch(() => null);
+      api.put(`/office/${spaceId}/draft`, { data: { elements, areas, elementCount: elements.length, savedAt: new Date().toISOString() } }).catch(() => null);
     }, 1500);
 
     // Track history
@@ -82,11 +83,14 @@ export function Studio() {
         if (!mounted) return;
         if (draftRes.data.draft?.data?.elements) {
           const draftEls = draftRes.data.draft.data.elements;
+          const draftAreas = draftRes.data.draft.data.areas || [];
           setElements(draftEls);
+          setAreas(draftAreas);
           setHistory([draftEls]);
           setHistoryIndex(0);
         } else {
           setElements(space.data.elements ?? []);
+          setAreas([]);
           setHistory([space.data.elements ?? []]);
           setHistoryIndex(0);
         }
@@ -111,7 +115,7 @@ export function Studio() {
   const publish = async () => {
     setPublishing(true);
     setStatus('Publishing...');
-    await api.put(`/office/${spaceId}/draft`, { data: { elements, elementCount: elements.length, savedAt: new Date().toISOString() } }).catch(() => null);
+    await api.put(`/office/${spaceId}/draft`, { data: { elements, areas, elementCount: elements.length, savedAt: new Date().toISOString() } }).catch(() => null);
     await api.post(`/office/${spaceId}/publish`, {}).catch(() => null);
     setPublishing(false);
     setStatus('Published!');
@@ -169,6 +173,8 @@ export function Studio() {
         availableElements={availableElements}
         elements={elements}
         setElements={setElements}
+        areas={areas}
+        setAreas={setAreas}
         mapImage={mapImage}
         dimensions={dimensions}
         selectedElId={selectedElId}

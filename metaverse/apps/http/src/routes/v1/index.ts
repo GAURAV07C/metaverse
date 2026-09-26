@@ -138,6 +138,7 @@ router.get("/maps", async (req, res) => {
     maps: maps.map((m) => ({
       id: m.id,
       name: m.name,
+      type: (m as any).type || "map",
       dimensions: `${m.width}x${m.height}`,
       thumbnail: m.thumbnails,
       elementCount: m.mapElements.length,

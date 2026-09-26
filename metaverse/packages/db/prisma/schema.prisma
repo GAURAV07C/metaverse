@@ -93,6 +93,7 @@ model Map {
   height Int
   name   String
   thumbnails String
+  type   String  @default("map")
   mapElements MapElements[]
 
   @@index([name])
