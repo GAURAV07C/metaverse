@@ -56,12 +56,13 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
   }, [pan, zoom]);
 
   // --- Check collision ---
-  const isOccupied = useCallback((gx: number, gy: number, ignoreId?: string) => {
+  const isOccupied = useCallback((gx: number, gy: number, gw: number = 1, gh: number = 1, ignoreId?: string) => {
     return elements.some(el => {
       if (el.id === ignoreId) return false;
       const w = el.element.width || 1;
       const h = el.element.height || 1;
-      return gx >= el.x && gx < el.x + w && gy >= el.y && gy < el.y + h;
+      // Two rectangles overlap if:
+      return gx < el.x + w && gx + gw > el.x && gy < el.y + h && gy + gh > el.y;
     });
   }, [elements]);
 
@@ -116,8 +117,11 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
       const card: Prefab = JSON.parse(raw);
       const { x, y } = screenToGrid(e.clientX, e.clientY);
 
-      if (isOccupied(x, y)) {
-        setStatus(`You can't have areas colliding with each other.`);
+      const w = parseInt(card.size.split(' x ')[0]) || 1;
+      const h = parseInt(card.size.split(' x ')[1]) || 1;
+
+      if (isOccupied(x, y, w, h)) {
+        setStatus(`You can't have elements colliding with each other.`);
         return;
       }
 
@@ -265,7 +269,9 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
     // Check if dragging from sidebar
     const card = (window as any).__draggedPrefab as Prefab;
     if (card) {
-      const occupied = isOccupied(x, y); 
+      const w = parseInt(card.size.split(' x ')[0]) || 1;
+      const h = parseInt(card.size.split(' x ')[1]) || 1;
+      const occupied = isOccupied(x, y, w, h); 
       setDragHoverPos({ x, y, occupied });
     }
   };
@@ -610,7 +616,7 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
   const endElDrag = () => {
     if (draggingElId) {
       const primary = elements.find(e => e.id === draggingElId);
-      if (primary && isOccupied(primary.x, primary.y, primary.id)) {
+      if (primary && isOccupied(primary.x, primary.y, primary.element.width || 1, primary.element.height || 1, primary.id)) {
         // Snap ALL back if primary is blocked
         setElements(prev => prev.map(e => {
           const gItem = dragGroup.current.find(g => g.id === e.id);

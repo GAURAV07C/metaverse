@@ -10,6 +10,7 @@ export interface MapLabItem {
   thumbnail?: string;
   elementCount: number;
   elements: { id: string; x: number; y: number; element: ElementItem }[];
+  areas?: { id: string; name: string; x: number; y: number; w: number; h: number; floor: string; color: string; texture: string }[];
 }
 
 interface RoomLabTabProps {
@@ -20,6 +21,7 @@ interface RoomLabTabProps {
     dimensions: string;
     thumbnail: string;
     defaultElements: { elementId: string; x: number; y: number }[];
+    areas?: { name: string; x: number; y: number; w: number; h: number; floor: string; color: string; texture: string }[];
   }) => Promise<void>;
   onUpdateMap: (
     id: string,
@@ -28,6 +30,7 @@ interface RoomLabTabProps {
       dimensions: string;
       thumbnail: string;
       defaultElements: { elementId: string; x: number; y: number }[];
+      areas?: { name: string; x: number; y: number; w: number; h: number; floor: string; color: string; texture: string }[];
     }
   ) => Promise<void>;
   onDeleteMap: (id: string) => Promise<void>;
@@ -217,7 +220,6 @@ export function RoomLabTab({
         isOpen={isEditorOpen}
         onClose={() => setIsEditorOpen(false)}
         elements={elements}
-        maps={maps}
         initialMapData={
           editingMap
             ? {
@@ -230,6 +232,7 @@ export function RoomLabTab({
                   x: el.x,
                   y: el.y,
                 })),
+                areas: editingMap.areas,
               }
             : null
         }
