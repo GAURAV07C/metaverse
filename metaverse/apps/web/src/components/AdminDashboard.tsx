@@ -330,6 +330,7 @@ export function AdminDashboard() {
     dimensions: string;
     thumbnail: string;
     defaultElements: { elementId: string; x: number; y: number }[];
+    areas?: { name: string; x: number; y: number; w: number; h: number; floor: string; color: string; texture: string }[];
   }) => {
     await api.post("/admin/map", { ...data, type: "room" });
     await fetchMaps();
@@ -342,6 +343,7 @@ export function AdminDashboard() {
       name: string;
       thumbnail?: string;
       defaultElements: { elementId: string; x: number; y: number }[];
+      areas?: { name: string; x: number; y: number; w: number; h: number; floor: string; color: string; texture: string }[];
     }
   ) => {
     await api.put(`/admin/map/${id}`, data);

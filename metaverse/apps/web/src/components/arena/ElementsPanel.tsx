@@ -5,6 +5,7 @@ export interface SpaceElement {
   id: string;
   x: number;
   y: number;
+  rotation?: number;
   element: { id: string; imageUrl: string; colorMaskUrl?: string | null; width: number; height: number; static: boolean; name?: string | null; category?: string | null; color?: string | null; floor?: string | null; wall?: string | null };
 }
 

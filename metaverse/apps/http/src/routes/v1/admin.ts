@@ -92,21 +92,33 @@ adminRouter.post("/map", adminMiddleware, async (req, res) => {
     return;
   }
 
-  const map = await client.map.create({
-    data: {
-      name: parseData.data.name as string,
-      type: parseData.data.type || "map",
-      width: parseInt(parseData.data.dimensions.split("x")[0]!),
-      height: parseInt(parseData.data.dimensions.split("x")[1]!),
-      thumbnails: parseData.data.thumbnail,
-      mapElements: {
-        create: parseData.data.defaultElements.map((e) => ({
-          elementId: e.elementId,
-          x: e.x,
-          y: e.y,
-        })),
-      },
+  const mapData: any = {
+    name: parseData.data.name as string,
+    type: parseData.data.type || "map",
+    width: parseInt(parseData.data.dimensions.split("x")[0]!),
+    height: parseInt(parseData.data.dimensions.split("x")[1]!),
+    thumbnails: parseData.data.thumbnail,
+    mapElements: {
+      create: parseData.data.defaultElements.map((e) => ({
+        elementId: e.elementId,
+        x: e.x,
+        y: e.y,
+      })),
     },
+  };
+
+  if (parseData.data.areas && parseData.data.areas.length > 0) {
+    mapData.areas = {
+      create: parseData.data.areas.map((a) => ({
+        name: a.name,
+        x: a.x, y: a.y, w: a.w, h: a.h,
+        floor: a.floor, color: a.color, texture: a.texture
+      }))
+    };
+  }
+
+  const map = await client.map.create({
+    data: mapData,
   });
 
   return res.json({
@@ -143,6 +155,22 @@ adminRouter.put("/map/:mapId", adminMiddleware, async (req, res) => {
             elementId: e.elementId,
             x: e.x,
             y: e.y,
+          })),
+        });
+      }
+    }
+
+    if (parseData.data.areas !== undefined) {
+      await client.mapArea.deleteMany({
+        where: { mapId: req.params.mapId as string },
+      });
+      if (parseData.data.areas.length > 0) {
+        await client.mapArea.createMany({
+          data: parseData.data.areas.map((a) => ({
+            mapId: req.params.mapId as string,
+            name: a.name,
+            x: a.x, y: a.y, w: a.w, h: a.h,
+            floor: a.floor, color: a.color, texture: a.texture
           })),
         });
       }

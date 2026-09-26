@@ -16,6 +16,7 @@ interface RoomLabEditorModalProps {
     dimensions: string; // e.g. "30x30"
     thumbnail?: string;
     defaultElements?: { elementId: string; x: number; y: number }[];
+    areas?: { id?: string; name: string; x: number; y: number; w: number; h: number; floor: string; color: string; texture: string }[];
   } | null;
   onSaveTemplate: (data: {
     id?: string;
@@ -23,6 +24,7 @@ interface RoomLabEditorModalProps {
     dimensions: string;
     thumbnail: string;
     defaultElements: { elementId: string; x: number; y: number }[];
+    areas?: { name: string; x: number; y: number; w: number; h: number; floor: string; color: string; texture: string }[];
   }) => Promise<void>;
   isSaving: boolean;
 }
@@ -86,14 +88,25 @@ export function RoomLabEditorModal({
         setHistory([[]]);
         setHistoryIndex(0);
       }
+      
+      if (initialMapData.areas) {
+        setAreas(initialMapData.areas.map(a => ({
+          id: a.id || `area-${Math.random()}`,
+          name: a.name, x: a.x, y: a.y, w: a.w, h: a.h,
+          floor: a.floor, color: a.color, texture: a.texture as any
+        })));
+      } else {
+        setAreas([]);
+      }
     } else {
       setName("New Custom Room Template");
       setDimensions({ w: 30, h: 30 });
       setPlacedElements([]);
+      setAreas([]);
       setHistory([[]]);
       setHistoryIndex(0);
     }
-  }, [initialMapData, elements, isOpen]);
+  }, [initialMapData?.id, isOpen]); // Removed elements and full initialMapData to prevent overwrite on save re-renders
 
   // Track history
   useEffect(() => {
@@ -138,6 +151,10 @@ export function RoomLabEditorModal({
       dimensions: `${dimensions.w}x${dimensions.h}`,
       thumbnail: initialMapData?.thumbnail || "https://placehold.co/600x400/0f172a/3b82f6?text=Room+Template",
       defaultElements,
+      areas: areas.map(a => ({
+        name: a.name, x: a.x, y: a.y, w: a.w, h: a.h,
+        floor: a.floor, color: a.color, texture: a.texture || 'solid'
+      }))
     });
   };
 

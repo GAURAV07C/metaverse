@@ -7,13 +7,12 @@ interface Props {
   isSelected: boolean;
   tool: string;
   TILE: number;
-  onSelect: () => void;
   onDelete: () => void;
   onUpdate: (updatedEl: SpaceElement) => void;
-  startElDrag: (id: string, e: React.PointerEvent) => void;
+  onElementPointerDown: (e: React.PointerEvent) => void;
 }
 
-export function StudioElement({ el, isSelected, tool, TILE, onSelect, onDelete, onUpdate, startElDrag }: Props) {
+export function StudioElement({ el, isSelected, tool, TILE, onDelete, onUpdate, onElementPointerDown }: Props) {
   const [status, setStatus] = useState('');
 
   return (
@@ -23,8 +22,6 @@ export function StudioElement({ el, isSelected, tool, TILE, onSelect, onDelete, 
         e.stopPropagation();
         if (tool === 'erase') {
           onDelete();
-        } else {
-          onSelect();
         }
       }}
       style={{
@@ -32,7 +29,7 @@ export function StudioElement({ el, isSelected, tool, TILE, onSelect, onDelete, 
         left: el.x * TILE,
         top: el.y * TILE,
         cursor: tool === 'erase' ? 'crosshair' : 'pointer',
-        zIndex: el.element.category === 'Rooms' ? 0 : (isSelected ? 40 : 20),
+        zIndex: el.element.category === 'Rooms' ? 0 : (isSelected ? 20040 : 20020),
       }}
     >
       {/* ── Header bar (shown on select) ── */}
@@ -48,7 +45,7 @@ export function StudioElement({ el, isSelected, tool, TILE, onSelect, onDelete, 
           {/* Name section with Drag handle */}
           <div style={{ display: 'flex', alignItems: 'center', padding: '6px 12px', borderRight: '1px solid #333', background: '#111', borderTopLeftRadius: 8, borderBottomLeftRadius: 8 }}>
             <div
-              onPointerDown={e => startElDrag(el.id, e)}
+              onPointerDown={e => onElementPointerDown(e)}
               style={{ cursor: 'grab', marginRight: 8, color: '#888', display: 'flex', alignItems: 'center' }}
               title="Drag to move"
             >
@@ -160,11 +157,10 @@ export function StudioElement({ el, isSelected, tool, TILE, onSelect, onDelete, 
       <div 
         onPointerDown={e => {
           if (tool !== 'erase') {
-            onSelect(); // Auto-select when starting to drag
-            startElDrag(el.id, e);
+            onElementPointerDown(e);
           }
         }}
-        style={{ position: 'relative', width: el.element.width * TILE, height: el.element.height * TILE, backgroundColor: el.element.floor || 'transparent', borderRadius: 4, cursor: tool === 'erase' ? 'crosshair' : 'grab' }}
+        style={{ position: 'relative', width: el.element.width * TILE, height: el.element.height * TILE, backgroundColor: el.element.floor || 'transparent', borderRadius: 4, cursor: tool === 'erase' ? 'crosshair' : 'grab', transform: `rotate(${el.rotation || 0}deg)`, transition: 'transform 0.2s' }}
       >
         
         {/* Wall overlay (top border) */}

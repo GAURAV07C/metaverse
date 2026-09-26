@@ -392,6 +392,196 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
 
+  const rotateArea = (areaId: string) => {
+    const parentArea = areas.find(a => a.id === areaId);
+    if (!parentArea) return;
+
+    const cx = parentArea.x + parentArea.w / 2;
+    const cy = parentArea.y + parentArea.h / 2;
+
+    const areaRight = parentArea.x + parentArea.w;
+    const areaBottom = parentArea.y + parentArea.h;
+
+    // Rotate the parent area itself
+    const newParentW = parentArea.h;
+    const newParentH = parentArea.w;
+    const newParentX = cx - newParentW / 2;
+    const newParentY = cy - newParentH / 2;
+
+    if (setAreas) {
+      setAreas(prev => prev.map(a => {
+        if (a.id === areaId) {
+          return { ...a, x: newParentX, y: newParentY, w: newParentW, h: newParentH };
+        }
+        
+        // Check if this is a nested area
+        if (a.x >= parentArea.x && a.x + a.w <= areaRight && a.y >= parentArea.y && a.y + a.h <= areaBottom) {
+          const acx = a.x + a.w / 2;
+          const acy = a.y + a.h / 2;
+          const rx = acx - cx;
+          const ry = acy - cy;
+          // Rotate 90 deg clockwise
+          const new_acx = cx - ry;
+          const new_acy = cy + rx;
+          const new_w = a.h;
+          const new_h = a.w;
+          return { ...a, x: new_acx - new_w / 2, y: new_acy - new_h / 2, w: new_w, h: new_h };
+        }
+        
+        return a;
+      }));
+    }
+
+    // Rotate elements inside
+    setElements(prev => prev.map(el => {
+      const ew = el.element.width || 1;
+      const eh = el.element.height || 1;
+      const ecx = el.x + ew / 2;
+      const ecy = el.y + eh / 2;
+      
+      // Check if inside
+      if (ecx >= parentArea.x && ecx <= areaRight && ecy >= parentArea.y && ecy <= areaBottom) {
+        const rx = ecx - cx;
+        const ry = ecy - cy;
+        const new_ecx = cx - ry;
+        const new_ecy = cy + rx;
+        const new_x = new_ecx - ew / 2;
+        const new_y = new_ecy - eh / 2;
+        return { ...el, x: new_x, y: new_y, rotation: ((el.rotation || 0) + 90) % 360 };
+      }
+      return el;
+    }));
+  };
+
+  const duplicateArea = (areaId: string) => {
+    const parentArea = areas.find(a => a.id === areaId);
+    if (!parentArea) return;
+
+    const areaRight = parentArea.x + parentArea.w;
+    const areaBottom = parentArea.y + parentArea.h;
+
+    // Offset for the new copy
+    const OFFSET_X = parentArea.w + 1;
+    const OFFSET_Y = 0;
+
+    // Find nested areas
+    const insideAreas = areas.filter(a => 
+      a.id !== areaId && 
+      a.x >= parentArea.x && a.x + a.w <= areaRight && 
+      a.y >= parentArea.y && a.y + a.h <= areaBottom
+    );
+
+    // Find nested elements
+    const insideEls = elements.filter(el => {
+      const ew = el.element.width || 1;
+      const eh = el.element.height || 1;
+      const ecx = el.x + ew / 2;
+      const ecy = el.y + eh / 2;
+      return ecx >= parentArea.x && ecx <= areaRight && ecy >= parentArea.y && ecy <= areaBottom;
+    });
+
+    const newAreas: AreaType[] = [];
+    
+    // Copy parent area
+    const newParentId = `area-${Date.now()}`;
+    newAreas.push({
+      ...parentArea,
+      id: newParentId,
+      x: parentArea.x + OFFSET_X,
+      y: parentArea.y + OFFSET_Y
+    });
+
+    // Copy nested areas
+    insideAreas.forEach((a, i) => {
+      newAreas.push({
+        ...a,
+        id: `area-child-${Date.now()}-${i}`,
+        x: a.x + OFFSET_X,
+        y: a.y + OFFSET_Y
+      });
+    });
+
+    // Copy nested elements
+    const newElements: SpaceElement[] = insideEls.map((el, i) => ({
+      ...el,
+      id: `el-child-${Date.now()}-${i}`,
+      x: el.x + OFFSET_X,
+      y: el.y + OFFSET_Y
+    }));
+
+    if (setAreas) setAreas(prev => [...prev, ...newAreas]);
+    setElements(prev => [...prev, ...newElements]);
+    
+    setSelectedAreaId(newParentId);
+    setSelectedElId(null);
+    setStatus("Area and its contents duplicated!");
+  };
+
+  const multiplyArea = (areaId: string, config: { type: 'grid'|'circular', count: number, cols: number, gap: number, radius: number }) => {
+    const parentArea = areas.find(a => a.id === areaId);
+    if (!parentArea) return;
+
+    const areaRight = parentArea.x + parentArea.w;
+    const areaBottom = parentArea.y + parentArea.h;
+
+    // Find nested areas & elements
+    const insideAreas = areas.filter(a => a.id !== areaId && a.x >= parentArea.x && a.x + a.w <= areaRight && a.y >= parentArea.y && a.y + a.h <= areaBottom);
+    const insideEls = elements.filter(el => {
+      const ew = el.element.width || 1;
+      const eh = el.element.height || 1;
+      const ecx = el.x + ew / 2;
+      const ecy = el.y + eh / 2;
+      return ecx >= parentArea.x && ecx <= areaRight && ecy >= parentArea.y && ecy <= areaBottom;
+    });
+
+    const newAreas: AreaType[] = [];
+    const newElements: SpaceElement[] = [];
+
+    // The center of the parent (used for circular)
+    const cx = parentArea.x + parentArea.w / 2;
+    const cy = parentArea.y + parentArea.h / 2;
+
+    for (let i = 1; i < config.count; i++) {
+      let offsetX = 0;
+      let offsetY = 0;
+
+      if (config.type === 'grid') {
+        const row = Math.floor(i / config.cols);
+        const col = i % config.cols;
+        offsetX = col * (parentArea.w + config.gap);
+        offsetY = row * (parentArea.h + config.gap);
+      } else {
+        // Circular
+        const angle = (i * (2 * Math.PI)) / config.count;
+        offsetX = config.radius * Math.cos(angle);
+        offsetY = config.radius * Math.sin(angle);
+      }
+
+      const copyId = `area-clone-${Date.now()}-${i}`;
+      
+      // Copy parent
+      newAreas.push({
+        ...parentArea,
+        id: copyId,
+        x: parentArea.x + Math.round(offsetX),
+        y: parentArea.y + Math.round(offsetY)
+      });
+
+      // Copy children
+      insideAreas.forEach((a, j) => {
+        newAreas.push({ ...a, id: `${copyId}-child-${j}`, x: a.x + Math.round(offsetX), y: a.y + Math.round(offsetY) });
+      });
+
+      insideEls.forEach((el, j) => {
+        newElements.push({ ...el, id: `${copyId}-el-${j}`, x: el.x + Math.round(offsetX), y: el.y + Math.round(offsetY) });
+      });
+    }
+
+    if (setAreas) setAreas(prev => [...prev, ...newAreas]);
+    setElements(prev => [...prev, ...newElements]);
+    setStatus(`Generated ${config.count - 1} copies!`);
+  };
+
   const moveEl = (e: React.PointerEvent) => {
     if (!draggingElId && !draggingAreaId) return;
     if (dragGroup.current.length === 0) return;
@@ -514,7 +704,7 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
         })()}
 
         {/* Render Areas */}
-        {areas.map(area => (
+        {[...areas].sort((a, b) => (b.w * b.h) - (a.w * a.h)).map(area => (
           <StudioArea
             key={area.id}
             area={area}
@@ -524,6 +714,9 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
               setSelectedElId(null);
             }}
             onDragStart={(e) => startAreaDrag(area.id, e)}
+            onRotate={() => rotateArea(area.id)}
+            onDuplicate={() => duplicateArea(area.id)}
+            onMultiply={(config) => multiplyArea(area.id, config)}
             onChange={(updated) => {
               if (setAreas) setAreas(prev => prev.map(a => a.id === area.id ? updated : a));
             }}
@@ -560,14 +753,43 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
             isSelected={selectedElId === el.id}
             tool={tool}
             TILE={TILE}
-            onSelect={() => setSelectedElId(el.id)}
             onDelete={() => {
               setElements(prev => prev.filter(x => x.id !== el.id));
               setSelectedElId(null);
               setStatus('Deleted');
             }}
             onUpdate={(updatedEl) => setElements(prev => prev.map(x => x.id === el.id ? updatedEl : x))}
-            startElDrag={startElDrag}
+            onElementPointerDown={(e) => {
+              e.stopPropagation();
+              
+              // Drill-down logic: If element is in a Small Area, select the Small Area first!
+              const ecx = el.x + (el.element.width || 1)/2;
+              const ecy = el.y + (el.element.height || 1)/2;
+              
+              const containingAreas = areas.filter(a => 
+                ecx >= a.x && ecx <= a.x + a.w &&
+                ecy >= a.y && ecy <= a.y + a.h
+              );
+              
+              if (containingAreas.length > 0) {
+                // Get the SMALLEST containing area
+                containingAreas.sort((a, b) => (a.w * a.h) - (b.w * b.h));
+                const closestParent = containingAreas[0];
+                
+                // If the closest parent is NOT already selected, select it FIRST!
+                if (selectedAreaId !== closestParent.id && selectedElId !== el.id) {
+                  setSelectedAreaId(closestParent.id);
+                  setSelectedElId(null);
+                  startAreaDrag(closestParent.id, e);
+                  return; // Don't select the element!
+                }
+              }
+
+              // Otherwise (parent is already selected, or no parent), select the element
+              setSelectedElId(el.id);
+              setSelectedAreaId(null);
+              startElDrag(el.id, e);
+            }}
           />
         ))}
       </div>

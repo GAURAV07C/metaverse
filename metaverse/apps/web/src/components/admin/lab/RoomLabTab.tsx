@@ -62,6 +62,7 @@ export function RoomLabTab({
     dimensions: string;
     thumbnail: string;
     defaultElements: { elementId: string; x: number; y: number }[];
+    areas?: { name: string; x: number; y: number; w: number; h: number; floor: string; color: string; texture: string }[];
   }) => {
     setIsSaving(true);
     try {
@@ -71,6 +72,7 @@ export function RoomLabTab({
           dimensions: data.dimensions,
           thumbnail: data.thumbnail,
           defaultElements: data.defaultElements,
+          areas: data.areas,
         });
       } else {
         await onCreateMap({
@@ -78,9 +80,10 @@ export function RoomLabTab({
           dimensions: data.dimensions,
           thumbnail: data.thumbnail,
           defaultElements: data.defaultElements,
+          areas: data.areas,
         });
       }
-      setIsEditorOpen(false);
+      // setIsEditorOpen(false); // Removed so it doesn't close on publish
     } finally {
       setIsSaving(false);
     }

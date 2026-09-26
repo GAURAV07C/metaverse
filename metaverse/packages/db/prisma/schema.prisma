@@ -95,6 +95,7 @@ model Map {
   thumbnails String
   type   String  @default("map")
   mapElements MapElements[]
+  areas  MapArea[]
 
   @@index([name])
 }
@@ -110,6 +111,22 @@ model MapElements {
 
   @@index([mapId])
   @@index([elementId])
+}
+
+model MapArea {
+  id        String  @id @unique @default(cuid())
+  mapId     String
+  name      String  @default("Area")
+  floor     String  @default("#f3f4f6")
+  color     String  @default("#3b82f6")
+  texture   String  @default("solid")
+  x         Int
+  y         Int
+  w         Int
+  h         Int
+  map       Map     @relation(fields: [mapId], references: [id], onDelete: Cascade)
+
+  @@index([mapId])
 }
 
 model Avatar {

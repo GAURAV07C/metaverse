@@ -73,7 +73,17 @@ export const CreateMapSchema = z.object({
     elementId:z.string(),
     x:z.number(),
     y:z.number(),
-  }))
+  })),
+  areas: z.array(z.object({
+    name: z.string(),
+    x: z.number(),
+    y: z.number(),
+    w: z.number(),
+    h: z.number(),
+    floor: z.string(),
+    color: z.string(),
+    texture: z.string(),
+  })).optional()
 });
 
 export const UpdateMapSchema = z.object({
@@ -85,6 +95,16 @@ export const UpdateMapSchema = z.object({
     x: z.number(),
     y: z.number(),
   })).optional(),
+  areas: z.array(z.object({
+    name: z.string(),
+    x: z.number(),
+    y: z.number(),
+    w: z.number(),
+    h: z.number(),
+    floor: z.string(),
+    color: z.string(),
+    texture: z.string(),
+  })).optional()
 });
 
 export const UpdateSpaceSchema = z.object({

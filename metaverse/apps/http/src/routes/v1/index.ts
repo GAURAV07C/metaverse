@@ -132,6 +132,7 @@ router.get("/maps", async (req, res) => {
       mapElements: {
         include: { element: true },
       },
+      areas: true,
     },
   });
   return res.json({
@@ -154,6 +155,12 @@ router.get("/maps", async (req, res) => {
           static: me.element.static,
         },
       })),
+      areas: (m as any).areas?.map((a: any) => ({
+        id: a.id,
+        name: a.name,
+        x: a.x, y: a.y, w: a.w, h: a.h,
+        floor: a.floor, color: a.color, texture: a.texture
+      })) || [],
     })),
   });
 });

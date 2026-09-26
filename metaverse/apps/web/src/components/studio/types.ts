@@ -13,7 +13,7 @@ export interface AreaType {
   name: string;
   floor: string; // hex color or texture id
   color: string; // border/fill color
-  texture?: 'solid' | 'grid' | 'checker' | 'lines'; // type of floor pattern
+  texture?: 'solid' | 'grid' | 'checker' | 'stripes' | 'dots' | 'planks' | 'hex' | 'zigzag' | 'tiles'; // type of floor pattern
   x: number;
   y: number;
   w: number;
