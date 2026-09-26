@@ -9,6 +9,7 @@ export interface ElementItem {
   width: number;
   height: number;
   static: boolean;
+  variants?: any;
 }
 
 export function getElementCategory(el: { imageUrl: string; category?: string; name?: string }): ElementCategory {

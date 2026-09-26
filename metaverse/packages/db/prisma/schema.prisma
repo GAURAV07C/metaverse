@@ -61,6 +61,8 @@ model spaceElements {
   spaceId   String
   x         Int
   y         Int
+  rotation  Int?    @default(0)
+  color     String?
   customData Json?
 
   space Space @relation(fields: [spaceId], references: [id])
@@ -78,6 +80,7 @@ model Element {
   static   Boolean
   imageUrl String
   colorMaskUrl String?
+  variants Json?
   name     String?
   category String?
   space    spaceElements[]
@@ -106,6 +109,8 @@ model MapElements {
   elementId String
   x         Int?
   y         Int?
+  rotation  Int?    @default(0)
+  color     String?
   map Map @relation(fields: [mapId], references: [id])
   element Element @relation(fields: [elementId], references: [id])
 

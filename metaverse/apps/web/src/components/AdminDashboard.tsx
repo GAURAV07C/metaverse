@@ -142,6 +142,7 @@ export function AdminDashboard() {
     name?: string;
     category?: string;
     colorMaskUrl?: string;
+    variants?: any;
   }) => {
     setElError("");
     setElLoading(true);
@@ -168,6 +169,7 @@ export function AdminDashboard() {
       name?: string;
       category?: string;
       colorMaskUrl?: string;
+      variants?: any;
     }
   ) => {
     setUpdateLoading(true);

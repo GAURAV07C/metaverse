@@ -45,6 +45,7 @@ export function RoomLabEditorModal({
   const [status, setStatus] = useState('Ready');
   const [placedElements, setPlacedElements] = useState<SpaceElement[]>([]);
   const [areas, setAreas] = useState<AreaType[]>([]);
+  const [thumbnailUrl, setThumbnailUrl] = useState("");
 
   // History state for Undo/Redo
   const [history, setHistory] = useState<SpaceElement[][]>([]);
@@ -98,6 +99,7 @@ export function RoomLabEditorModal({
       } else {
         setAreas([]);
       }
+      setThumbnailUrl(initialMapData.thumbnail || "");
     } else {
       setName("New Custom Room Template");
       setDimensions({ w: 30, h: 30 });
@@ -105,6 +107,7 @@ export function RoomLabEditorModal({
       setAreas([]);
       setHistory([[]]);
       setHistoryIndex(0);
+      setThumbnailUrl("");
     }
   }, [initialMapData?.id, isOpen]); // Removed elements and full initialMapData to prevent overwrite on save re-renders
 
@@ -149,7 +152,7 @@ export function RoomLabEditorModal({
       id: initialMapData?.id,
       name,
       dimensions: `${dimensions.w}x${dimensions.h}`,
-      thumbnail: initialMapData?.thumbnail || "https://placehold.co/600x400/0f172a/3b82f6?text=Room+Template",
+      thumbnail: thumbnailUrl || "https://placehold.co/600x400/0f172a/3b82f6?text=Room+Template",
       defaultElements,
       areas: areas.map(a => ({
         name: a.name, x: a.x, y: a.y, w: a.w, h: a.h,
@@ -189,6 +192,8 @@ export function RoomLabEditorModal({
         onClose={onClose}
         name={name}
         status={status}
+        thumbnail={thumbnailUrl}
+        onThumbnailChange={setThumbnailUrl}
       />
       <StudioCanvas
         tool={tool}

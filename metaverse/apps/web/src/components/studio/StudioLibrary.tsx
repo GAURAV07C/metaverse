@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Search, X, ChevronDown, Settings, Monitor, Lamp, UtensilsCrossed, TreePine, Image as ImageIcon, Archive, Table, Armchair, MousePointerClick, Cpu, Map as MapIcon } from 'lucide-react';
+import { Search, X, ChevronDown, Settings, Monitor, Lamp, UtensilsCrossed, TreePine, Image as ImageIcon, Archive, Table, Armchair, MousePointerClick, Cpu, Map as MapIcon, Palette } from 'lucide-react';
 import type { Prefab } from './types';
 
 const categories = [
@@ -23,9 +23,11 @@ interface Props {
   onClose: () => void;
   name?: string;
   status?: string;
+  thumbnail?: string;
+  onThumbnailChange?: (val: string) => void;
 }
 
-export function StudioLibrary({ prefabs, selectedPrefab, onSelect, onClose, name = 'Office', status = 'Ready' }: Props) {
+export function StudioLibrary({ prefabs, selectedPrefab, onSelect, onClose, name = 'Office', status = 'Ready', thumbnail, onThumbnailChange }: Props) {
   const [activeCategory, setActiveCategory] = useState('Machines');
   const [search, setSearch] = useState('');
 
@@ -74,6 +76,20 @@ export function StudioLibrary({ prefabs, selectedPrefab, onSelect, onClose, name
         </label>
       </div>
 
+      {onThumbnailChange && (
+        <div style={{ padding: '0 16px 12px' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#f9fafb', border: '1px solid #e5e5e5', borderRadius: 8, padding: '8px 12px' }}>
+            <ImageIcon size={14} style={{ color: '#9ca3af', flexShrink: 0 }} />
+            <input
+              value={thumbnail}
+              onChange={e => onThumbnailChange(e.target.value)}
+              placeholder="Custom Thumbnail URL"
+              style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: '#111', width: '100%' }}
+            />
+          </label>
+        </div>
+      )}
+
       {/* Category Icon Tabs */}
       <div style={{ display: 'flex', gap: 2, padding: '0 16px 12px', overflowX: 'auto', flexShrink: 0 }}>
         {categories.map(c => (
@@ -119,11 +135,17 @@ export function StudioLibrary({ prefabs, selectedPrefab, onSelect, onClose, name
                 border: selectedPrefab?.title === card.title ? '2px solid #6366f1' : '1px solid #e5e5e5',
                 overflow: 'hidden', background: '#f9fafb',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
+                position: 'relative',
               }}>
                 {card.thumb ? (
                   <img src={card.thumb} alt={card.title} draggable={false} style={{ width: '100%', height: '100%', objectFit: 'contain', imageRendering: 'pixelated' }} />
                 ) : (
                   <div style={{ width: '70%', height: '70%', borderRadius: 6, background: card.color }} />
+                )}
+                {card.variants && (
+                  <div style={{ position: 'absolute', top: 4, right: 4, background: 'rgba(0,0,0,0.6)', color: 'white', borderRadius: 4, padding: '3px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Has variants (color/rotation)">
+                    <Palette size={12} />
+                  </div>
                 )}
               </div>
               <span style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>{card.title}</span>

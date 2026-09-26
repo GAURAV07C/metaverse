@@ -149,12 +149,10 @@ export function RoomLabTab({
                 backgroundSize: "8px 8px",
                 marginBottom: "0.75rem",
                 overflow: "hidden",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
+                position: "relative",
               }}
             >
-              {m.thumbnail ? (
+              {m.thumbnail && !m.thumbnail.includes("placehold.co") ? (
                 <img
                   src={m.thumbnail}
                   alt={m.name}
@@ -163,9 +161,47 @@ export function RoomLabTab({
                     (e.target as HTMLImageElement).style.display = "none";
                   }}
                 />
-              ) : (
-                <span style={{ fontSize: "2.5rem" }}>🗺️</span>
-              )}
+              ) : (() => {
+                const [w, h] = (m.dimensions || "30x30").split("x").map(Number);
+                if (!w || !h) return null;
+                return (
+                  <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+                    {/* Render Areas */}
+                    {m.areas?.map((a) => (
+                      <div
+                        key={a.id}
+                        style={{
+                          position: "absolute",
+                          left: `${(a.x / w) * 100}%`,
+                          top: `${(a.y / h) * 100}%`,
+                          width: `${(a.w / w) * 100}%`,
+                          height: `${(a.h / h) * 100}%`,
+                          backgroundColor: a.color || 'rgba(59, 130, 246, 0.2)',
+                          border: "1px solid rgba(255,255,255,0.1)",
+                        }}
+                      />
+                    ))}
+                    {/* Render Elements */}
+                    {m.elements?.map((el, idx) => (
+                      <img
+                        key={el.id || idx}
+                        src={el.element.imageUrl?.startsWith('/') ? el.element.imageUrl : `/${el.element.imageUrl}`}
+                        alt="element"
+                        style={{
+                          position: "absolute",
+                          left: `${(el.x / w) * 100}%`,
+                          top: `${(el.y / h) * 100}%`,
+                          width: `${((el.element.width || 1) / w) * 100}%`,
+                          height: `${((el.element.height || 1) / h) * 100}%`,
+                          objectFit: "contain",
+                          filter: "drop-shadow(0px 2px 2px rgba(0,0,0,0.5))"
+                        }}
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                      />
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Info */}

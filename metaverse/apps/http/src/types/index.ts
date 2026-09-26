@@ -32,6 +32,8 @@ export const AddElementSchema = z.object({
   elementId: z.string().min(1),
   x: z.number().int().min(0),
   y: z.number().int().min(0),
+  rotation: z.number().optional(),
+  color: z.string().optional(),
 });
 
 export const deleteElement = z.object({
@@ -47,6 +49,7 @@ export const CreateElementSchema = z.object({
   name: z.string().optional(),
   category: z.string().optional(),
   colorMaskUrl: z.string().optional(),
+  variants: z.any().optional(),
 });
 
 export const UpdateElementSchema = z.object({
@@ -57,6 +60,7 @@ export const UpdateElementSchema = z.object({
   name: z.string().optional(),
   category: z.string().optional(),
   colorMaskUrl: z.string().optional(),
+  variants: z.any().optional(),
 });
 
 export const CreateAvatarSchema = z.object({
@@ -73,6 +77,8 @@ export const CreateMapSchema = z.object({
     elementId:z.string(),
     x:z.number(),
     y:z.number(),
+    rotation: z.number().optional(),
+    color: z.string().optional(),
   })),
   areas: z.array(z.object({
     name: z.string(),
@@ -94,6 +100,8 @@ export const UpdateMapSchema = z.object({
     elementId: z.string(),
     x: z.number(),
     y: z.number(),
+    rotation: z.number().optional(),
+    color: z.string().optional(),
   })).optional(),
   areas: z.array(z.object({
     name: z.string(),

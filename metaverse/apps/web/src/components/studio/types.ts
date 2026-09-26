@@ -6,6 +6,7 @@ export interface Prefab {
   color: string;
   thumb?: string;
   items?: { kind: string; dx: number; dy: number }[];
+  variants?: any;
 }
 
 export interface AreaType {

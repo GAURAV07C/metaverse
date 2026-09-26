@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Plus, X } from "lucide-react";
+import { VariantsBuilder } from "./VariantsBuilder";
 
 interface CreateElementModalProps {
   isOpen: boolean;
@@ -12,6 +13,7 @@ interface CreateElementModalProps {
     name?: string;
     category?: string;
     colorMaskUrl?: string;
+    variants?: any;
   }) => Promise<void>;
   isLoading: boolean;
   error?: string;
@@ -31,6 +33,7 @@ export function CreateElementModal({
   const [width, setWidth] = useState("1");
   const [height, setHeight] = useState("1");
   const [isStatic, setIsStatic] = useState(true);
+  const [variants, setVariants] = useState<Record<string, Record<string, string>>>({});
 
   if (!isOpen) return null;
 
@@ -44,6 +47,7 @@ export function CreateElementModal({
       name: name || undefined,
       category: category || undefined,
       colorMaskUrl: colorMaskUrl || undefined,
+      variants: Object.keys(variants).length > 0 ? variants : undefined,
     });
     // Reset on success
     setName("");
@@ -52,6 +56,7 @@ export function CreateElementModal({
     setWidth("1");
     setHeight("1");
     setIsStatic(true);
+    setVariants({});
   };
 
   return (
@@ -136,6 +141,8 @@ export function CreateElementModal({
               placeholder="https://... (Color mask PNG layer)"
             />
           </div>
+
+          <VariantsBuilder variants={variants} onChange={setVariants} />
 
           {/* Live Preview Box */}
           {imageUrl && (

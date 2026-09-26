@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Pencil, X } from "lucide-react";
 import type { ElementItem } from "./adminTypes";
+import { VariantsBuilder } from "./VariantsBuilder";
 
 interface EditElementModalProps {
   element: ElementItem | null;
@@ -13,6 +14,7 @@ interface EditElementModalProps {
     name?: string;
     category?: string;
     colorMaskUrl?: string;
+    variants?: any;
   }) => Promise<void>;
   isLoading: boolean;
   error?: string;
@@ -32,6 +34,7 @@ export function EditElementModal({
   const [width, setWidth] = useState("1");
   const [height, setHeight] = useState("1");
   const [isStatic, setIsStatic] = useState(true);
+  const [variants, setVariants] = useState<Record<string, Record<string, string>>>({});
 
   useEffect(() => {
     if (element) {
@@ -42,6 +45,7 @@ export function EditElementModal({
       setWidth(element.width.toString());
       setHeight(element.height.toString());
       setIsStatic(element.static);
+      setVariants(element.variants || {});
     }
   }, [element]);
 
@@ -57,6 +61,7 @@ export function EditElementModal({
       name: name || undefined,
       category: category || undefined,
       colorMaskUrl: colorMaskUrl || undefined,
+      variants: Object.keys(variants).length > 0 ? variants : undefined,
     });
   };
 
@@ -140,6 +145,8 @@ export function EditElementModal({
               placeholder="https://..."
             />
           </div>
+
+          <VariantsBuilder variants={variants} onChange={setVariants} />
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
             <div className="field">

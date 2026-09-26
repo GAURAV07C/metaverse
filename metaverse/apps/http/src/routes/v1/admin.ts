@@ -27,6 +27,7 @@ adminRouter.post("/element", adminMiddleware, async (req, res) => {
   if (parseData.data.name) createData.name = parseData.data.name;
   if (parseData.data.category) createData.category = parseData.data.category;
   if (parseData.data.colorMaskUrl) createData.colorMaskUrl = parseData.data.colorMaskUrl;
+  if (parseData.data.variants) createData.variants = parseData.data.variants;
 
   const element = await client.element.create({
     data: createData,
@@ -53,6 +54,7 @@ adminRouter.put("/element/:elementId", adminMiddleware, async (req, res) => {
   if (parseData.data.name !== undefined) updateData.name = parseData.data.name;
   if (parseData.data.category !== undefined) updateData.category = parseData.data.category;
   if (parseData.data.colorMaskUrl !== undefined) updateData.colorMaskUrl = parseData.data.colorMaskUrl;
+  if (parseData.data.variants !== undefined) updateData.variants = parseData.data.variants;
 
   await client.element.update({
     where: {
@@ -103,6 +105,8 @@ adminRouter.post("/map", adminMiddleware, async (req, res) => {
         elementId: e.elementId,
         x: e.x,
         y: e.y,
+        rotation: e.rotation || 0,
+        color: e.color || null,
       })),
     },
   };
@@ -155,6 +159,8 @@ adminRouter.put("/map/:mapId", adminMiddleware, async (req, res) => {
             elementId: e.elementId,
             x: e.x,
             y: e.y,
+            rotation: e.rotation || 0,
+            color: e.color || null,
           })),
         });
       }

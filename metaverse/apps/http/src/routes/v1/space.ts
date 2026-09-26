@@ -290,7 +290,9 @@ spaceRouter.post("/element", userMiddleware, async (req, res) => {
         spaceId: parsedData.data.spaceId,
         elementId: parsedData.data.elementId,
         x:parsedData.data.x,
-        y:parsedData.data.y
+        y:parsedData.data.y,
+        rotation: parsedData.data.rotation || 0,
+        color: parsedData.data.color || null,
     }
   })
 

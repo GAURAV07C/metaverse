@@ -18,6 +18,7 @@ interface ElementsTabProps {
     name?: string;
     category?: string;
     colorMaskUrl?: string;
+    variants?: any;
   }) => Promise<void>;
   onUpdateElement: (
     id: string,
@@ -29,6 +30,7 @@ interface ElementsTabProps {
       name?: string;
       category?: string;
       colorMaskUrl?: string;
+      variants?: any;
     }
   ) => Promise<void>;
   onDeleteElement: (id: string) => Promise<void>;
