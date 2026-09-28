@@ -3,6 +3,7 @@ import { PlusCircle, MinusCircle, Navigation, Map as MapIcon } from 'lucide-reac
 import type { OtherUser } from '../Arena';
 import type { SpaceElement } from './ElementsPanel';
 import { findPath } from '../../utils/pathfinding';
+import { drawDynamicAvatar } from '../../utils/drawAvatar';
 
 const TILE = 28;
 
@@ -251,12 +252,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     ctx.scale(activeZoom, activeZoom);
     ctx.translate(-camX, -camY);
 
-    // Gather-style base office floor: warm pixel-style wood or clean grid
-    ctx.fillStyle = '#dbd3c5';
+    // Gather-style base office floor to match Studio (dcf0e2)
+    ctx.fillStyle = '#dcf0e2';
     ctx.fillRect(0, 0, worldW, worldH);
 
-    // Draw subtle grid pattern like a pixel-art canvas
-    ctx.fillStyle = '#d3c9b7';
+    // Draw subtle grid pattern
+    ctx.fillStyle = '#d1e6d7';
     for (let y = 0; y < worldH; y += TILE) {
       for (let x = 0; x < worldW; x += TILE) {
         if ((x / TILE + y / TILE) % 2 === 0) {
@@ -362,13 +363,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
     });
 
-    // Outer office shell walls.
-    ctx.strokeStyle = '#5c4a36';
-    ctx.lineWidth = 10;
-    ctx.strokeRect(5, 5, worldW - 10, worldH - 10);
-    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(12, 12, worldW - 24, worldH - 24);
+    // Outer office shell walls removed to match map editor perfectly
 
     // Elements (filtering out hidden elements)
     const visibleElements = elements.filter(el => !hiddenElementIds.includes(el.id));
@@ -516,30 +511,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     ) => {
       const anim = updateAnim(userId, x, y);
 
-      const shirtColors = ['#3b82f6', '#10b981', '#ec4899', '#8b5cf6', '#f59e0b', '#06b6d4', '#ef4444'];
-      const hairColors = ['#1e293b', '#78350f', '#451a03', '#111827', '#b45309'];
-      const skinColors = ['#fcd34d', '#fed7aa', '#f59e0b', '#d97706'];
-
-      const charHash = Math.abs((userId || username || 'user').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0));
-      const shirtColor = isMe ? '#3b82f6' : shirtColors[charHash % shirtColors.length];
-      const hairColor = hairColors[charHash % hairColors.length];
-      const skinColor = skinColors[charHash % skinColors.length];
-
-      ctx.save();
-
-      // Shadow at feet
-      if (!isSitting) {
-        ctx.fillStyle = 'rgba(0,0,0,0.22)';
-        ctx.beginPath();
-        ctx.ellipse(x, y + 10, 8, 3.5, 0, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // If custom image avatar URL is uploaded
-      if (url) {
+      // If it's a real image (not a class prefix), draw it properly as a circle
+      if (url && !url.startsWith('class:')) {
         let img = imageCacheRef.current[url];
         if (!img) {
           img = new Image();
+          if (url.startsWith('http')) img.crossOrigin = 'anonymous';
           img.src = url;
           img.onload = () => setRenderTrigger(t => t + 1);
           imageCacheRef.current[url] = img;
@@ -555,6 +532,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           ctx.drawImage(img, x - avSize / 2, drawY + bobY - avSize / 2, avSize, avSize);
           ctx.restore();
 
+          const charHash = Math.abs((userId || username || 'user').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0));
+          const shirtColors = ['#3b82f6', '#10b981', '#ec4899', '#8b5cf6', '#f59e0b', '#06b6d4', '#ef4444'];
+          const shirtColor = isMe ? '#3b82f6' : shirtColors[charHash % shirtColors.length];
+
           ctx.strokeStyle = shirtColor;
           ctx.lineWidth = 2.5;
           ctx.beginPath();
@@ -565,75 +546,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         }
       }
 
-      // ── Full Gather 2D Human Pixel Character ──
-      const bob = (anim.isMoving && !isSitting) ? (anim.step % 2 === 0 ? -2 : 0) : 0;
-      const legStep = (anim.isMoving && !isSitting) ? (anim.step % 2 === 0 ? 3 : -3) : 0;
-      const centerY = isSitting ? y + 4 : y - 2 + bob;
-
-      // 1. LEGS & SHOES (when standing/walking)
-      if (!isSitting) {
-        ctx.fillStyle = '#1e293b'; // Pants
-        ctx.fillRect(x - 5 + (anim.facing === 'left' ? -legStep : 0), centerY + 4, 4, 7);
-        ctx.fillRect(x + 1 + (anim.facing === 'right' ? legStep : 0), centerY + 4, 4, 7);
-
-        ctx.fillStyle = '#ffffff'; // White Sneakers
-        ctx.fillRect(x - 6 + (anim.facing === 'left' ? -legStep : 0), centerY + 9, 5, 3);
-        ctx.fillRect(x + 1 + (anim.facing === 'right' ? legStep : 0), centerY + 9, 5, 3);
-      }
-
-      // 2. SHIRT / TORSO
-      ctx.fillStyle = shirtColor;
-      ctx.beginPath();
-      ctx.roundRect(x - 7, centerY - 5, 14, 10, 3);
-      ctx.fill();
-
-      ctx.fillStyle = 'rgba(255,255,255,0.4)';
-      ctx.fillRect(x - 2, centerY - 5, 4, 3);
-
-      // Arms
-      ctx.fillStyle = skinColor;
-      if (anim.facing === 'left') {
-        ctx.fillRect(x - 8, centerY - 2, 3, 6);
-      } else if (anim.facing === 'right') {
-        ctx.fillRect(x + 5, centerY - 2, 3, 6);
-      } else {
-        ctx.fillRect(x - 9, centerY - 2, 3, 6);
-        ctx.fillRect(x + 6, centerY - 2, 3, 6);
-      }
-
-      // 3. HEAD & FACE
-      ctx.fillStyle = skinColor;
-      ctx.beginPath();
-      ctx.arc(x, centerY - 11, 7.5, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Face Features (Eyes)
-      if (anim.facing !== 'up') {
-        ctx.fillStyle = '#0f172a';
-        if (anim.facing === 'down') {
-          ctx.fillRect(x - 3, centerY - 12, 2, 2.5);
-          ctx.fillRect(x + 1, centerY - 12, 2, 2.5);
-        } else if (anim.facing === 'left') {
-          ctx.fillRect(x - 4, centerY - 12, 2, 2.5);
-        } else if (anim.facing === 'right') {
-          ctx.fillRect(x + 2, centerY - 12, 2, 2.5);
-        }
-      }
-
-      // 4. HAIR & HAIRSTYLE
-      ctx.fillStyle = hairColor;
-      if (anim.facing === 'up') {
-        ctx.beginPath();
-        ctx.arc(x, centerY - 12, 8, 0, Math.PI * 2);
-        ctx.fill();
-      } else {
-        ctx.beginPath();
-        ctx.arc(x, centerY - 14, 8, Math.PI, Math.PI * 2);
-        ctx.fill();
-        ctx.fillRect(x - 7.5, centerY - 16, 15, 5);
-      }
-
-      ctx.restore();
+      // Draw dynamic class-based avatar
+      drawDynamicAvatar(ctx, x, y, userId, username, url, isSitting, anim, isMe);
     };
 
     const isChair = (tx: number, ty: number) => visibleElements.some(el => {

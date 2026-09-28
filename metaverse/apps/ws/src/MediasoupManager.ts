@@ -23,6 +23,8 @@ const mediaCodecs: RtpCodecCapability[] = [
 export class MediasoupManager {
   private static instance: MediasoupManager;
   private worker?: Worker;
+  private initPromise?: Promise<void>;
+  private disabledReason?: string;
   private routers: Map<string, Router> = new Map();
 
   // Store transports, producers, and consumers by their ID
@@ -40,6 +42,37 @@ export class MediasoupManager {
   }
 
   public async init() {
+    if (this.initPromise) return this.initPromise;
+
+    if (process.env.MEDIASOUP_ENABLED === "false") {
+      this.disabledReason = "MEDIASOUP_ENABLED=false";
+      console.warn(`Mediasoup disabled (${this.disabledReason})`);
+      return;
+    }
+
+    this.initPromise = this.createWorker().catch((err) => {
+      this.disabledReason = this.getStartupFailureMessage(err);
+
+      if (process.env.MEDIASOUP_REQUIRED === "true") {
+        throw err;
+      }
+
+      console.warn(`Mediasoup disabled: ${this.disabledReason}`);
+      console.warn("Set MEDIASOUP_REQUIRED=true to fail fast when the worker cannot start.");
+    });
+
+    return this.initPromise;
+  }
+
+  public isAvailable() {
+    return Boolean(this.worker) && !this.disabledReason;
+  }
+
+  public getUnavailableReason() {
+    return this.disabledReason ?? "worker not initialized";
+  }
+
+  private async createWorker() {
     this.worker = await mediasoup.createWorker({
       logLevel: "warn",
       logTags: ["info", "ice", "dtls", "rtp", "srtp", "rtcp"],
@@ -54,11 +87,28 @@ export class MediasoupManager {
     console.log("Mediasoup worker created [pid:%d]", this.worker.pid);
   }
 
+  private getStartupFailureMessage(err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    const code = typeof err === "object" && err && "code" in err ? String((err as { code?: unknown }).code) : "";
+
+    if (process.platform === "win32" && (code === "UNKNOWN" || message.includes("spawn UNKNOWN"))) {
+      return "Windows blocked node_modules/mediasoup/worker/out/Release/mediasoup-worker.exe. Allow it in Application Control or run with MEDIASOUP_ENABLED=false for non-media dev.";
+    }
+
+    return message;
+  }
+
+  private assertReady() {
+    if (!this.worker || this.disabledReason) {
+      throw new Error(`Mediasoup unavailable: ${this.getUnavailableReason()}`);
+    }
+  }
+
   public async getRouter(spaceId: string): Promise<Router> {
-    if (!this.worker) throw new Error("Worker not initialized");
+    this.assertReady();
     if (this.routers.has(spaceId)) return this.routers.get(spaceId)!;
 
-    const router = await this.worker.createRouter({ mediaCodecs });
+    const router = await this.worker!.createRouter({ mediaCodecs });
     this.routers.set(spaceId, router);
     return router;
   }

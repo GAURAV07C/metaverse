@@ -14,7 +14,8 @@ export type WsIncomingMessage =
   | { type: 'webrtc-transport-connected' }
   | { type: 'webrtc-produced'; payload: { id: string } }
   | { type: 'new-producer'; payload: { producerId: string; userId: string; appData: any } }
-  | { type: 'webrtc-consumed'; payload: { id: string; producerId: string; kind: string; rtpParameters: any } };
+  | { type: 'webrtc-consumed'; payload: { id: string; producerId: string; kind: string; rtpParameters: any } }
+  | { type: 'webrtc-error'; payload: { message: string } };
 
 export class WsClient {
   private ws: WebSocket | null = null;

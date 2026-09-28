@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Search, Send } from 'lucide-react';
 import { api } from '../utils/api';
@@ -12,7 +12,7 @@ export function DeskManager() {
   const [query, setQuery] = useState('');
   const [msg, setMsg] = useState('Desk Manager locks desk claiming while you edit assignments.');
   
-  const loadDesks = async () => { 
+  const loadDesks = useCallback(async () => {
     try {
       let spaceData = null;
       let desksData = [];
@@ -40,11 +40,11 @@ export function DeskManager() {
       const errMsg = e.message;
       setMsg(`Error: ${errMsg}`);
     }
-  };
+  }, [spaceId]);
 
   useEffect(() => {
     loadDesks();
-  }, [spaceId]);
+  }, [spaceId, loadDesks]);
   const handleMapClick = async (e: React.MouseEvent<HTMLDivElement>) => {
     if (!spaceObj) return;
     const rect = e.currentTarget.getBoundingClientRect();

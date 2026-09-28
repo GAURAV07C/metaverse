@@ -30,7 +30,7 @@ export interface RoomPrefab {
   items: { elementId: string; offsetX: number; offsetY: number }[];
 }
 
-export const ROOM_PREFABS: RoomPrefab[] = [
+const ROOM_PREFABS: RoomPrefab[] = [
   {
     id: 'prefab-conference',
     name: 'Conference Room Pod',

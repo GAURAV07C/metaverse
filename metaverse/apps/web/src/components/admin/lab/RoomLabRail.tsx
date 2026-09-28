@@ -1,4 +1,4 @@
-import { ArrowLeft, MousePointer2, Hand, BoxSelect, Grid3X3, Eraser, Undo2, Redo2, Send, HelpCircle } from "lucide-react";
+import { ArrowLeft, MousePointer2, Hand, BoxSelect, Grid3X3, Eraser, Undo2, Redo2, Send } from "lucide-react";
 
 export type RoomLabTool = "select" | "hand" | "room" | "object" | "erase";
 

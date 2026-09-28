@@ -28,8 +28,13 @@ export function Dashboard() {
 
   const deleteSpace = async (space: Space) => {
     if (!await confirm(`Delete ${space.name}?`)) return;
-    await api.delete(`/space/${space.id}`);
-    setSpaces(prev => prev.filter(item => item.id !== space.id));
+    try {
+      await api.delete(`/space/${space.id}`);
+      setSpaces(prev => prev.filter(item => item.id !== space.id));
+      toast('Space deleted successfully', 'success');
+    } catch (error: any) {
+      toast(error.response?.data?.message || 'Failed to delete space', 'error');
+    }
   };
 
   return (

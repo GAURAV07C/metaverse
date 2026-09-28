@@ -9,15 +9,16 @@ import {
   Map,
   User2,
   ChevronRight,
-  Pencil,
-  X,
   Trash2,
   Sparkles,
 } from "lucide-react";
 import { useToast } from "../utils/toast";
 import { ElementsTab } from "./admin/ElementsTab";
 import { RoomLabTab } from "./admin/lab/RoomLabTab";
+import { MapsTab } from "./admin/MapsTab";
+import { CanvasAvatarPreview } from "./CanvasAvatarPreview";
 import type { ElementItem } from "./admin/adminTypes";
+import { AvatarCanvasTesterModal } from "./AvatarCanvasTesterModal";
 
 type Tab = "elements" | "lab" | "maps" | "avatars";
 
@@ -25,12 +26,6 @@ interface Avatar {
   id: string;
   imageUrl: string;
   name: string;
-}
-
-interface MapDefaultElement {
-  elementId: string;
-  x: number;
-  y: number;
 }
 
 interface MapElementInfo {
@@ -81,30 +76,13 @@ export function AdminDashboard() {
   const [avLoading, setAvLoading] = useState(false);
   const [avError, setAvError] = useState("");
   const [deletingAv, setDeletingAv] = useState<string | null>(null);
+  const [testingAvatar, setTestingAvatar] = useState<Avatar | null>(null);
 
   // Map state
   const [maps, setMaps] = useState<MapData[]>([]);
-  const [mapName, setMapName] = useState("");
-  const [mapDims, setMapDims] = useState("100x200");
-  const [mapThumb, setMapThumb] = useState("https://thumbnail.com/a.png");
-  const [mapLoading, setMapLoading] = useState(false);
-  const [mapError, setMapError] = useState("");
-  const [mapSuccess, setMapSuccess] = useState("");
-  const [mapDefaultElements, setMapDefaultElements] = useState<MapDefaultElement[]>([]);
-  const [addElId, setAddElId] = useState("");
-  const [addElX, setAddElX] = useState("0");
-  const [addElY, setAddElY] = useState("0");
   const [deletingMap, setDeletingMap] = useState<string | null>(null);
 
   // Map edit state
-  const [editingMapId, setEditingMapId] = useState<string | null>(null);
-  const [editMapName, setEditMapName] = useState("");
-  const [editMapThumb, setEditMapThumb] = useState("");
-  const [editMapElements, setEditMapElements] = useState<MapDefaultElement[]>([]);
-  const [editAddElId, setEditAddElId] = useState("");
-  const [editAddElX, setEditAddElX] = useState("0");
-  const [editAddElY, setEditAddElY] = useState("0");
-  const [updateMapLoading, setUpdateMapLoading] = useState(false);
 
   const fetchElements = async () => {
     try {
@@ -235,83 +213,7 @@ export function AdminDashboard() {
     }
   };
 
-  // ── MAP BUILDER HELPERS ────────────────
-  const addMapElement = () => {
-    if (!addElId) return;
-    setMapDefaultElements((prev) => [
-      ...prev,
-      { elementId: addElId, x: parseInt(addElX), y: parseInt(addElY) },
-    ]);
-    setAddElX("0");
-    setAddElY("0");
-  };
 
-  const removeMapElement = (idx: number) => {
-    setMapDefaultElements((prev) => prev.filter((_, i) => i !== idx));
-  };
-
-  const addEditMapElement = () => {
-    if (!editAddElId) return;
-    setEditMapElements((prev) => [
-      ...prev,
-      { elementId: editAddElId, x: parseInt(editAddElX), y: parseInt(editAddElY) },
-    ]);
-    setEditAddElX("0");
-    setEditAddElY("0");
-  };
-
-  const removeEditMapElement = (idx: number) => {
-    setEditMapElements((prev) => prev.filter((_, i) => i !== idx));
-  };
-
-  // ── CREATE MAP ────────────────────────
-  const createMap = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setMapError("");
-    setMapSuccess("");
-    setMapLoading(true);
-    try {
-      if (!mapName) throw new Error("Map name is required");
-      const res = await api.post("/admin/map", {
-        name: mapName,
-        dimensions: mapDims,
-        thumbnail: mapThumb,
-        defaultElements: mapDefaultElements,
-      });
-      setMapSuccess(`Map created! ID: ${res.data.id}`);
-      setMapName("");
-      setMapDefaultElements([]);
-      await fetchMaps();
-      toast("Map created successfully!", "success");
-    } catch (err: any) {
-      setMapError(err.response?.data?.message || err.message || "Failed");
-    } finally {
-      setMapLoading(false);
-    }
-  };
-
-  // ── UPDATE MAP ────────────────────────
-  const handleUpdateMap = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingMapId || !editMapName) return;
-    setUpdateMapLoading(true);
-    try {
-      await api.put(`/admin/map/${editingMapId}`, {
-        name: editMapName,
-        thumbnail: editMapThumb,
-        defaultElements: editMapElements,
-      });
-      setEditingMapId(null);
-      await fetchMaps();
-      toast("Map updated successfully!", "success");
-    } catch (err: any) {
-      toast(err.response?.data?.message || "Failed to update map", "error");
-    } finally {
-      setUpdateMapLoading(false);
-    }
-  };
-
-  // ── DELETE MAP ────────────────────────
   const deleteMap = async (id: string) => {
     if (!(await confirm("Are you sure you want to delete this map?"))) return;
     setDeletingMap(id);
@@ -432,365 +334,23 @@ export function AdminDashboard() {
 
         {/* ══ MAPS TAB ══ */}
         {tab === "maps" && (
-          <div className="animate-fade-in">
-            <div className="dash-header">
-              <h1>🗺️ Maps</h1>
-            </div>
-            <div className="glass admin-form-card">
-              <h3 style={{ marginBottom: "1.25rem", fontWeight: 600 }}>
-                <Plus size={16} style={{ display: "inline", marginRight: 6 }} /> Create Map
-              </h3>
-              <form onSubmit={createMap} className="admin-grid-form">
-                {mapError && (
-                  <div className="error-banner" style={{ gridColumn: "1/-1" }}>
-                    {mapError}
-                  </div>
-                )}
-                {mapSuccess && (
-                  <div className="success-banner" style={{ gridColumn: "1/-1" }}>
-                    {mapSuccess}
-                  </div>
-                )}
-                <div className="field">
-                  <label className="field-label">Map Name</label>
-                  <input
-                    className="input"
-                    value={mapName}
-                    onChange={(e) => setMapName(e.target.value)}
-                    placeholder="e.g. Office Room"
-                  />
-                </div>
-                <div className="field">
-                  <label className="field-label">Dimensions (WxH)</label>
-                  <input
-                    className="input"
-                    value={mapDims}
-                    onChange={(e) => setMapDims(e.target.value)}
-                    placeholder="100x200"
-                  />
-                </div>
-                <div className="field" style={{ gridColumn: "1/-1" }}>
-                  <label className="field-label">Thumbnail URL</label>
-                  <input
-                    className="input"
-                    value={mapThumb}
-                    onChange={(e) => setMapThumb(e.target.value)}
-                    placeholder="https://thumbnail.com/a.png"
-                  />
-                </div>
-
-                {/* Default Elements builder */}
-                <div
-                  style={{
-                    gridColumn: "1/-1",
-                    borderTop: "1px solid var(--glass-border)",
-                    paddingTop: "1rem",
-                    marginTop: "0.5rem",
-                  }}
-                >
-                  <p className="field-label" style={{ marginBottom: "0.75rem" }}>
-                    <Layers size={13} style={{ display: "inline", marginRight: 4 }} />
-                    Default Elements (placed when space is created from this map)
-                  </p>
-
-                  {/* Element picker */}
-                  {elements.length > 0 ? (
-                    <div className="map-el-builder">
-                      <select
-                        className="input"
-                        value={addElId}
-                        onChange={(e) => setAddElId(e.target.value)}
-                        style={{ flex: 2 }}
-                      >
-                        <option value="">Select element…</option>
-                        {elements.map((el) => (
-                          <option key={el.id} value={el.id}>
-                            {el.name ? `${el.name} (${el.id.slice(0, 6)})` : `${el.id.slice(0, 8)}…`} ({el.width}×{el.height},{" "}
-                            {el.static ? "static" : "walkable"})
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        className="input"
-                        type="number"
-                        placeholder="X"
-                        value={addElX}
-                        onChange={(e) => setAddElX(e.target.value)}
-                        style={{ flex: 1 }}
-                      />
-                      <input
-                        className="input"
-                        type="number"
-                        placeholder="Y"
-                        value={addElY}
-                        onChange={(e) => setAddElY(e.target.value)}
-                        style={{ flex: 1 }}
-                      />
-                      <button
-                        type="button"
-                        className="btn"
-                        style={{ padding: "0.5rem 1rem" }}
-                        onClick={addMapElement}
-                        disabled={!addElId}
-                      >
-                        <Plus size={14} />
-                      </button>
-                    </div>
-                  ) : (
-                    <p style={{ color: "var(--text-secondary)", fontSize: "0.8rem" }}>
-                      Create elements first (Elements tab)
-                    </p>
-                  )}
-
-                  {/* Added elements list */}
-                  {mapDefaultElements.length > 0 && (
-                    <div className="map-el-list">
-                      {mapDefaultElements.map((mel, i) => (
-                        <div key={i} className="map-el-chip">
-                          <span style={{ fontSize: "0.75rem", fontFamily: "monospace" }}>
-                            {mel.elementId.slice(0, 6)}… @ ({mel.x},{mel.y})
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => removeMapElement(i)}
-                            style={{
-                              background: "none",
-                              border: "none",
-                              color: "var(--danger)",
-                              cursor: "pointer",
-                              padding: 0,
-                            }}
-                          >
-                            <X size={12} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  type="submit"
-                  className="btn"
-                  style={{ gridColumn: "1/-1" }}
-                  disabled={mapLoading}
-                >
-                  {mapLoading ? (
-                    <span className="spinner" />
-                  ) : (
-                    `Create Map with ${mapDefaultElements.length} element${mapDefaultElements.length !== 1 ? "s" : ""} →`
-                  )}
-                </button>
-              </form>
-            </div>
-
-            {/* Maps list */}
-            <h3 style={{ margin: "2rem 0 1rem", color: "var(--text-secondary)" }}>
-              All Maps ({maps.filter((m: any) => m.type !== "room").length})
-            </h3>
-            <div className="admin-items-grid">
-              {maps.filter((m: any) => m.type !== "room").map((m) => (
-                <div key={m.id} className="glass admin-item-card">
-                  <div className="admin-item-thumb">
-                    <span style={{ fontSize: "1.5rem" }}>🗺️</span>
-                  </div>
-                  <div className="admin-item-info" style={{ flex: 1 }}>
-                    <p style={{ fontWeight: 600, fontSize: "0.9rem" }}>{m.name}</p>
-                    <p className="admin-item-meta">
-                      {m.dimensions} • {m.elementCount} elements
-                    </p>
-                  </div>
-                  <div style={{ display: "flex", gap: "0.3rem" }}>
-                    <button
-                      className="panel-del-btn"
-                      title="Edit map"
-                      onClick={() => {
-                        setEditingMapId(m.id);
-                        setEditMapName(m.name);
-                        setEditMapThumb(m.thumbnail || "");
-                        setEditMapElements(
-                          (m.elements || []).map((el) => ({
-                            elementId: el.element?.id || "",
-                            x: el.x,
-                            y: el.y,
-                          }))
-                        );
-                      }}
-                    >
-                      <Pencil size={13} />
-                    </button>
-                    <button
-                      className="panel-del-btn"
-                      title="Delete map"
-                      onClick={() => deleteMap(m.id)}
-                      disabled={deletingMap === m.id}
-                    >
-                      {deletingMap === m.id ? <span className="spinner" /> : <Trash2 size={13} />}
-                    </button>
-                  </div>
-                </div>
-              ))}
-              {maps.filter((m: any) => m.type !== "room").length === 0 && (
-                <p style={{ color: "var(--text-secondary)", padding: "1rem 0" }}>No maps yet.</p>
-              )}
-            </div>
-
-            {/* Edit Map Modal */}
-            {editingMapId && (
-              <div className="modal-overlay" onClick={() => setEditingMapId(null)}>
-                <div
-                  className="modal-large glass animate-fade-in"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: "1.5rem",
-                    }}
-                  >
-                    <h2 style={{ fontWeight: 700 }}>Edit Map</h2>
-                    <button className="btn-icon" onClick={() => setEditingMapId(null)}>
-                      <X size={18} />
-                    </button>
-                  </div>
-
-                  <form onSubmit={handleUpdateMap}>
-                    <div className="field" style={{ marginBottom: "1rem" }}>
-                      <label className="field-label">Map Name</label>
-                      <input
-                        className="input"
-                        value={editMapName}
-                        onChange={(e) => setEditMapName(e.target.value)}
-                        required
-                      />
-                    </div>
-                    <div className="field" style={{ marginBottom: "1.5rem" }}>
-                      <label className="field-label">Thumbnail URL</label>
-                      <input
-                        className="input"
-                        value={editMapThumb}
-                        onChange={(e) => setEditMapThumb(e.target.value)}
-                        placeholder="https://thumbnail.com/a.png"
-                      />
-                    </div>
-
-                    <div
-                      style={{
-                        borderTop: "1px solid var(--glass-border)",
-                        paddingTop: "1rem",
-                        marginTop: "0.5rem",
-                      }}
-                    >
-                      <p className="field-label" style={{ marginBottom: "0.75rem" }}>
-                        <Layers size={13} style={{ display: "inline", marginRight: 4 }} />
-                        Default Elements ({editMapElements.length})
-                      </p>
-
-                      {elements.length > 0 ? (
-                        <div className="map-el-builder">
-                          <select
-                            className="input"
-                            value={editAddElId}
-                            onChange={(e) => setEditAddElId(e.target.value)}
-                            style={{ flex: 2 }}
-                          >
-                            <option value="">Select element…</option>
-                            {elements.map((el) => (
-                              <option key={el.id} value={el.id}>
-                                {el.name ? `${el.name} (${el.id.slice(0, 6)})` : `${el.id.slice(0, 8)}…`} ({el.width}×{el.height},{" "}
-                                {el.static ? "static" : "walkable"})
-                              </option>
-                            ))}
-                          </select>
-                          <input
-                            className="input"
-                            type="number"
-                            placeholder="X"
-                            value={editAddElX}
-                            onChange={(e) => setEditAddElX(e.target.value)}
-                            style={{ flex: 1 }}
-                          />
-                          <input
-                            className="input"
-                            type="number"
-                            placeholder="Y"
-                            value={editAddElY}
-                            onChange={(e) => setEditAddElY(e.target.value)}
-                            style={{ flex: 1 }}
-                          />
-                          <button
-                            type="button"
-                            className="btn"
-                            style={{ padding: "0.5rem 1rem" }}
-                            onClick={addEditMapElement}
-                            disabled={!editAddElId}
-                          >
-                            <Plus size={14} />
-                          </button>
-                        </div>
-                      ) : (
-                        <p style={{ color: "var(--text-secondary)", fontSize: "0.8rem" }}>
-                          Create elements first (Elements tab)
-                        </p>
-                      )}
-
-                      {editMapElements.length > 0 && (
-                        <div className="map-el-list">
-                          {editMapElements.map((mel, i) => (
-                            <div key={i} className="map-el-chip">
-                              <span style={{ fontSize: "0.75rem", fontFamily: "monospace" }}>
-                                {mel.elementId.slice(0, 6)}… @ ({mel.x},{mel.y})
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => removeEditMapElement(i)}
-                                style={{
-                                  background: "none",
-                                  border: "none",
-                                  color: "var(--danger)",
-                                  cursor: "pointer",
-                                  padding: 0,
-                                }}
-                              >
-                                <X size={12} />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: "0.75rem",
-                        marginTop: "1.5rem",
-                        paddingTop: "1.5rem",
-                        borderTop: "1px solid var(--glass-border)",
-                      }}
-                    >
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-full"
-                        onClick={() => setEditingMapId(null)}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        className="btn btn-full"
-                        disabled={updateMapLoading}
-                      >
-                        {updateMapLoading ? <span className="spinner" /> : "Save Changes →"}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            )}
-          </div>
+          <MapsTab
+            maps={maps.filter((m: any) => m.type !== "room")}
+            elements={elements}
+            roomTemplates={maps.filter((m: any) => m.type === "room")}
+            onCreateMap={async (data) => {
+              await api.post("/admin/map", data);
+              await fetchMaps();
+              toast("Map created successfully!", "success");
+            }}
+            onUpdateMap={async (id, data) => {
+              await api.put(`/admin/map/${id}`, data);
+              await fetchMaps();
+              toast("Map updated successfully!", "success");
+            }}
+            onDeleteMap={deleteMap}
+            isDeletingMapId={deletingMap}
+          />
         )}
 
         {/* ══ AVATARS TAB ══ */}
@@ -844,20 +404,21 @@ export function AdminDashboard() {
             <div className="admin-items-grid">
               {avatars.map((av) => (
                 <div key={av.id} className="glass admin-item-card">
-                  <div className="admin-item-thumb">
-                    <img
-                      src={av.imageUrl}
-                      alt={av.name}
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src =
-                          "https://placehold.co/60x60/1e293b/94a3b8?text=?";
-                      }}
-                    />
+                  <div className="admin-item-thumb" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <CanvasAvatarPreview imageUrl={av.imageUrl} name={av.name} size={48} />
                   </div>
                   <div className="admin-item-info" style={{ flex: 1 }}>
                     <p style={{ fontWeight: 600, fontSize: "0.9rem" }}>{av.name}</p>
                     <p className="admin-item-id">{av.id.slice(0, 12)}…</p>
                   </div>
+                  <button
+                    className="panel-del-btn"
+                    title="Test on canvas"
+                    onClick={() => setTestingAvatar(av)}
+                    style={{ background: "rgba(59, 130, 246, 0.1)", color: "#60a5fa", marginRight: 8 }}
+                  >
+                    <Sparkles size={13} />
+                  </button>
                   <button
                     className="panel-del-btn"
                     title="Delete avatar"
@@ -872,6 +433,13 @@ export function AdminDashboard() {
                 <p style={{ color: "var(--text-secondary)", padding: "1rem 0" }}>No avatars yet.</p>
               )}
             </div>
+
+            {testingAvatar && (
+              <AvatarCanvasTesterModal
+                avatar={testingAvatar}
+                onClose={() => setTestingAvatar(null)}
+              />
+            )}
           </div>
         )}
       </main>

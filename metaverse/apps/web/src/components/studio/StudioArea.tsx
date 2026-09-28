@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { Trash, RefreshCcw, Copy, Layers } from 'lucide-react';
 import type { AreaType } from './types';
 

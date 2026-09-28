@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Copy, Link as LinkIcon, Mail, Sparkles } from 'lucide-react';
 import { api } from '../utils/api';
 
-interface MapTemplate { id: string; name: string; dimensions: string; thumbnail?: string; elementCount: number; }
+interface MapTemplate { id: string; name: string; dimensions: string; thumbnail?: string; elementCount: number; type?: string; }
 
 export function CreateOfficeWizard() {
   const navigate = useNavigate();
@@ -17,7 +17,11 @@ export function CreateOfficeWizard() {
 
   useEffect(() => {
     api.get('/maps')
-      .then(res => { const list = res.data.maps ?? []; setMaps(list); setMapId(list.find((m: MapTemplate) => /gather/i.test(m.name))?.id ?? list[0]?.id ?? ''); })
+      .then(res => { 
+        const list = (res.data.maps ?? []).filter((m: any) => m.type !== 'room'); 
+        setMaps(list); 
+        setMapId(list.find((m: MapTemplate) => /gather/i.test(m.name))?.id ?? list[0]?.id ?? ''); 
+      })
       .catch(() => setMaps([]));
   }, []);
 

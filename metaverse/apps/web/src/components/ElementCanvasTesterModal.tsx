@@ -7,11 +7,13 @@ interface ElementCanvasTesterModalProps {
   element: {
     id: string;
     imageUrl: string;
+    colorMaskUrl?: string;
     width: number;
     height: number;
     static: boolean;
     name?: string;
     category?: string;
+    variants?: Record<string, Record<string, string>>;
   };
   onClose: () => void;
 }
@@ -37,6 +39,16 @@ export function ElementCanvasTesterModal({ element, onClose }: ElementCanvasTest
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const panStart = useRef({ x: 0, y: 0, px: 0, py: 0 });
+
+  // Real Canva Feel: Toggleable selection/footprint
+  const [showFootprint, setShowFootprint] = useState(false);
+  
+  // Variants Support
+  const [activeColor, setActiveColor] = useState("default");
+  const [activeRotation, setActiveRotation] = useState("0");
+  
+  // Computed Image URL based on variants
+  const currentImageUrl = element.variants?.[activeColor]?.[activeRotation] || element.imageUrl;
 
   const TILE_SIZE = 36; // 36px tile size matching studio
   const GRID_COLS = 16;
@@ -140,25 +152,27 @@ export function ElementCanvasTesterModal({ element, onClose }: ElementCanvasTest
         }
       }
 
-      // Draw Element footprint highlight box
-      ctx.fillStyle = testStatic ? "rgba(239, 68, 68, 0.2)" : "rgba(16, 185, 129, 0.2)";
-      ctx.fillRect(
-        elementPos.x * TILE_SIZE,
-        elementPos.y * TILE_SIZE,
-        testWidth * TILE_SIZE,
-        testHeight * TILE_SIZE
-      );
+      // Draw Element footprint highlight box (Only if selected/showFootprint is on)
+      if (showFootprint) {
+        ctx.fillStyle = testStatic ? "rgba(239, 68, 68, 0.2)" : "rgba(16, 185, 129, 0.2)";
+        ctx.fillRect(
+          elementPos.x * TILE_SIZE,
+          elementPos.y * TILE_SIZE,
+          testWidth * TILE_SIZE,
+          testHeight * TILE_SIZE
+        );
 
-      ctx.strokeStyle = testStatic ? "#ef4444" : "#10b981";
-      ctx.setLineDash([4, 4]);
-      ctx.lineWidth = 2;
-      ctx.strokeRect(
-        elementPos.x * TILE_SIZE,
-        elementPos.y * TILE_SIZE,
-        testWidth * TILE_SIZE,
-        testHeight * TILE_SIZE
-      );
-      ctx.setLineDash([]);
+        ctx.strokeStyle = testStatic ? "#ef4444" : "#10b981";
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 2;
+        ctx.strokeRect(
+          elementPos.x * TILE_SIZE,
+          elementPos.y * TILE_SIZE,
+          testWidth * TILE_SIZE,
+          testHeight * TILE_SIZE
+        );
+        ctx.setLineDash([]);
+      }
 
       // Draw Element Image if loaded, else fallback preview rectangle
       if (img && img.complete && img.naturalWidth !== 0) {
@@ -170,6 +184,33 @@ export function ElementCanvasTesterModal({ element, onClose }: ElementCanvasTest
             testWidth * TILE_SIZE,
             testHeight * TILE_SIZE
           );
+          
+          // Draw thin selection border when showFootprint is enabled (Canva style)
+          if (showFootprint) {
+            ctx.strokeStyle = "#3b82f6";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(
+              elementPos.x * TILE_SIZE,
+              elementPos.y * TILE_SIZE,
+              testWidth * TILE_SIZE,
+              testHeight * TILE_SIZE
+            );
+            // Resize handles (visual only)
+            ctx.fillStyle = "#fff";
+            const handles = [
+              [0, 0], [1, 0], [0, 1], [1, 1]
+            ];
+            handles.forEach(([hx, hy]) => {
+              ctx.beginPath();
+              ctx.arc(
+                (elementPos.x + hx * testWidth) * TILE_SIZE,
+                (elementPos.y + hy * testHeight) * TILE_SIZE,
+                4, 0, Math.PI * 2
+              );
+              ctx.fill();
+              ctx.stroke();
+            });
+          }
         } catch {
           drawFallbackBox(ctx);
         }
@@ -178,13 +219,15 @@ export function ElementCanvasTesterModal({ element, onClose }: ElementCanvasTest
       }
 
       // Dimension label tag on element footprint
-      ctx.fillStyle = testStatic ? "#fca5a5" : "#6ee7b7";
-      ctx.font = "bold 11px sans-serif";
-      ctx.fillText(
-        `${testWidth}×${testHeight} tiles`,
-        elementPos.x * TILE_SIZE + 6,
-        elementPos.y * TILE_SIZE + 16
-      );
+      if (showFootprint) {
+        ctx.fillStyle = testStatic ? "#fca5a5" : "#6ee7b7";
+        ctx.font = "bold 11px sans-serif";
+        ctx.fillText(
+          `${testWidth}×${testHeight} tiles`,
+          elementPos.x * TILE_SIZE + 6,
+          elementPos.y * TILE_SIZE + 16
+        );
+      }
 
       // Draw Avatar
       drawAvatar(ctx);
@@ -284,16 +327,16 @@ export function ElementCanvasTesterModal({ element, onClose }: ElementCanvasTest
     render();
 
     // Async Image Loader
-    if (element.imageUrl) {
+    if (currentImageUrl) {
       const img = new Image();
-      if (element.imageUrl.startsWith("http")) {
+      if (currentImageUrl.startsWith("http")) {
         img.crossOrigin = "anonymous";
       }
-      img.src = element.imageUrl.startsWith('http') || element.imageUrl.startsWith('/') ? element.imageUrl : `/${element.imageUrl}`;
+      img.src = currentImageUrl.startsWith('http') || currentImageUrl.startsWith('/') ? currentImageUrl : `/${currentImageUrl}`;
       img.onload = () => render(img);
       img.onerror = () => render();
     }
-  }, [avatarPos, elementPos, element, avatarFacing, isSeated, testWidth, testHeight, testStatic, zoom, pan]);
+  }, [avatarPos, elementPos, element, avatarFacing, isSeated, testWidth, testHeight, testStatic, zoom, pan, showFootprint, currentImageUrl]);
 
   // Click grid to relocate element
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -304,13 +347,19 @@ export function ElementCanvasTesterModal({ element, onClose }: ElementCanvasTest
     const clickX = Math.floor((e.clientX - rect.left - pan.x) / (TILE_SIZE * zoom));
     const clickY = Math.floor((e.clientY - rect.top - pan.y) / (TILE_SIZE * zoom));
 
-    const maxX = Math.max(0, GRID_COLS - testWidth);
-    const maxY = Math.max(0, GRID_ROWS - testHeight);
+    // Check if clicked inside element
+    if (isInsideElement(clickX, clickY, elementPos.x, elementPos.y, testWidth, testHeight)) {
+      setShowFootprint(true); // Select element like Canva
+    } else {
+      setShowFootprint(false); // Deselect
+      const maxX = Math.max(0, GRID_COLS - testWidth);
+      const maxY = Math.max(0, GRID_ROWS - testHeight);
 
-    setElementPos({
-      x: Math.min(Math.max(0, clickX), maxX),
-      y: Math.min(Math.max(0, clickY), maxY),
-    });
+      setElementPos({
+        x: Math.min(Math.max(0, clickX), maxX),
+        y: Math.min(Math.max(0, clickY), maxY),
+      });
+    }
   };
 
   const modalContent = (
@@ -559,13 +608,74 @@ export function ElementCanvasTesterModal({ element, onClose }: ElementCanvasTest
               </button>
             </div>
 
+            {/* Variants Picker */}
+            {element.variants && Object.keys(element.variants).length > 0 && (
+              <div>
+                <p style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", color: "#94a3b8", marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: 4 }}>
+                  <Sparkles size={14} color="#60a5fa" /> Styles & Variants
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {/* Colors */}
+                  {Object.keys(element.variants).length > 1 && (
+                    <div>
+                      <span style={{ fontSize: "0.7rem", color: "#94a3b8" }}>Color:</span>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+                        {Object.keys(element.variants).map((c) => (
+                          <button
+                            key={c}
+                            onClick={() => setActiveColor(c)}
+                            style={{
+                              padding: "4px 8px",
+                              fontSize: "0.75rem",
+                              borderRadius: 6,
+                              background: activeColor === c ? "#3b82f6" : "rgba(255,255,255,0.1)",
+                              border: "none",
+                              color: "#fff",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {c}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {/* Rotations */}
+                  {element.variants[activeColor] && Object.keys(element.variants[activeColor]).length > 1 && (
+                    <div>
+                      <span style={{ fontSize: "0.7rem", color: "#94a3b8" }}>Rotation:</span>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+                        {Object.keys(element.variants[activeColor]).map((r) => (
+                          <button
+                            key={r}
+                            onClick={() => setActiveRotation(r)}
+                            style={{
+                              padding: "4px 8px",
+                              fontSize: "0.75rem",
+                              borderRadius: 6,
+                              background: activeRotation === r ? "#10b981" : "rgba(255,255,255,0.1)",
+                              border: "none",
+                              color: "#fff",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {r}°
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div>
               <p style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", color: "#94a3b8", marginBottom: "0.75rem" }}>
                 🎮 Controls Guide
               </p>
               <div style={{ fontSize: "0.75rem", color: "#cbd5e1", display: "flex", flexDirection: "column", gap: 6, background: "rgba(15,23,42,0.6)", padding: "10px", borderRadius: 8 }}>
                 <div><b>W / A / S / D:</b> Move Avatar</div>
-                <div><b>Arrow Keys:</b> Move Avatar</div>
+                <div><b>Click Element:</b> Select / Edit</div>
                 <div><b>Click Canvas:</b> Move Element</div>
                 <div><b>Shift + Drag:</b> Pan Grid</div>
               </div>

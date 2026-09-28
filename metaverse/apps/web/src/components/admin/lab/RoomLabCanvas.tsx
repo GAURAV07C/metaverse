@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ZoomIn, ZoomOut, Maximize2, Trash2, Hand, Paintbrush, Eraser } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize2, Paintbrush, Eraser } from "lucide-react";
 import type { ElementItem } from "../adminTypes";
 
 export interface PlacedLabElement {

@@ -53,7 +53,7 @@ export function Studio() {
     isUndoRedoActive.current = false;
 
     return () => clearTimeout(timer);
-  }, [elements]);
+  }, [elements, areas, historyIndex, history.length, areas.length, spaceId]);
 
   useEffect(() => {
     let mounted = true;
@@ -103,7 +103,7 @@ export function Studio() {
       
     }).catch(() => setStatus('Preview mode'));
     return () => { mounted = false; };
-  }, [spaceId]);
+  }, [spaceId, selectedPrefab]);
 
   const closeWelcome = () => {
     sessionStorage.setItem('studio-welcome-seen', '1');

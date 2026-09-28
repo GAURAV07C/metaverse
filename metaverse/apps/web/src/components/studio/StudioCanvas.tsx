@@ -125,6 +125,50 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
         return;
       }
 
+      if (card.templateElements || card.templateAreas) {
+        const newEls: SpaceElement[] = [];
+        const newArs: AreaType[] = [];
+        const timestamp = Date.now();
+
+        if (card.templateElements) {
+          card.templateElements.forEach((tel, idx) => {
+            const childPrefab = availableElements.find(p => p.kind === tel.elementId);
+            if (childPrefab) {
+              newEls.push({
+                id: `template-${timestamp}-el-${idx}`,
+                x: x + tel.x,
+                y: y + tel.y,
+                element: {
+                  id: childPrefab.kind,
+                  width: parseInt(childPrefab.size.split(' x ')[0]) || 1,
+                  height: parseInt(childPrefab.size.split(' x ')[1]) || 1,
+                  imageUrl: childPrefab.thumb || '',
+                  static: true,
+                  name: childPrefab.title,
+                  category: childPrefab.area,
+                }
+              });
+            }
+          });
+        }
+
+        if (card.templateAreas && setAreas) {
+          card.templateAreas.forEach((ta, idx) => {
+            newArs.push({
+              ...ta,
+              id: `template-${timestamp}-area-${idx}`,
+              x: x + ta.x,
+              y: y + ta.y
+            });
+          });
+          setAreas(prev => [...prev, ...newArs]);
+        }
+
+        setElements(prev => [...prev, ...newEls]);
+        setStatus(`${card.title} placed successfully!`);
+        return;
+      }
+
       if (card.area === 'Rooms') {
         setPendingRoom({ x, y, prefab: card });
         return;
@@ -542,10 +586,6 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
 
     const newAreas: AreaType[] = [];
     const newElements: SpaceElement[] = [];
-
-    // The center of the parent (used for circular)
-    const cx = parentArea.x + parentArea.w / 2;
-    const cy = parentArea.y + parentArea.h / 2;
 
     for (let i = 1; i < config.count; i++) {
       let offsetX = 0;

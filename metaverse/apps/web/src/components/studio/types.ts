@@ -7,6 +7,8 @@ export interface Prefab {
   thumb?: string;
   items?: { kind: string; dx: number; dy: number }[];
   variants?: any;
+  templateElements?: { elementId: string; x: number; y: number }[];
+  templateAreas?: AreaType[];
 }
 
 export interface AreaType {

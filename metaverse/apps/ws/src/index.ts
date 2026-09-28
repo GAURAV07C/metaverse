@@ -5,7 +5,9 @@ import { MediasoupManager } from "./MediasoupManager";
 
 // Initialize Mediasoup Worker
 MediasoupManager.getInstance().init().then(() => {
-    console.log("Mediasoup initialized successfully");
+    if (MediasoupManager.getInstance().isAvailable()) {
+        console.log("Mediasoup initialized successfully");
+    }
 }).catch((err) => {
     console.error("Failed to initialize Mediasoup", err);
 });

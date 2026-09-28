@@ -10,6 +10,7 @@ interface RoomLabEditorModalProps {
   isOpen: boolean;
   onClose: () => void;
   elements: ElementItem[];
+  roomTemplates?: any[];
   initialMapData?: {
     id?: string;
     name: string;
@@ -33,6 +34,7 @@ export function RoomLabEditorModal({
   isOpen,
   onClose,
   elements,
+  roomTemplates,
   initialMapData,
   onSaveTemplate,
   isSaving,
@@ -54,7 +56,7 @@ export function RoomLabEditorModal({
 
   // Map elements to Prefabs
   const availablePrefabs = useMemo<Prefab[]>(() => {
-    return elements.map(e => ({
+    const elPrefabs: Prefab[] = elements.map(e => ({
       title: e.name || 'Element',
       kind: e.id,
       area: e.category || 'Misc',
@@ -62,54 +64,88 @@ export function RoomLabEditorModal({
       color: '#aaaaaa',
       thumb: e.imageUrl.startsWith('/') ? e.imageUrl : `/${e.imageUrl}`,
     }));
-  }, [elements]);
+
+    const roomPrefabs: Prefab[] = (roomTemplates || []).map(r => ({
+      title: r.name || 'Room Template',
+      kind: `room-template-${r.id}`,
+      area: 'Rooms',
+      size: (r.dimensions || '10x10').replace('x', ' x '),
+      color: '#3b82f6',
+      thumb: r.thumbnail && !r.thumbnail.includes('placehold') ? r.thumbnail : undefined,
+      templateElements: r.elements ? r.elements.map((el: any) => ({
+        elementId: el.element?.id || el.elementId,
+        x: el.x,
+        y: el.y
+      })) : r.defaultElements,
+      templateAreas: r.areas
+    }));
+
+    return [...roomPrefabs, ...elPrefabs];
+  }, [elements, roomTemplates]);
+
+  const prevMapId = useRef<string | undefined>('__init__');
+  const [hasInitialized, setHasInitialized] = useState(false);
 
   useEffect(() => {
-    if (initialMapData) {
-      setName(initialMapData.name || "Custom Room Template");
-      const dim = (initialMapData.dimensions || "30x30").split("x");
-      setDimensions({ w: parseInt(dim[0]) || 30, h: parseInt(dim[1]) || 30 });
-      
-      if (initialMapData.defaultElements) {
-        const hyd: SpaceElement[] = initialMapData.defaultElements.map((de, i) => {
-          const el = elements.find(e => e.id === de.elementId);
-          if (!el) return null;
-          return {
-            id: `init-${i}-${de.elementId}`,
-            element: el,
-            x: de.x,
-            y: de.y,
-          };
-        }).filter(Boolean) as SpaceElement[];
-        setPlacedElements(hyd);
-        setHistory([hyd]);
-        setHistoryIndex(0);
+    if (!isOpen) {
+      setHasInitialized(false);
+      prevMapId.current = '__init__';
+      return;
+    }
+
+    const currentMapId = initialMapData?.id;
+    
+    // Only initialize when opening for the first time, or when map ID changes
+    if (!hasInitialized || currentMapId !== prevMapId.current) {
+      if (initialMapData) {
+        setName(initialMapData.name || "Custom Room Template");
+        const dim = (initialMapData.dimensions || "30x30").split("x");
+        setDimensions({ w: parseInt(dim[0]) || 30, h: parseInt(dim[1]) || 30 });
+        
+        if (initialMapData.defaultElements) {
+          const hyd: SpaceElement[] = initialMapData.defaultElements.map((de, i) => {
+            const el = elements.find(e => e.id === de.elementId);
+            if (!el) return null;
+            return {
+              id: `init-${i}-${de.elementId}`,
+              element: el,
+              x: de.x,
+              y: de.y,
+            };
+          }).filter(Boolean) as SpaceElement[];
+          setPlacedElements(hyd);
+          setHistory([hyd]);
+          setHistoryIndex(0);
+        } else {
+          setPlacedElements([]);
+          setHistory([[]]);
+          setHistoryIndex(0);
+        }
+        
+        if (initialMapData.areas) {
+          setAreas(initialMapData.areas.map(a => ({
+            id: a.id || `area-${Math.random()}`,
+            name: a.name, x: a.x, y: a.y, w: a.w, h: a.h,
+            floor: a.floor, color: a.color, texture: a.texture as any
+          })));
+        } else {
+          setAreas([]);
+        }
+        setThumbnailUrl(initialMapData.thumbnail || "");
       } else {
+        setName("New Custom Room Template");
+        setDimensions({ w: 30, h: 30 });
         setPlacedElements([]);
+        setAreas([]);
         setHistory([[]]);
         setHistoryIndex(0);
+        setThumbnailUrl("");
       }
       
-      if (initialMapData.areas) {
-        setAreas(initialMapData.areas.map(a => ({
-          id: a.id || `area-${Math.random()}`,
-          name: a.name, x: a.x, y: a.y, w: a.w, h: a.h,
-          floor: a.floor, color: a.color, texture: a.texture as any
-        })));
-      } else {
-        setAreas([]);
-      }
-      setThumbnailUrl(initialMapData.thumbnail || "");
-    } else {
-      setName("New Custom Room Template");
-      setDimensions({ w: 30, h: 30 });
-      setPlacedElements([]);
-      setAreas([]);
-      setHistory([[]]);
-      setHistoryIndex(0);
-      setThumbnailUrl("");
+      setHasInitialized(true);
+      prevMapId.current = currentMapId;
     }
-  }, [initialMapData?.id, isOpen]); // Removed elements and full initialMapData to prevent overwrite on save re-renders
+  }, [initialMapData, elements, isOpen, hasInitialized]);
 
   // Track history
   useEffect(() => {

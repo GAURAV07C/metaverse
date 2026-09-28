@@ -204,21 +204,23 @@ spaceRouter.delete("/:spaceId", userMiddleware, async (req, res) => {
     return res.status(403).json({ message: "Unauthorized" });
   }
 
-  await client.$transaction(async (tx) => {
-    await tx.spaceElements.deleteMany({ where: { spaceId: req.params.spaceId as string } });
-    await tx.privateZone.deleteMany({ where: { spaceId: req.params.spaceId as string } });
-    await tx.meeting.deleteMany({ where: { spaceId: req.params.spaceId as string } });
-    await tx.deskAssignment.deleteMany({ where: { spaceId: req.params.spaceId as string } });
-    await tx.inviteLink.deleteMany({ where: { spaceId: req.params.spaceId as string } });
-    await tx.smartObject.deleteMany({ where: { spaceId: req.params.spaceId as string } });
-    await tx.spaceDraft.deleteMany({ where: { spaceId: req.params.spaceId as string } });
-    await tx.spaceSettings.deleteMany({ where: { spaceId: req.params.spaceId as string } });
-    await tx.space.delete({
-      where: {
-        id: req.params.spaceId as string,
-      },
+  try {
+    await client.$transaction(async (tx) => {
+      await tx.spaceElements.deleteMany({ where: { spaceId: req.params.spaceId as string } });
+      await tx.privateZone.deleteMany({ where: { spaceId: req.params.spaceId as string } });
+      await tx.meeting.deleteMany({ where: { spaceId: req.params.spaceId as string } });
+      // The following have onDelete: Cascade in the DB schema, so Prisma/Postgres handles them automatically when space is deleted.
+      // Doing deleteMany on 1-to-1 relations like spaceDraft or spaceSettings can cause Prisma errors.
+      await tx.space.delete({
+        where: {
+          id: req.params.spaceId as string,
+        },
+      });
     });
-  });
+  } catch (error) {
+    console.error("Failed to delete space", error);
+    return res.status(500).json({ message: "Failed to delete space", error: String(error) });
+  }
 
   return res.json({ message: "space deleted" });
 });

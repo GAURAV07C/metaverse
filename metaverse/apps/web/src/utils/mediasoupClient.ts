@@ -15,7 +15,7 @@ export class MediasoupClient {
   private producers: Map<string, Producer> = new Map();
   private consumers: Map<string, Consumer> = new Map();
 
-  private pendingRequests: Map<string, (val: any) => void> = new Map();
+  private pendingRequests: Map<string, { resolve: (val: any) => void; reject: (err: Error) => void }> = new Map();
 
   public onNewConsumer?: (consumer: Consumer, userId: string) => void;
 
@@ -40,6 +40,9 @@ export class MediasoupClient {
         case 'webrtc-consumed':
           this.resolveRequest('webrtc-consumed', msg.payload);
           break;
+        case 'webrtc-error':
+          this.rejectPendingRequests(new Error(msg.payload.message));
+          break;
         case 'new-producer':
           // Another user started producing, we should consume it
           await this.consume(msg.payload.producerId, msg.payload.userId);
@@ -49,29 +52,35 @@ export class MediasoupClient {
   }
 
   private resolveRequest(type: string, data: any) {
-    const resolver = this.pendingRequests.get(type);
-    if (resolver) {
-      resolver(data);
+    const request = this.pendingRequests.get(type);
+    if (request) {
+      request.resolve(data);
       this.pendingRequests.delete(type);
     }
   }
 
+  private rejectPendingRequests(error: Error) {
+    this.pendingRequests.forEach((request) => request.reject(error));
+    this.pendingRequests.clear();
+  }
+
   private async request(type: string, payload?: any): Promise<any> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
+      const request = { resolve, reject };
       // For simplicity, we assume one request of a type at a time during setup
-      this.pendingRequests.set(type.replace('webrtc-', 'webrtc-').replace('-create', '-created').replace('-get', '-'), resolve);
+      this.pendingRequests.set(type.replace('webrtc-', 'webrtc-').replace('-create', '-created').replace('-get', '-'), request);
       
       // Override exact mappings
       if (type === 'webrtc-get-router-rtp-capabilities') {
-        this.pendingRequests.set('webrtc-router-rtp-capabilities', resolve);
+        this.pendingRequests.set('webrtc-router-rtp-capabilities', request);
       } else if (type === 'webrtc-create-transport') {
-        this.pendingRequests.set('webrtc-transport-created', resolve);
+        this.pendingRequests.set('webrtc-transport-created', request);
       } else if (type === 'webrtc-connect-transport') {
-        this.pendingRequests.set('webrtc-transport-connected', resolve);
+        this.pendingRequests.set('webrtc-transport-connected', request);
       } else if (type === 'webrtc-produce') {
-        this.pendingRequests.set('webrtc-produced', resolve);
+        this.pendingRequests.set('webrtc-produced', request);
       } else if (type === 'webrtc-consume') {
-        this.pendingRequests.set('webrtc-consumed', resolve);
+        this.pendingRequests.set('webrtc-consumed', request);
       }
       
       this.ws.send({ type, payload });
