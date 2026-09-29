@@ -65,7 +65,9 @@ export function RoomLabEditorModal({
       thumb: e.imageUrl.startsWith('/') ? e.imageUrl : `/${e.imageUrl}`,
     }));
 
-    const roomPrefabs: Prefab[] = (roomTemplates || []).map(r => ({
+    const roomPrefabs: Prefab[] = (roomTemplates || [])
+      .filter(r => r.id !== initialMapData?.id)
+      .map(r => ({
       title: r.name || 'Room Template',
       kind: `room-template-${r.id}`,
       area: 'Rooms',
@@ -81,7 +83,7 @@ export function RoomLabEditorModal({
     }));
 
     return [...roomPrefabs, ...elPrefabs];
-  }, [elements, roomTemplates]);
+  }, [elements, roomTemplates, initialMapData?.id]);
 
   const prevMapId = useRef<string | undefined>('__init__');
   const [hasInitialized, setHasInitialized] = useState(false);

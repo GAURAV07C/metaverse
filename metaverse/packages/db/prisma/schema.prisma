@@ -122,6 +122,7 @@ model MapArea {
   id        String  @id @unique @default(cuid())
   mapId     String
   name      String  @default("Area")
+  type      String  @default("public")
   floor     String  @default("#f3f4f6")
   color     String  @default("#3b82f6")
   texture   String  @default("solid")
@@ -169,6 +170,7 @@ model Team {
 model PrivateZone {
   id      String @id @default(cuid())
   name    String
+  type    String @default("private")
   spaceId String
   space   Space  @relation(fields: [spaceId], references: [id])
   startX  Int

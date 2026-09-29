@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Plus, Trash2, Eye, EyeOff, Maximize2, Layers } from 'lucide-react';
+import { X, Plus, Trash2, Eye, EyeOff, Maximize2, Layers, BoxSelect } from 'lucide-react';
 
 export interface SpaceElement {
   id: string;
@@ -30,51 +30,7 @@ export interface RoomPrefab {
   items: { elementId: string; offsetX: number; offsetY: number }[];
 }
 
-const ROOM_PREFABS: RoomPrefab[] = [
-  {
-    id: 'prefab-conference',
-    name: 'Conference Room Pod',
-    category: 'Meeting',
-    description: '1 Meeting Table + 6 Ergonomic Chairs + Whiteboard',
-    items: [
-      { elementId: 'el-table', offsetX: 1, offsetY: 1 },
-      { elementId: 'el-chair', offsetX: 1, offsetY: 0 },
-      { elementId: 'el-chair', offsetX: 2, offsetY: 0 },
-      { elementId: 'el-chair', offsetX: 3, offsetY: 0 },
-      { elementId: 'el-chair', offsetX: 1, offsetY: 3 },
-      { elementId: 'el-chair', offsetX: 2, offsetY: 3 },
-      { elementId: 'el-chair', offsetX: 3, offsetY: 3 },
-      { elementId: 'el-board', offsetX: 1, offsetY: 4 },
-    ]
-  },
-  {
-    id: 'prefab-workstation',
-    name: 'Dual Workstation Pod',
-    category: 'Workstation',
-    description: '2 Executive Desks + 2 Chairs + 2 Laptops + 2 Plants',
-    items: [
-      { elementId: 'el-desk', offsetX: 0, offsetY: 0 },
-      { elementId: 'el-chair', offsetX: 0, offsetY: 1 },
-      { elementId: 'el-laptop', offsetX: 1, offsetY: 0 },
-      { elementId: 'el-desk', offsetX: 3, offsetY: 0 },
-      { elementId: 'el-chair', offsetX: 3, offsetY: 1 },
-      { elementId: 'el-plant', offsetX: 5, offsetY: 0 },
-    ]
-  },
-  {
-    id: 'prefab-lounge',
-    name: 'Lounge Breakroom Suite',
-    category: 'Lounge',
-    description: '2 Lounge Sofas + 2 Potted Plants + 1 Whiteboard',
-    items: [
-      { elementId: 'el-sofa', offsetX: 0, offsetY: 0 },
-      { elementId: 'el-sofa', offsetX: 3, offsetY: 0 },
-      { elementId: 'el-plant', offsetX: 0, offsetY: 2 },
-      { elementId: 'el-plant', offsetX: 4, offsetY: 2 },
-      { elementId: 'el-board', offsetX: 1, offsetY: 3 },
-    ]
-  }
-];
+
 
 interface ElementsPanelProps {
   showPanel: boolean;
@@ -98,6 +54,7 @@ interface ElementsPanelProps {
   toggleHideElement?: (id: string) => void;
   handleUpdateDimensions?: (w: number, h: number) => void;
   handleStampPrefab?: (prefab: RoomPrefab, startX: number, startY: number) => void;
+  roomPrefabs?: RoomPrefab[];
 }
 
 export const ElementsPanel: React.FC<ElementsPanelProps> = ({
@@ -122,6 +79,7 @@ export const ElementsPanel: React.FC<ElementsPanelProps> = ({
   toggleHideElement,
   handleUpdateDimensions,
   handleStampPrefab,
+  roomPrefabs = [],
 }) => {
   const [customW, setCustomW] = useState(dimensions.w.toString());
   const [customH, setCustomH] = useState(dimensions.h.toString());
@@ -326,11 +284,11 @@ export const ElementsPanel: React.FC<ElementsPanelProps> = ({
       {builderTab === 'prefabs' && (
         <div style={{ marginBottom: '1.25rem' }}>
           <p className="field-label" style={{ marginBottom: '0.5rem' }}>
-            Pre-built Room Prefabs ({ROOM_PREFABS.length})
+            Pre-built Room Prefabs ({roomPrefabs.length})
           </p>
           {!selectedPrefab ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              {ROOM_PREFABS.map(p => (
+              {roomPrefabs.map(p => (
                 <div
                   key={p.id}
                   style={{
@@ -387,15 +345,24 @@ export const ElementsPanel: React.FC<ElementsPanelProps> = ({
             return (
               <div key={el.id} className="panel-space-el" style={{ opacity: isHidden ? 0.5 : 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <img
-                    src={el.element.imageUrl}
-                    alt=""
-                    style={{ width: 22, height: 22, objectFit: 'contain' }}
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                  />
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
-                    ({el.x},{el.y})
-                  </span>
+                  {el.element.imageUrl ? (
+                    <img
+                      src={el.element.imageUrl}
+                      alt=""
+                      style={{ width: 22, height: 22, objectFit: 'contain' }}
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    />
+                  ) : (
+                    <BoxSelect size={18} style={{ color: '#60a5fa' }} />
+                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                      {el.element.name || (el.element.category === 'Rooms' ? 'Room Area' : 'Element')}
+                    </span>
+                    <span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>
+                      ({el.x}, {el.y}) {el.element.category && `• ${el.element.category}`}
+                    </span>
+                  </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                   <button

@@ -256,6 +256,7 @@ export function RoomLabTab({
         isOpen={isEditorOpen}
         onClose={() => setIsEditorOpen(false)}
         elements={elements}
+        roomTemplates={maps}
         initialMapData={
           editingMap
             ? {

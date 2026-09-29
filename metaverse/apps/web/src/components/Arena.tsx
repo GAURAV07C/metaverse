@@ -8,7 +8,7 @@ import { api } from '../utils/api';
 import { Sidebar } from './arena/Sidebar';
 import { SettingsModal } from './arena/SettingsModal';
 import { VideoOverlay } from './arena/VideoOverlay';
-import { ElementsPanel, type SpaceElement, type AvailableElement } from './arena/ElementsPanel';
+import { ElementsPanel, type SpaceElement, type AvailableElement, type RoomPrefab } from './arena/ElementsPanel';
 import { MapCanvas } from './arena/MapCanvas';
 import { ActionToolbar } from './arena/ActionToolbar';
 
@@ -32,6 +32,7 @@ export function Arena() {
   const myStoredUsername = useUserStore((s) => s.username);
 
   const [myPos, setMyPos] = useState({ x: 5, y: 5 });
+  const hasAutoFit = useRef(false);
   const [otherUsers, setOtherUsers] = useState<OtherUser[]>([]);
   const [proximityUsers, setProximityUsers] = useState<string[]>([]);
   const [streams, setStreams] = useState<Record<string, MediaStream>>({});
@@ -69,6 +70,7 @@ export function Arena() {
   // Element panel state
   const [showPanel, setShowPanel] = useState(false);
   const [availableElements, setAvailableElements] = useState<AvailableElement[]>([]);
+  const [roomPrefabs, setRoomPrefabs] = useState<RoomPrefab[]>([]);
   const [addingElement, setAddingElement] = useState<string | null>(null);
   const [builderMode, setBuilderMode] = useState<'pointer' | 'brush' | 'eraser'>('pointer');
   const [addX, setAddX] = useState('0');
@@ -108,11 +110,87 @@ export function Arena() {
 
   useEffect(() => { fetchSpace(); }, [fetchSpace]);
 
-  // ── Fetch available elements ───────────
+  // ── Auto Fit: center & zoom to show all content when loaded ───
+  useEffect(() => {
+    if (hasAutoFit.current) return;
+    if (elements.length === 0 && privateZones.length === 0) return;
+    const TILE = 28; // Must match MapCanvas TILE
+
+    // Calculate bounding box across all elements and areas
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    elements.forEach(el => {
+      const w = el.element?.width || 1;
+      const h = el.element?.height || 1;
+      minX = Math.min(minX, el.x);
+      minY = Math.min(minY, el.y);
+      maxX = Math.max(maxX, el.x + w);
+      maxY = Math.max(maxY, el.y + h);
+    });
+    privateZones.forEach((z: any) => {
+      minX = Math.min(minX, z.startX);
+      minY = Math.min(minY, z.startY);
+      maxX = Math.max(maxX, z.endX);
+      maxY = Math.max(maxY, z.endY);
+    });
+
+    if (!isFinite(minX)) return;
+
+    const contentCenterX = (minX + maxX) / 2;
+    const contentCenterY = (minY + maxY) / 2;
+    const contentW = (maxX - minX) * TILE;
+    const contentH = (maxY - minY) * TILE;
+
+    const viewW = wrapperRef.current?.clientWidth || window.innerWidth;
+    const viewH = wrapperRef.current?.clientHeight || window.innerHeight;
+
+    // Zoom to fit with 15% padding
+    const fitZoom = Math.min(
+      (viewW * 0.85) / Math.max(contentW, 1),
+      (viewH * 0.85) / Math.max(contentH, 1),
+      1.5  // max zoom cap
+    );
+    const clampedZoom = Math.max(0.7, Math.min(1.5, fitZoom));
+
+    // panOffset to center content
+    // Camera formula: camX = playerPx - viewW/(2*zoom) + panOffset.x
+    // We want camera center = contentCenterPx
+    // => contentCenterPx = playerPx + panOffset.x  (simplified at center)
+    const playerPx = myPos.x * TILE + TILE / 2;
+    const playerPy = myPos.y * TILE + TILE / 2;
+    const contentCenterPx = contentCenterX * TILE;
+    const contentCenterPy = contentCenterY * TILE;
+
+    setPanOffset({
+      x: contentCenterPx - playerPx,
+      y: contentCenterPy - playerPy,
+    });
+    setZoom(clampedZoom);
+    hasAutoFit.current = true;
+  }, [elements, privateZones, myPos]);
+
+  // ── Fetch available elements & room templates ───────────
   const fetchAvailableElements = async () => {
     try {
-      const res = await api.get('/elements');
-      setAvailableElements(res.data.element ?? []);
+      const [elemRes, mapRes] = await Promise.all([
+        api.get('/elements').catch(() => ({ data: { element: [] } })),
+        api.get('/maps').catch(() => ({ data: { maps: [] } }))
+      ]);
+      setAvailableElements(elemRes.data.element ?? []);
+      
+      const prefabs: RoomPrefab[] = (mapRes.data.maps || [])
+        .filter((m: any) => m.type === 'room')
+        .map((m: any) => ({
+          id: m.id,
+          name: m.name,
+          category: 'Admin Room',
+          description: `${m.elementCount} items`,
+          items: m.elements.map((e: any) => ({
+            elementId: e.element.id,
+            offsetX: e.x,
+            offsetY: e.y
+          }))
+        }));
+      setRoomPrefabs(prefabs);
     } catch (e) { console.error(e); }
   };
 
@@ -152,7 +230,9 @@ export function Arena() {
                 // Tell the server we are actually at our saved location, not the default spawn
                 ws.send({ type: 'move', payload: { x: targetX, y: targetY } });
               }
-            } catch(e) {}
+            } catch(e) {
+              console.error(e);
+            }
           }
           
           setMyPos({ x: targetX, y: targetY });
@@ -630,6 +710,7 @@ export function Arena() {
           builderMode={builderMode}
           setBuilderMode={setBuilderMode}
           availableElements={availableElements}
+          roomPrefabs={roomPrefabs}
           elements={elements}
           addX={addX}
           setAddX={setAddX}

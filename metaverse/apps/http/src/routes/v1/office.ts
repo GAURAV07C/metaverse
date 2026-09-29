@@ -211,6 +211,7 @@ officeRouter.post("/:spaceId/publish", async (req, res) => {
     const areasToInsert = data.areas.map((a: any) => ({
       spaceId: space.id,
       name: a.name || 'Area',
+      type: a.type || 'private',
       startX: a.x,
       startY: a.y,
       endX: a.x + a.w,

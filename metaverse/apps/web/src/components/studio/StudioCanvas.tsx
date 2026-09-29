@@ -239,23 +239,23 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
       height += Math.floor((roomConfig.people - 4) / 2);
     }
     
-    // Base Floor (Logical area for AV/Private Zone)
-    newEls.push({
-      id: baseId,
-      x, y,
-      element: {
-        id: prefab.kind,
-        width, height,
-        imageUrl: '', // NO thumbnail on canvas for logical rooms
-        static: false,
-        name: `${prefab.title} (${roomConfig.people} pax)`,
-        category: prefab.area,
-        floor: roomConfig.floor,
-        wall: roomConfig.wall,
-        color: roomConfig.tint || null,
-      },
-    });
-    
+    if (setAreas) {
+      setAreas(prev => [
+        ...prev,
+        {
+          id: `room-area-${Date.now()}`,
+          name: `${prefab.title} (${roomConfig.people} pax)`,
+          type: 'private',
+          floor: roomConfig.floor || '#ffffff',
+          color: roomConfig.wall || '#9ca3af',
+          texture: 'solid',
+          x,
+          y,
+          w: width,
+          h: height
+        }
+      ]);
+    }
     // Pick some default table and chair for the room
     const tables = availableElements.filter(e => e.area === 'Tables');
     const chairs = availableElements.filter(e => e.area === 'Seating');
@@ -300,7 +300,7 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
     }
     
     setElements(prev => [...prev, ...newEls]);
-    setSelectedElId(baseId);
+    setSelectedElId(null);
     setStatus(`${prefab.title} generated as a Private Area!`);
     setPendingRoom(null);
   };
@@ -336,7 +336,7 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
       return;
     }
 
-    if (e.button === 0 && tool === 'area') {
+    if (e.button === 0 && (tool === 'area' || tool === 'room' || tool === 'seat')) {
       const { x, y } = screenToGrid(e.clientX, e.clientY);
       setDrawingArea({ startX: x, startY: y, curX: x, curY: y });
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
@@ -355,7 +355,7 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
 
   const handlePointerUp = () => {
     setIsPanning(false);
-    if (drawingArea && setAreas) {
+    if (drawingArea) {
       const minX = Math.min(drawingArea.startX, drawingArea.curX);
       const minY = Math.min(drawingArea.startY, drawingArea.curY);
       const maxX = Math.max(drawingArea.startX, drawingArea.curX);
@@ -364,22 +364,60 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
       const w = Math.max(1, maxX - minX);
       const h = Math.max(1, maxY - minY);
 
-      const newArea: AreaType = {
-        id: `area-${Date.now()}`,
-        name: 'New Area',
-        floor: '#f3f4f6',
-        color: 'rgba(59, 130, 246, 0.4)',
-        x: minX,
-        y: minY,
-        w,
-        h
-      };
+      if (tool === 'area' && setAreas) {
+        const newArea: AreaType = {
+          id: `area-${Date.now()}`,
+          name: 'New Area',
+          type: 'public',
+          floor: '#f3f4f6',
+          color: 'rgba(59, 130, 246, 0.4)',
+          x: minX,
+          y: minY,
+          w,
+          h
+        };
 
-      setAreas(prev => [...prev, newArea]);
-      setSelectedAreaId(newArea.id);
-      setSelectedElId(null);
+        setAreas(prev => [...prev, newArea]);
+        setSelectedAreaId(newArea.id);
+        setSelectedElId(null);
+        setStatus("Area created! Give it a name.");
+      } else if (tool === 'room' && setAreas) {
+        const newRoomArea: AreaType = {
+          id: `room-area-${Date.now()}`,
+          name: 'New Room',
+          type: 'private',
+          floor: '#ffffff',
+          color: '#9ca3af', // Gray color to signify walls
+          texture: 'solid',
+          x: minX,
+          y: minY,
+          w,
+          h
+        };
+        setAreas(prev => [...prev, newRoomArea]);
+        setSelectedAreaId(newRoomArea.id);
+        setSelectedElId(null);
+        setStatus("Room created! Give it a name.");
+      } else if (tool === 'seat' && setAreas) {
+        const newSeatArea: AreaType = {
+          id: `seat-area-${Date.now()}`,
+          name: 'Seat',
+          type: 'seat',
+          floor: 'rgba(249, 115, 22, 0.3)',
+          color: '#f97316',
+          texture: 'solid',
+          x: minX,
+          y: minY,
+          w,
+          h
+        };
+        setAreas(prev => [...prev, newSeatArea]);
+        setSelectedAreaId(newSeatArea.id);
+        setSelectedElId(null);
+        setStatus("Seat Area created!");
+      }
+      
       setDrawingArea(null);
-      setStatus("Area created! Give it a name.");
     }
   };
 
@@ -767,7 +805,26 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
               if (setAreas) setAreas(prev => prev.map(a => a.id === area.id ? updated : a));
             }}
             onDelete={() => {
-              if (setAreas) setAreas(prev => prev.filter(a => a.id !== area.id));
+              const areaRight = area.x + area.w;
+              const areaBottom = area.y + area.h;
+
+              if (setAreas) {
+                setAreas(prev => prev.filter(a => {
+                  if (a.id === area.id) return false;
+                  const isInside = a.x >= area.x && a.x + a.w <= areaRight && a.y >= area.y && a.y + a.h <= areaBottom;
+                  return !isInside;
+                }));
+              }
+
+              setElements(prev => prev.filter(el => {
+                const ew = el.element.width || 1;
+                const eh = el.element.height || 1;
+                const ecx = el.x + ew / 2;
+                const ecy = el.y + eh / 2;
+                const isInside = ecx >= area.x && ecx <= areaRight && ecy >= area.y && ecy <= areaBottom;
+                return !isInside;
+              }));
+
               setSelectedAreaId(null);
             }}
             zoom={zoom}

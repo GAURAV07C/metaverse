@@ -1,12 +1,13 @@
-import { ArrowLeft, MousePointer2, Hand, BoxSelect, Grid3X3, Eraser, Undo2, Redo2, Send, HelpCircle, SquareDashed } from 'lucide-react';
+import { ArrowLeft, MousePointer2, Hand, BoxSelect, Grid3X3, Eraser, Undo2, Redo2, Send, HelpCircle, SquareDashed, Armchair } from 'lucide-react';
 
-export type StudioTool = 'select' | 'hand' | 'erase' | 'room' | 'object' | 'area';
+export type StudioTool = 'select' | 'hand' | 'erase' | 'room' | 'object' | 'area' | 'seat';
 
 const tools: { id: StudioTool; label: string; icon: any }[] = [
   { id: 'select', label: 'Select', icon: MousePointer2 },
   { id: 'hand', label: 'Pan', icon: Hand },
   { id: 'area', label: 'Area', icon: SquareDashed },
   { id: 'room', label: 'Room', icon: BoxSelect },
+  { id: 'seat', label: 'Seat', icon: Armchair },
   { id: 'object', label: 'Object', icon: Grid3X3 },
   { id: 'erase', label: 'Erase', icon: Eraser },
 ];

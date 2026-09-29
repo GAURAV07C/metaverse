@@ -133,7 +133,7 @@ export class RoomManager {
     const zonesInRoom = this.zones.get(spaceId) || [];
 
     const getZone = (u: User) => {
-      return zonesInRoom.find(z => u.x >= z.startX && u.x <= z.endX && u.y >= z.startY && u.y <= z.endY);
+      return zonesInRoom.find(z => z.type === 'private' && u.x >= z.startX && u.x <= z.endX && u.y >= z.startY && u.y <= z.endY);
     };
     
     const userZone = getZone(user);

@@ -211,6 +211,22 @@ export function StudioArea({ area, isSelected, onSelect, onChange, onDelete, onD
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span>Type</span>
                 <select 
+                  value={area.type || 'public'} 
+                  onChange={e => onChange({ ...area, type: e.target.value as any })}
+                  onPointerDown={e => e.stopPropagation()}
+                  style={{
+                    background: 'rgba(0,0,0,0.3)', border: '1px solid #444',
+                    color: '#fff', padding: '2px 4px', borderRadius: 4, cursor: 'pointer', outline: 'none'
+                  }}
+                >
+                  <option value="public">Public Area</option>
+                  <option value="private">Private Room</option>
+                  <option value="seat">Seat Spot</option>
+                </select>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>Texture</span>
+                <select 
                   value={area.texture || 'solid'} 
                   onChange={e => onChange({ ...area, texture: e.target.value as any })}
                   onPointerDown={e => e.stopPropagation()}

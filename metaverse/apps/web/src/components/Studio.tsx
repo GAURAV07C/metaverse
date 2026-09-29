@@ -57,9 +57,13 @@ export function Studio() {
 
   useEffect(() => {
     let mounted = true;
-    api.get('/elements').then(res => {
+    Promise.all([
+      api.get('/elements').catch(() => ({ data: { element: [] } })),
+      api.get('/maps').catch(() => ({ data: { maps: [] } }))
+    ]).then(([elemRes, mapRes]) => {
       if (!mounted) return;
-      const mapped = res.data.element.map((e: any) => ({
+      
+      const mappedElements = elemRes.data.element.map((e: any) => ({
         title: e.name,
         kind: e.id,
         area: e.category || 'Machines',
@@ -67,9 +71,24 @@ export function Studio() {
         color: '#aaaaaa',
         thumb: e.imageUrl.startsWith('/') ? e.imageUrl : `/${e.imageUrl}`,
       }));
-      setAvailableElements(mapped);
-      if (mapped.length > 0 && !selectedPrefab) setSelectedPrefab(mapped[0]);
-    }).catch(() => console.error('Failed to load elements'));
+
+      const roomPrefabs = (mapRes.data.maps || []).filter((m: any) => m.type === 'room').map((m: any) => ({
+        title: m.name,
+        kind: m.id,
+        area: 'Rooms', // Add to Rooms category
+        size: m.dimensions.replace('x', ' x '),
+        thumb: m.thumbnail,
+        items: m.elements.map((e: any) => ({
+          kind: e.element.id,
+          dx: e.x,
+          dy: e.y
+        }))
+      }));
+
+      const allPrefabs = [...roomPrefabs, ...mappedElements];
+      setAvailableElements(allPrefabs);
+      if (allPrefabs.length > 0 && !selectedPrefab) setSelectedPrefab(allPrefabs[0]);
+    });
 
     api.get(`/space/${spaceId}`).then(space => {
       if (!mounted) return;

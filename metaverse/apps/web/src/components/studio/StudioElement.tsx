@@ -160,7 +160,18 @@ export function StudioElement({ el, isSelected, tool, TILE, onDelete, onUpdate, 
             onElementPointerDown(e);
           }
         }}
-        style={{ position: 'relative', width: el.element.width * TILE, height: el.element.height * TILE, backgroundColor: el.element.floor || 'transparent', borderRadius: 4, cursor: tool === 'erase' ? 'crosshair' : 'grab', transform: `rotate(${el.rotation || 0}deg)`, transition: 'transform 0.2s' }}
+        style={{ 
+          position: 'relative', 
+          width: el.element.width * TILE, 
+          height: el.element.height * TILE, 
+          backgroundColor: el.element.floor || (el.element.category === 'Rooms' ? 'rgba(255, 255, 255, 0.4)' : 'transparent'), 
+          border: (el.element.category === 'Rooms' || el.element.category === 'Seats') ? (isSelected ? '2px solid #6366f1' : '2px dashed #f97316') : 'none',
+          borderRadius: (el.element.category === 'Rooms' || el.element.category === 'Seats') ? 12 : 4, 
+          cursor: tool === 'erase' ? 'crosshair' : 'grab', 
+          transform: `rotate(${el.rotation || 0}deg)`, 
+          transition: 'transform 0.2s',
+          boxSizing: 'border-box'
+        }}
       >
         
         {/* Wall overlay (top border) */}
@@ -169,21 +180,23 @@ export function StudioElement({ el, isSelected, tool, TILE, onDelete, onUpdate, 
         )}
 
         {/* Base Image (e.g. Trunk) */}
-        <img
-          src={el.element.imageUrl}
-          alt={el.element.name || ''}
-          draggable={false}
-          style={{
-            position: 'absolute', bottom: 0, left: 0,
-            width: '100%', height: '100%', objectFit: 'contain',
-            imageRendering: 'pixelated',
-            filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.25))',
-            border: isSelected ? '2px solid #6366f1' : '2px solid transparent',
-            borderRadius: 4,
-            transition: 'border 0.15s',
-            zIndex: 2
-          }}
-        />
+        {el.element.imageUrl && (
+          <img
+            src={el.element.imageUrl}
+            alt={el.element.name || ''}
+            draggable={false}
+            style={{
+              position: 'absolute', bottom: 0, left: 0,
+              width: '100%', height: '100%', objectFit: 'contain',
+              imageRendering: 'pixelated',
+              filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.25))',
+              border: (isSelected && el.element.category !== 'Rooms') ? '2px solid #6366f1' : '2px solid transparent',
+              borderRadius: 4,
+              transition: 'border 0.15s',
+              zIndex: 2
+            }}
+          />
+        )}
 
         {/* Color Mask Layer (e.g. Leaves) */}
         {el.element.colorMaskUrl && (

@@ -233,8 +233,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     const viewW = wrapper.clientWidth;
     const viewH = wrapper.clientHeight;
-    canvas.width = viewW;
-    canvas.height = viewH;
+    
+    // High DPI scaling for sharp rendering
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = viewW * dpr;
+    canvas.height = viewH * dpr;
+    ctx.scale(dpr, dpr);
+    canvas.style.width = `${viewW}px`;
+    canvas.style.height = `${viewH}px`;
 
     const worldW = dimensions.w * TILE;
     const worldH = dimensions.h * TILE;
@@ -253,16 +259,19 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const visibleWorldW = viewW / activeZoom;
     const visibleWorldH = viewH / activeZoom;
 
+    // Add some padding so the user can pan slightly past the edges
+    const padding = TILE * 3;
+
     if (worldW <= visibleWorldW) {
       camX = -(visibleWorldW - worldW) / 2;
     } else {
-      camX = Math.max(0, Math.min(camX, worldW - visibleWorldW));
+      camX = Math.max(-padding, Math.min(camX, worldW - visibleWorldW + padding));
     }
 
     if (worldH <= visibleWorldH) {
       camY = -(visibleWorldH - worldH) / 2;
     } else {
-      camY = Math.max(0, Math.min(camY, worldH - visibleWorldH));
+      camY = Math.max(-padding, Math.min(camY, worldH - visibleWorldH + padding));
     }
 
     // Save current camera transform parameters for mouse click calculations
@@ -328,12 +337,43 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
       // Area Name Label
       if (zone.name) {
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-        const fontSize = isDiagramMode ? Math.max(12, 18 / activeZoom) : 12;
-        ctx.font = `600 ${fontSize}px sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(zone.name, zx + zw / 2, zy + zh / 2);
+        let labelText = zone.name;
+        if (labelText === 'New Area' && zone.type !== 'seat') {
+          labelText = '';
+        }
+
+        if (zone.type === 'seat') {
+          const occupants = otherUsers.filter(u => u.x !== undefined && u.y !== undefined && u.x >= zone.startX && u.x < zone.endX && u.y >= zone.startY && u.y < zone.endY);
+          const iAmOccupant = myPos.x >= zone.startX && myPos.x < zone.endX && myPos.y >= zone.startY && myPos.y < zone.endY;
+          
+          if (occupants.length === 0 && !iAmOccupant) {
+            labelText = "Vacant";
+          } else if (iAmOccupant) {
+            labelText = "You";
+          } else {
+            labelText = occupants[0].username || "Occupied";
+          }
+        }
+
+        if (labelText) {
+          // Solid background for text readability
+          const fontSize = isDiagramMode ? Math.max(12, 18 / activeZoom) : 12;
+          ctx.font = `600 ${fontSize}px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          
+          const padding = 4;
+          const textWidth = ctx.measureText(labelText).width;
+          const textHeight = fontSize;
+          
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+          ctx.beginPath();
+          ctx.roundRect(zx + zw / 2 - textWidth / 2 - padding, zy + zh / 2 - textHeight / 2 - padding, textWidth + padding * 2, textHeight + padding * 2, 4);
+          ctx.fill();
+
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+          ctx.fillText(labelText, zx + zw / 2, zy + zh / 2);
+        }
       }
       
       ctx.restore();
@@ -361,14 +401,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const w = el.element.width * TILE;
       const h = el.element.height * TILE;
 
-      // Draw custom floor background if specified
-      if (el.element.floor) {
+      // Draw custom floor background if specified (skip for Rooms, handled below)
+      if (el.element.floor && el.element.category !== 'Rooms') {
         ctx.fillStyle = el.element.floor;
         ctx.fillRect(px, py, w, h);
       }
 
-      // Draw custom wall top border if specified
-      if (el.element.wall) {
+      // Draw custom wall top border if specified (skip for Rooms, handled below)
+      if (el.element.wall && el.element.category !== 'Rooms') {
         ctx.fillStyle = el.element.wall;
         ctx.fillRect(px, py, w, Math.min(12, h));
       }
@@ -402,8 +442,26 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         }
       }
       
-      // Do not draw the fallback box for logical Rooms (they just render floor and wall)
+      // Draw Rooms matching Studio visually
       if (el.element.category === 'Rooms') {
+        ctx.fillStyle = el.element.floor || 'rgba(255, 255, 255, 0.4)';
+        ctx.strokeStyle = '#9ca3af';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 8]);
+        
+        ctx.beginPath();
+        ctx.roundRect(px, py, w, h, 12);
+        ctx.fill();
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        if (el.element.wall) {
+          ctx.fillStyle = el.element.wall;
+          ctx.beginPath();
+          // Top corners rounded, bottom square
+          ctx.roundRect(px, py, w, Math.min(12, h), [12, 12, 0, 0]);
+          ctx.fill();
+        }
         return;
       }
 
@@ -600,7 +658,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
-          onClick={handleCanvasClick}
           onDoubleClick={handleCanvasClick}
           onDragOver={(e) => {
             e.preventDefault();
