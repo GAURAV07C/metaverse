@@ -6,6 +6,8 @@ import { findPath } from '../../utils/pathfinding';
 import { drawDynamicAvatar } from '../../utils/drawAvatar';
 
 const TILE = 28;
+const ZOOM_MIN = 0.4;   // Overview of whole map
+const ZOOM_MAX = 2.5;   // Close-up on avatar
 
 export interface PrivateZone {
   id: string;
@@ -87,11 +89,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       if (e.ctrlKey) {
         // Trackpad pinch gesture
         const factor = Math.exp(-e.deltaY / 100);
-        setZoom(z => Math.max(0.7, Math.min(3.0, z * factor)));
+        setZoom(z => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z * factor)));
       } else {
         // Standard mouse wheel
         const factor = e.deltaY < 0 ? 1.1 : 0.9;
-        setZoom(z => Math.max(0.7, Math.min(3.0, z * factor)));
+        setZoom(z => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z * factor)));
       }
     };
 
@@ -246,7 +248,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const worldH = dimensions.h * TILE;
 
     // Active zoom factor
-    const activeZoom = Math.max(0.7, Math.min(3.0, zoom));
+    const activeZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom));
 
     // Camera follows player (centered) + mouse drag panOffset
     const playerPx = myPos.x * TILE + TILE / 2;
@@ -684,13 +686,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       </div>
 
       <div className="map-controls">
-        <button className="map-ctrl-btn" onClick={() => setZoom(z => Math.min(z * 1.25, 3.0))} title="Zoom In">
+        <button className="map-ctrl-btn" onClick={() => setZoom(z => Math.min(ZOOM_MAX, z * 1.25))} title="Zoom In">
           <PlusCircle size={20} />
         </button>
-        <button className="map-ctrl-btn" onClick={() => setZoom(z => Math.max(z / 1.25, 0.7))} title="Zoom Out (Diagram View)">
+        <button className="map-ctrl-btn" onClick={() => setZoom(z => Math.max(ZOOM_MIN, z / 1.25))} title="Zoom Out">
           <MinusCircle size={20} />
         </button>
-        <button className="map-ctrl-btn" onClick={() => setZoom(0.7)} title="Layout Overview (Gather View)">
+        <button className="map-ctrl-btn" onClick={() => setZoom(ZOOM_MIN)} title="Full Overview">
           <MapIcon size={20} />
         </button>
         <button className="map-ctrl-btn" onClick={handleLocateUser} title="Locate Me">

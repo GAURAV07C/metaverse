@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { ZoomIn, ZoomOut } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import type { Prefab } from './types';
 import type { SpaceElement } from '../arena/ElementsPanel';
 import { StudioElement } from './StudioElement';
@@ -19,11 +19,14 @@ interface Props {
   setSelectedElId: (id: string | null) => void;
   setStatus: (s: string) => void;
   onExit: () => void;
+  onFitToContent?: (zoom: number, pan: { x: number; y: number }) => void;
 }
 
 const TILE = 32;
+const ZOOM_MIN = 0.15;  // Can see very large maps fully
+const ZOOM_MAX = 4.0;   // Detailed editing zoom
 
-export function StudioCanvas({ tool, availableElements, elements, setElements, areas = [], setAreas, dimensions, selectedElId, setSelectedElId, setStatus, onExit }: Props) {
+export function StudioCanvas({ tool, availableElements, elements, setElements, areas = [], setAreas, dimensions, selectedElId, setSelectedElId, setStatus, onExit, onFitToContent }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Pan
@@ -33,6 +36,58 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
 
   // Zoom
   const [zoom, setZoom] = useState(1);
+
+  // ── Fit all content to view ──────────────────────────────
+  const fitToContent = useCallback(() => {
+    if (!containerRef.current) return;
+    const container = containerRef.current;
+    const viewW = container.clientWidth;
+    const viewH = container.clientHeight;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    elements.forEach(el => {
+      const w = el.element?.width || 1;
+      const h = el.element?.height || 1;
+      minX = Math.min(minX, el.x); minY = Math.min(minY, el.y);
+      maxX = Math.max(maxX, el.x + w); maxY = Math.max(maxY, el.y + h);
+    });
+    areas.forEach(a => {
+      minX = Math.min(minX, a.x); minY = Math.min(minY, a.y);
+      maxX = Math.max(maxX, a.x + a.w); maxY = Math.max(maxY, a.y + a.h);
+    });
+
+    // If no content, fit whole map
+    if (!isFinite(minX)) {
+      minX = 0; minY = 0; maxX = dimensions.w; maxY = dimensions.h;
+    }
+
+    const contentWPx = (maxX - minX) * TILE;
+    const contentHPx = (maxY - minY) * TILE;
+    const PADDING = 0.85;
+    const newZoom = Math.max(0.2, Math.min(2, Math.min(
+      (viewW * PADDING) / Math.max(contentWPx, 1),
+      (viewH * PADDING) / Math.max(contentHPx, 1)
+    )));
+
+    const centerX = (minX + maxX) / 2 * TILE * newZoom;
+    const centerY = (minY + maxY) / 2 * TILE * newZoom;
+    const newPan = {
+      x: viewW / 2 - centerX,
+      y: viewH / 2 - centerY,
+    };
+    setZoom(newZoom);
+    setPan(newPan);
+    onFitToContent?.(newZoom, newPan);
+  }, [elements, areas, dimensions, onFitToContent]);
+
+  // Auto fit on first load when elements or areas arrive
+  const hasAutoFitted = useRef(false);
+  useEffect(() => {
+    if (hasAutoFitted.current) return;
+    if (elements.length === 0 && areas.length === 0) return;
+    fitToContent();
+    hasAutoFitted.current = true;
+  }, [elements, areas, fitToContent]);
 
   // Drag preview state
   const [dragHoverPos, setDragHoverPos] = useState<{ x: number, y: number, occupied: boolean } | null>(null);
@@ -87,7 +142,7 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
 
       const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
       setZoom(prevZoom => {
-        const newZoom = Math.max(0.2, Math.min(3, prevZoom * zoomFactor));
+        const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, prevZoom * zoomFactor));
         if (newZoom !== prevZoom) {
           const logicalX = (mouseX - pan.x) / prevZoom;
           const logicalY = (mouseY - pan.y) / prevZoom;
@@ -902,14 +957,21 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
         position: 'absolute', bottom: 80, right: 24, display: 'flex', flexDirection: 'column',
         background: '#fff', borderRadius: 8, border: '1px solid #e5e5e5', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', zIndex: 10, overflow: 'hidden',
       }}>
-        <button onClick={() => setZoom(z => Math.min(3, z + 0.2))} style={{ border: 'none', background: 'transparent', padding: '8px 10px', cursor: 'pointer', color: '#374151', borderBottom: '1px solid #f3f4f6' }}>
+        <button onClick={() => setZoom(z => Math.min(ZOOM_MAX, z + 0.2))} style={{ border: 'none', background: 'transparent', padding: '8px 10px', cursor: 'pointer', color: '#374151', borderBottom: '1px solid #f3f4f6' }}>
           <ZoomIn size={16} />
         </button>
         <button onClick={() => setZoom(1)} style={{ border: 'none', background: 'transparent', padding: '4px 10px', cursor: 'pointer', color: '#6b7280', fontSize: 10, fontWeight: 700, borderBottom: '1px solid #f3f4f6' }}>
           {Math.round(zoom * 100)}%
         </button>
-        <button onClick={() => setZoom(z => Math.max(0.2, z - 0.2))} style={{ border: 'none', background: 'transparent', padding: '8px 10px', cursor: 'pointer', color: '#374151' }}>
+        <button onClick={() => setZoom(z => Math.max(ZOOM_MIN, z - 0.2))} style={{ border: 'none', background: 'transparent', padding: '8px 10px', cursor: 'pointer', color: '#374151', borderBottom: '1px solid #f3f4f6' }}>
           <ZoomOut size={16} />
+        </button>
+        <button
+          onClick={fitToContent}
+          title="Fit all content to view"
+          style={{ border: 'none', background: 'transparent', padding: '8px 10px', cursor: 'pointer', color: '#6366f1' }}
+        >
+          <Maximize2 size={16} />
         </button>
       </div>
 
