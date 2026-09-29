@@ -50,6 +50,7 @@ spaceRouter.post("/", userMiddleware, async (req, res) => {
       },
       select: {
         mapElements: true,
+        areas: true,
         width: true,
         height: true,
         thumbnails: true,
@@ -79,6 +80,21 @@ spaceRouter.post("/", userMiddleware, async (req, res) => {
           y: Number(e.y ?? 0),
         })),
       });
+      if (map.areas && map.areas.length > 0) {
+        await tx.privateZone.createMany({
+          data: map.areas.map((a) => ({
+            spaceId: space.id,
+            name: a.name,
+            startX: a.x,
+            startY: a.y,
+            endX: a.x + a.w,
+            endY: a.y + a.h,
+            floor: a.floor,
+            color: a.color,
+            texture: a.texture,
+          })),
+        });
+      }
       return space;
     });
 

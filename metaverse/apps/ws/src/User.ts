@@ -98,14 +98,27 @@ export class User {
           await RoomManager.getInstance().loadSpaceBounds(spaceId);
 
           let spawn = { x: 0, y: 0 };
-          for (let i = 0; i < 200; i += 1) {
-            const candidate = {
-              x: Math.floor(Math.random() * space.width),
-              y: Math.floor(Math.random() * (space.height ?? 1)),
+          
+          const zones = RoomManager.getInstance().zones.get(spaceId) || [];
+          
+          if (zones.length > 0) {
+            // Spawn in the middle of the first zone
+            const z = zones[0];
+            spawn = {
+              x: Math.floor((z.startX + z.endX) / 2),
+              y: Math.floor((z.startY + z.endY) / 2)
             };
-            if (await RoomManager.getInstance().canOccupy(spaceId, candidate.x, candidate.y)) {
-              spawn = candidate;
-              break;
+          } else {
+            // Fallback to searching for a random unblocked spot in the space
+            for (let i = 0; i < 200; i += 1) {
+              const candidate = {
+                x: Math.floor(Math.random() * space.width),
+                y: Math.floor(Math.random() * (space.height ?? 1)),
+              };
+              if (await RoomManager.getInstance().canOccupy(spaceId, candidate.x, candidate.y)) {
+                spawn = candidate;
+                break;
+              }
             }
           }
           this.x = spawn.x;

@@ -76,6 +76,29 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Handle trackpad pinch-to-zoom (prevent browser zoom)
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault(); // Prevents whole webpage from zooming!
+      
+      if (e.ctrlKey) {
+        // Trackpad pinch gesture
+        const factor = Math.exp(-e.deltaY / 100);
+        setZoom(z => Math.max(0.7, Math.min(3.0, z * factor)));
+      } else {
+        // Standard mouse wheel
+        const factor = e.deltaY < 0 ? 1.1 : 0.9;
+        setZoom(z => Math.max(0.7, Math.min(3.0, z * factor)));
+      }
+    };
+
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', handleWheel);
+  }, [setZoom]);
+
   const hasDraggedRef = useRef(false);
 
   // ── Mouse Drag / Free Camera Pan Map ────────────────
@@ -216,8 +239,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const worldW = dimensions.w * TILE;
     const worldH = dimensions.h * TILE;
 
-    // Active zoom factor (allow zoom out down to 0.15 without force-clamping to screen fit)
-    const activeZoom = Math.max(0.15, Math.min(3.0, zoom));
+    // Active zoom factor
+    const activeZoom = Math.max(0.7, Math.min(3.0, zoom));
 
     // Camera follows player (centered) + mouse drag panOffset
     const playerPx = myPos.x * TILE + TILE / 2;
@@ -245,7 +268,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     // Save current camera transform parameters for mouse click calculations
     currentCamRef.current = { camX, camY, zoom: activeZoom };
 
-    ctx.fillStyle = '#d9d1c3';
+    ctx.fillStyle = '#dcf0e2'; // Match map background to hide boundaries
     ctx.fillRect(0, 0, viewW, viewH);
 
     ctx.save();
@@ -256,111 +279,64 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     ctx.fillStyle = '#dcf0e2';
     ctx.fillRect(0, 0, worldW, worldH);
 
-    // Draw subtle grid pattern
-    ctx.fillStyle = '#d1e6d7';
-    for (let y = 0; y < worldH; y += TILE) {
-      for (let x = 0; x < worldW; x += TILE) {
-        if ((x / TILE + y / TILE) % 2 === 0) {
-          ctx.fillRect(x, y, TILE, TILE);
-        }
+    const isDiagramMode = activeZoom < 0.8;
+
+    // Grid lines to match Studio (opacity 0.06 of black .4)
+    if (!isDiagramMode) {
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.024)';
+      ctx.lineWidth = 1;
+      for (let y = 0; y <= worldH; y += TILE) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(worldW, y); ctx.stroke();
+      }
+      for (let x = 0; x <= worldW; x += TILE) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, worldH); ctx.stroke();
       }
     }
 
-    // Grid lines
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-    ctx.lineWidth = 1;
-    for (let y = 0; y <= worldH; y += TILE) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(worldW, y); ctx.stroke();
-    }
-    for (let x = 0; x <= worldW; x += TILE) {
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, worldH); ctx.stroke();
-    }
-
-    // Gather Town Diagram style Room carpets, walls, and labels
-    privateZones.forEach((z) => {
-      const zx = z.startX * TILE;
-      const zy = z.startY * TILE;
-      const zw = (z.endX - z.startX + 1) * TILE;
-      const zh = (z.endY - z.startY + 1) * TILE;
-      const isInside = myPos.x >= z.startX && myPos.x <= z.endX && myPos.y >= z.startY && myPos.y <= z.endY;
+    // Render Areas / Private Zones
+    privateZones.forEach((zone: any) => {
+      const zx = zone.startX * TILE;
+      const zy = zone.startY * TILE;
+      const zw = (zone.endX - zone.startX) * TILE;
+      const zh = (zone.endY - zone.startY) * TILE;
       
-      const isLounge = z.name.toLowerCase().includes('lounge') || z.name.toLowerCase().includes('breakout');
-      const isTeam = z.name.toLowerCase().includes('team') || z.name.toLowerCase().includes('engineering');
-
-      const roomFill = isLounge ? '#fdf2f8' : (isTeam ? '#ffffff' : '#eef2ff');
-      const roomStroke = isLounge ? '#fbcfe8' : (isTeam ? '#e5e7eb' : '#c7d2fe');
-      const borderCol = isInside ? '#6366f1' : roomStroke;
+      const isInside = myPos.x >= zone.startX && myPos.x < zone.endX && myPos.y >= zone.startY && myPos.y < zone.endY;
 
       ctx.save();
-      ctx.fillStyle = roomFill;
-      ctx.beginPath();
-      ctx.roundRect(zx, zy, zw, zh, 8);
-      ctx.fill();
-
-      ctx.strokeStyle = borderCol;
-      ctx.lineWidth = isInside ? 3 : 2;
-      ctx.beginPath();
-      ctx.roundRect(zx + 1, zy + 1, zw - 2, zh - 2, 7);
-      ctx.stroke();
-
-      // Centered Icon Badge / Label Pill
-      const isZoomedOut = zoom < 0.75;
-      const icon = isLounge ? '🛋️' : (isTeam ? '👥' : '🚪');
-      
-      if (isTeam) {
-        // Team Header Pill
-        ctx.fillStyle = '#ffffff';
-        ctx.strokeStyle = '#e5e7eb';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.roundRect(zx + zw / 2 - 40, zy + 12, 80, 24, 12);
-        ctx.fill();
-        ctx.stroke();
-        ctx.fillStyle = '#374151';
-        ctx.font = '600 11px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(`👥 ${z.name || 'Team'}`, zx + zw / 2, zy + 24);
-
-        // Draw Gather Desk Dot Clusters (4 dots)
-        ctx.fillStyle = '#d1d5db';
-        const cx = zx + zw / 2;
-        const cy = zy + zh / 2 + 8;
-        [[-20, -12], [20, -12], [-20, 12], [20, 12]].forEach(([dx, dy]) => {
-          ctx.beginPath();
-          ctx.arc(cx + dx, cy + dy, 4, 0, Math.PI * 2);
-          ctx.fill();
-        });
+      // Draw Area Floor Color
+      if (zone.floor) {
+        ctx.fillStyle = zone.floor;
       } else {
-        // Private Office / Lounge Centered Icon Badge
-        ctx.fillStyle = '#ffffff';
-        ctx.shadowColor = 'rgba(0,0,0,0.08)';
-        ctx.shadowBlur = 6;
-        ctx.shadowOffsetY = 2;
-        ctx.beginPath();
-        ctx.roundRect(zx + zw / 2 - 16, zy + zh / 2 - 16, 32, 32, 8);
-        ctx.fill();
-        ctx.restore();
+        ctx.fillStyle = 'rgba(243, 244, 246, 0.4)'; // Match StudioArea default transparency
+      }
+      ctx.fillRect(zx, zy, zw, zh);
 
-        ctx.fillStyle = '#4b5563';
-        ctx.font = '14px sans-serif';
+      // Draw Area Border to perfectly match StudioArea (2px dashed by default)
+      ctx.strokeStyle = isInside ? '#2563eb' : (zone.color || 'rgba(59, 130, 246, 0.5)');
+      ctx.lineWidth = isInside ? 4 : 2;
+      
+      // StudioArea uses dashed by default when not selected, regardless of texture
+      if (zone.texture === 'solid') {
+        ctx.setLineDash([]);
+      } else if (zone.texture === 'dotted') {
+        ctx.setLineDash([3, 6]);
+      } else {
+        ctx.setLineDash([8, 8]); // Default dashed to match StudioArea
+      }
+      
+      ctx.strokeRect(zx, zy, zw, zh);
+
+      // Area Name Label
+      if (zone.name) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        const fontSize = isDiagramMode ? Math.max(12, 18 / activeZoom) : 12;
+        ctx.font = `600 ${fontSize}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(icon, zx + zw / 2, zy + zh / 2);
-
-        // Room title pill
-        if (!isZoomedOut) {
-          ctx.fillStyle = 'rgba(30, 41, 59, 0.75)';
-          ctx.beginPath();
-          ctx.roundRect(zx + 8, zy + 8, Math.min(zw - 16, z.name.length * 7 + 16), 20, 6);
-          ctx.fill();
-          ctx.fillStyle = '#ffffff';
-          ctx.font = '600 10px sans-serif';
-          ctx.textAlign = 'left';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(z.name, zx + 14, zy + 18);
-        }
+        ctx.fillText(zone.name, zx + zw / 2, zy + zh / 2);
       }
+      
+      ctx.restore();
     });
 
     // Outer office shell walls removed to match map editor perfectly
@@ -369,6 +345,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const visibleElements = elements.filter(el => !hiddenElementIds.includes(el.id));
 
     const isFloorElement = (el: SpaceElement) => {
+      if (el.element.category === 'Rooms') return true;
       const text = `${el.element.id} ${el.element.name ?? ''} ${el.element.category ?? ''} ${el.element.imageUrl ?? ''}`.toLowerCase();
       return text.includes('floor') || text.includes('carpet') || text.includes('wood_') || text.includes('tile_') || text.includes('grass');
     };
@@ -424,8 +401,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           return;
         }
       }
+      
+      // Do not draw the fallback box for logical Rooms (they just render floor and wall)
+      if (el.element.category === 'Rooms') {
+        return;
+      }
 
-      // Fallback for custom objects without images (e.g. dynamic room areas)
+      // Fallback for custom objects without images
       ctx.fillStyle = el.element.color || (el.element.static ? 'rgba(100,116,139,0.5)' : 'rgba(16,185,129,0.3)');
       ctx.strokeStyle = el.element.wall || (el.element.static ? '#475569' : '#10b981');
       ctx.lineWidth = 1;
@@ -443,7 +425,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     };
 
     floors.forEach(el => drawElement(el, true));
-    objects.forEach(el => drawElement(el, false));
+    if (!isDiagramMode) {
+      objects.forEach(el => drawElement(el, false));
+    }
 
     // Draw destination highlight tile & autoPath trajectory trail
     if (autoPath.length > 0) {
@@ -556,7 +540,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return isSeat && tx >= el.x && tx < el.x + el.element.width && ty >= el.y && ty < el.y + el.element.height;
     });
 
-    // Other users
+    // Draw other users
     otherUsers.forEach((u) => {
       const px = u.x * TILE + TILE / 2;
       const py = u.y * TILE + TILE / 2 - 4;
@@ -638,11 +622,6 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             const tileY = Math.max(0, Math.min(dimensions.h - 1, Math.floor(worldY / TILE)));
             onDropElement?.(elementId, tileX, tileY);
           }}
-          onWheel={(e) => {
-            e.preventDefault();
-            const factor = e.deltaY < 0 ? 1.2 : 0.8;
-            setZoom(z => Math.max(0.15, Math.min(3.0, z * factor)));
-          }}
           style={{ display: 'block', width: '100%', height: '100%', cursor: isDragging ? 'grabbing' : addingElement ? 'crosshair' : autoPath.length > 0 ? 'crosshair' : 'grab' }}
         />
       </div>
@@ -651,10 +630,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         <button className="map-ctrl-btn" onClick={() => setZoom(z => Math.min(z * 1.25, 3.0))} title="Zoom In">
           <PlusCircle size={20} />
         </button>
-        <button className="map-ctrl-btn" onClick={() => setZoom(z => Math.max(z / 1.25, 0.15))} title="Zoom Out (Diagram View)">
+        <button className="map-ctrl-btn" onClick={() => setZoom(z => Math.max(z / 1.25, 0.7))} title="Zoom Out (Diagram View)">
           <MinusCircle size={20} />
         </button>
-        <button className="map-ctrl-btn" onClick={() => setZoom(0.35)} title="Layout Overview (Gather View)">
+        <button className="map-ctrl-btn" onClick={() => setZoom(0.7)} title="Layout Overview (Gather View)">
           <MapIcon size={20} />
         </button>
         <button className="map-ctrl-btn" onClick={handleLocateUser} title="Locate Me">

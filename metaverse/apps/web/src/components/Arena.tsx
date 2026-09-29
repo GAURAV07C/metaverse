@@ -138,7 +138,24 @@ export function Arena() {
       switch (msg.type) {
         case 'space-joined':
           setConnected(true);
-          setMyPos({ x: msg.payload.spawn.x, y: msg.payload.spawn.y });
+          
+          let targetX = msg.payload.spawn.x;
+          let targetY = msg.payload.spawn.y;
+          const savedPosStr = localStorage.getItem(`metaverse_pos_${spaceId}`);
+          
+          if (savedPosStr) {
+            try {
+              const parsed = JSON.parse(savedPosStr);
+              if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+                targetX = parsed.x;
+                targetY = parsed.y;
+                // Tell the server we are actually at our saved location, not the default spawn
+                ws.send({ type: 'move', payload: { x: targetX, y: targetY } });
+              }
+            } catch(e) {}
+          }
+          
+          setMyPos({ x: targetX, y: targetY });
           const filteredJoined: OtherUser[] = (msg.payload.users ?? [])
             .filter((u: any) => (u.userId || u.id) !== msg.payload.userId && u.username !== myStoredUsername)
             .map((u: any) => ({
@@ -218,6 +235,13 @@ export function Arena() {
     ws.connect();
     return () => { unsub(); ws.disconnect(); };
   }, [spaceId, token, myStoredUsername]);
+
+  // Save myPos to localStorage whenever it changes
+  useEffect(() => {
+    if (spaceId && myPos) {
+      localStorage.setItem(`metaverse_pos_${spaceId}`, JSON.stringify(myPos));
+    }
+  }, [myPos, spaceId]);
 
   // ── Keyboard movement ─────────────────
   const handleKeyDown = useCallback((e: KeyboardEvent) => {

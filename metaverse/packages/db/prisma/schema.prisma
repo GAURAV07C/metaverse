@@ -175,6 +175,9 @@ model PrivateZone {
   startY  Int
   endX    Int
   endY    Int
+  floor   String? @default("#f3f4f6")
+  color   String? @default("#3b82f6")
+  texture String? @default("solid")
 
   @@index([spaceId])
 }

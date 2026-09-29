@@ -204,6 +204,29 @@ officeRouter.post("/:spaceId/publish", async (req, res) => {
     }
   }
 
+  // Also sync areas to PrivateZone
+  if (data.areas && Array.isArray(data.areas)) {
+    await client.privateZone.deleteMany({ where: { spaceId: space.id } });
+    
+    const areasToInsert = data.areas.map((a: any) => ({
+      spaceId: space.id,
+      name: a.name || 'Area',
+      startX: a.x,
+      startY: a.y,
+      endX: a.x + a.w,
+      endY: a.y + a.h,
+      floor: a.floor,
+      color: a.color,
+      texture: a.texture,
+    }));
+
+    if (areasToInsert.length > 0) {
+      await client.privateZone.createMany({
+        data: areasToInsert
+      });
+    }
+  }
+
   const updatedDraft = await client.spaceDraft.update({ where: { spaceId: space.id }, data: { publishedAt: new Date() } }).catch(() => null);
   res.json({ message: "Office draft published", draft: updatedDraft });
 });
