@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Bell, Calendar, Check, MessageSquare, Monitor, Shield, Sparkles, UserCog, Video, Volume2, X } from 'lucide-react';
+import { api } from '../../utils/api';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -11,6 +12,11 @@ interface SettingsModalProps {
   setMicOn?: (value: boolean) => void;
   setCamOn?: (value: boolean) => void;
   onDevicePreferenceChange?: (key: keyof DevicePrefs, value: string) => Promise<void> | void;
+  notificationPreferences?: NotificationPrefs;
+  onNotificationPreferenceChange?: (key: keyof NotificationPrefs, value: boolean) => Promise<void> | void;
+  spaceId?: string;
+  currentUserRole?: string;
+  canManageMembers?: boolean;
 }
 
 type DevicePrefs = {
@@ -29,6 +35,14 @@ type NotificationPrefs = {
   sounds: boolean;
   reconnecting: boolean;
   respectFocus: boolean;
+};
+
+type OfficeMember = {
+  id: string;
+  userId: string;
+  username: string;
+  avatar?: string | null;
+  role: 'Owner' | 'Admin' | 'Builder' | 'Member' | 'Guest';
 };
 
 const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
@@ -70,12 +84,19 @@ const readNotificationPrefs = (): NotificationPrefs => {
   }
 };
 
-export const SettingsModal = ({ isOpen, onClose, myStoredUsername, micOn, camOn, setMicOn, setCamOn, onDevicePreferenceChange }: SettingsModalProps) => {
+const editableRoles = ['Admin', 'Builder', 'Member', 'Guest'] as const;
+
+export const SettingsModal = ({ isOpen, onClose, myStoredUsername, micOn, camOn, setMicOn, setCamOn, onDevicePreferenceChange, notificationPreferences, onNotificationPreferenceChange, spaceId, currentUserRole = 'Guest', canManageMembers = false }: SettingsModalProps) => {
   const [tab, setTab] = useState('General');
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [devicePrefs, setDevicePrefs] = useState<DevicePrefs>(() => readDevicePrefs());
   const [notificationPrefs, setNotificationPrefs] = useState<NotificationPrefs>(() => readNotificationPrefs());
   const [deviceMsg, setDeviceMsg] = useState('Device choices are saved for this browser.');
+  const [members, setMembers] = useState<OfficeMember[]>([]);
+  const [memberMsg, setMemberMsg] = useState('');
+  const [memberLoading, setMemberLoading] = useState(false);
+  const [memberUsername, setMemberUsername] = useState('');
+  const [memberRole, setMemberRole] = useState<typeof editableRoles[number]>('Member');
 
   useEffect(() => {
     if (!isOpen || !navigator.mediaDevices?.enumerateDevices) return;
@@ -83,6 +104,28 @@ export const SettingsModal = ({ isOpen, onClose, myStoredUsername, micOn, camOn,
       .then(setDevices)
       .catch(() => setDeviceMsg('Device list is unavailable until browser permission is granted.'));
   }, [isOpen]);
+
+  useEffect(() => {
+    if (notificationPreferences) setNotificationPrefs({ ...DEFAULT_NOTIFICATION_PREFS, ...notificationPreferences });
+  }, [notificationPreferences]);
+
+  const refreshMembers = async () => {
+    if (!spaceId || !canManageMembers) return;
+    setMemberLoading(true);
+    setMemberMsg('');
+    try {
+      const res = await api.get(`/office/${spaceId}/members`);
+      setMembers(res.data.members || []);
+    } catch {
+      setMemberMsg('Could not load members.');
+    } finally {
+      setMemberLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen && tab === 'Manage members') refreshMembers();
+  }, [isOpen, tab, spaceId, canManageMembers]);
 
   const saveDevicePref = async (key: keyof DevicePrefs, value: string) => {
     const next = { ...devicePrefs, [key]: value || undefined };
@@ -102,11 +145,53 @@ export const SettingsModal = ({ isOpen, onClose, myStoredUsername, micOn, camOn,
     }
   };
 
-  const saveNotificationPref = (key: keyof NotificationPrefs, value: boolean) => {
+  const saveNotificationPref = async (key: keyof NotificationPrefs, value: boolean) => {
     const next = { ...notificationPrefs, [key]: value };
     setNotificationPrefs(next);
     localStorage.setItem(NOTIFICATION_PREF_KEY, JSON.stringify(next));
     window.dispatchEvent(new Event('metaverse-notification-preferences-updated'));
+    await onNotificationPreferenceChange?.(key, value);
+  };
+
+  const addMember = async () => {
+    if (!spaceId || !memberUsername.trim()) return;
+    setMemberMsg('Adding member...');
+    try {
+      const res = await api.post(`/office/${spaceId}/members`, { username: memberUsername.trim(), role: memberRole });
+      const nextMember = res.data.member as OfficeMember;
+      setMembers(prev => [nextMember, ...prev.filter(member => member.userId !== nextMember.userId)]);
+      setMemberUsername('');
+      setMemberMsg('Member saved.');
+    } catch (error: any) {
+      setMemberMsg(error?.response?.data?.message || 'Could not add member.');
+    }
+  };
+
+  const updateMemberRole = async (member: OfficeMember, role: typeof editableRoles[number]) => {
+    if (!spaceId || member.role === 'Owner') return;
+    setMembers(prev => prev.map(item => item.userId === member.userId ? { ...item, role } : item));
+    setMemberMsg('Updating role...');
+    try {
+      const res = await api.put(`/office/${spaceId}/members/${member.userId}`, { role });
+      const nextMember = res.data.member as OfficeMember;
+      setMembers(prev => prev.map(item => item.userId === member.userId ? nextMember : item));
+      setMemberMsg('Role updated.');
+    } catch (error: any) {
+      setMemberMsg(error?.response?.data?.message || 'Could not update role.');
+      refreshMembers();
+    }
+  };
+
+  const removeMember = async (member: OfficeMember) => {
+    if (!spaceId || member.role === 'Owner') return;
+    setMemberMsg('Removing member...');
+    try {
+      await api.delete(`/office/${spaceId}/members/${member.userId}`);
+      setMembers(prev => prev.filter(item => item.userId !== member.userId));
+      setMemberMsg('Member removed.');
+    } catch (error: any) {
+      setMemberMsg(error?.response?.data?.message || 'Could not remove member.');
+    }
   };
 
   if (!isOpen) return null;
@@ -183,12 +268,44 @@ export const SettingsModal = ({ isOpen, onClose, myStoredUsername, micOn, camOn,
               <label className="settings-toggle" htmlFor="settings-notify-sounds"><span>Invite ring sound</span><input id="settings-notify-sounds" name="settingsNotifySounds" type="checkbox" checked={notificationPrefs.sounds} onChange={e => saveNotificationPref('sounds', e.target.checked)} /></label>
               <label className="settings-toggle" htmlFor="settings-notify-reconnect"><span>Reconnect and offline banner</span><input id="settings-notify-reconnect" name="settingsNotifyReconnect" type="checkbox" checked={notificationPrefs.reconnecting} onChange={e => saveNotificationPref('reconnecting', e.target.checked)} /></label>
               <label className="settings-toggle" htmlFor="settings-notify-focus"><span>Respect busy and focus status</span><input id="settings-notify-focus" name="settingsNotifyFocus" type="checkbox" checked={notificationPrefs.respectFocus} onChange={e => saveNotificationPref('respectFocus', e.target.checked)} /></label>
-              <p className="settings-hint">Saved in this browser and applied immediately to room invites, chat, join alerts, and reconnect UI.</p>
+              <p className="settings-hint">Saved for this space and applied immediately to room invites, chat, join alerts, and reconnect UI.</p>
             </div>
           )}
 
           {tab === 'Manage members' && (
-            <div className="settings-table"><div><b>Member List</b><span>Role</span><span>Last active</span></div><div><b>{myStoredUsername ?? 'You'}</b><span>Admin</span><span>Today</span></div></div>
+            <div className="settings-member-manager">
+              {!canManageMembers ? (
+                <div className="settings-empty"><Shield size={22} /><b>Role: {currentUserRole}</b><span>Only owners and admins can manage members.</span></div>
+              ) : (
+                <>
+                  <div className="settings-member-add">
+                    <input value={memberUsername} onChange={e => setMemberUsername(e.target.value)} placeholder="Username" />
+                    <select value={memberRole} onChange={e => setMemberRole(e.target.value as typeof editableRoles[number])}>
+                      {editableRoles.map(role => <option key={role} value={role}>{role}</option>)}
+                    </select>
+                    <button onClick={addMember} disabled={!memberUsername.trim()}>Add</button>
+                  </div>
+                  <div className="settings-table">
+                    <div><b>Member</b><span>Role</span><span>Action</span></div>
+                    {memberLoading && <div><b>Loading...</b><span>Role</span><span /></div>}
+                    {!memberLoading && members.map(member => (
+                      <div key={member.userId}>
+                        <b>{member.username || 'Unknown'}</b>
+                        <span>
+                          {member.role === 'Owner' ? 'Owner' : (
+                            <select value={member.role} onChange={e => updateMemberRole(member, e.target.value as typeof editableRoles[number])}>
+                              {editableRoles.map(role => <option key={role} value={role}>{role}</option>)}
+                            </select>
+                          )}
+                        </span>
+                        <span>{member.role === 'Owner' ? 'Locked' : <button onClick={() => removeMember(member)}>Remove</button>}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {memberMsg && <p className="settings-hint">{memberMsg}</p>}
+                </>
+              )}
+            </div>
           )}
 
           {tab === 'Manage guests' && <div className="settings-empty"><b>No guests</b><span>Guest passes will appear here.</span></div>}

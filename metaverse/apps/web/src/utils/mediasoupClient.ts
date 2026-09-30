@@ -13,11 +13,13 @@ export class MediasoupClient {
   private recvTransport?: Transport;
 
   private producers: Map<string, Producer> = new Map();
+  private producerIdsByType: Map<string, string> = new Map();
   private consumers: Map<string, Consumer> = new Map();
   private producerMeta: Map<string, { userId: string; type?: string }> = new Map();
+  private pendingRemoteProducers: { producerId: string; userId: string; appData?: any }[] = [];
   private initPromise?: Promise<void>;
 
-  private pendingRequests: Map<string, { resolve: (val: any) => void; reject: (err: Error) => void }> = new Map();
+  private pendingRequests: Map<string, { resolve: (val: any) => void; reject: (err: Error) => void; responseType: string }> = new Map();
 
   public onNewConsumer?: (consumer: Consumer, userId: string, appData?: any) => void;
 
@@ -48,17 +50,25 @@ export class MediasoupClient {
         case 'new-producer':
           // Another user started producing, we should consume it
           this.producerMeta.set(msg.payload.producerId, { userId: msg.payload.userId, type: msg.payload.appData?.type });
-          await this.consume(msg.payload.producerId, msg.payload.userId);
+          await this.consumeOrQueue(msg.payload.producerId, msg.payload.userId, msg.payload.appData);
+          break;
+        case 'producer-closed':
+          this.closeConsumerByProducerId(msg.payload.producerId);
           break;
       }
     });
   }
 
   private resolveRequest(type: string, data: any) {
-    const request = this.pendingRequests.get(type);
+    const requestId = typeof data?.requestId === 'string' ? data.requestId : '';
+    const request = requestId ? this.pendingRequests.get(requestId) : Array.from(this.pendingRequests.values()).find(item => item.responseType === type);
     if (request) {
       request.resolve(data);
-      this.pendingRequests.delete(type);
+      if (requestId) this.pendingRequests.delete(requestId);
+      else {
+        const entry = Array.from(this.pendingRequests.entries()).find(([, item]) => item === request);
+        if (entry) this.pendingRequests.delete(entry[0]);
+      }
     }
   }
 
@@ -69,24 +79,29 @@ export class MediasoupClient {
 
   private async request(type: string, payload?: any): Promise<any> {
     return new Promise((resolve, reject) => {
-      const request = { resolve, reject };
-      // For simplicity, we assume one request of a type at a time during setup
-      this.pendingRequests.set(type.replace('webrtc-', 'webrtc-').replace('-create', '-created').replace('-get', '-'), request);
-      
-      // Override exact mappings
+      const requestId = `${type}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      let responseType = type.replace('webrtc-', 'webrtc-').replace('-create', '-created').replace('-get', '-');
       if (type === 'webrtc-get-router-rtp-capabilities') {
-        this.pendingRequests.set('webrtc-router-rtp-capabilities', request);
+        responseType = 'webrtc-router-rtp-capabilities';
       } else if (type === 'webrtc-create-transport') {
-        this.pendingRequests.set('webrtc-transport-created', request);
+        responseType = 'webrtc-transport-created';
       } else if (type === 'webrtc-connect-transport') {
-        this.pendingRequests.set('webrtc-transport-connected', request);
+        responseType = 'webrtc-transport-connected';
       } else if (type === 'webrtc-produce') {
-        this.pendingRequests.set('webrtc-produced', request);
+        responseType = 'webrtc-produced';
       } else if (type === 'webrtc-consume') {
-        this.pendingRequests.set('webrtc-consumed', request);
+        responseType = 'webrtc-consumed';
       }
-      
-      this.ws.send({ type, payload });
+
+      this.pendingRequests.set(requestId, { resolve, reject, responseType });
+      window.setTimeout(() => {
+        const pending = this.pendingRequests.get(requestId);
+        if (!pending) return;
+        this.pendingRequests.delete(requestId);
+        pending.reject(new Error(`${type} timed out`));
+      }, 12000);
+
+      this.ws.send({ type, payload: { ...(payload || {}), requestId } });
     });
   }
 
@@ -105,6 +120,7 @@ export class MediasoupClient {
 
       await this.initSendTransport();
       await this.initRecvTransport();
+      await this.flushPendingRemoteProducers();
     } catch (err) {
       console.error('Mediasoup init error', err);
       this.initPromise = undefined;
@@ -168,6 +184,7 @@ export class MediasoupClient {
     const type = typeof appData?.type === 'string' ? appData.type : track.kind;
     const producer = await this.sendTransport.produce({ track, appData: { userId, ...appData } });
     this.producers.set(type, producer);
+    this.producerIdsByType.set(type, producer.id);
     return producer;
   }
 
@@ -188,14 +205,35 @@ export class MediasoupClient {
   public async stopProduce(kind: 'audio' | 'video' | 'screen' | string) {
     const producer = this.producers.get(kind);
     if (producer) {
+      const producerId = this.producerIdsByType.get(kind) || producer.id;
       producer.close();
       this.producers.delete(kind);
-      // NOTE: Should also notify server to close the producer to save resources
+      this.producerIdsByType.delete(kind);
+      this.ws.send({ type: 'webrtc-stop-producer', payload: { producerId } });
     }
   }
 
-  private async consume(producerId: string, userId: string) {
+  private async consumeOrQueue(producerId: string, userId: string, appData?: any) {
+    if (!this.recvTransport || !this.device.loaded) {
+      if (!this.pendingRemoteProducers.some(item => item.producerId === producerId)) {
+        this.pendingRemoteProducers.push({ producerId, userId, appData });
+      }
+      return;
+    }
+    await this.consume(producerId, userId, appData);
+  }
+
+  private async flushPendingRemoteProducers() {
+    const pending = [...this.pendingRemoteProducers];
+    this.pendingRemoteProducers = [];
+    for (const item of pending) {
+      await this.consume(item.producerId, item.userId, item.appData);
+    }
+  }
+
+  private async consume(producerId: string, userId: string, appData?: any) {
     if (!this.recvTransport) throw new Error('Recv transport not initialized');
+    if (Array.from(this.consumers.values()).some(consumer => consumer.producerId === producerId && !consumer.closed)) return;
     
     const params = await this.request('webrtc-consume', {
       producerId,
@@ -213,11 +251,35 @@ export class MediasoupClient {
     this.consumers.set(consumer.id, consumer);
 
     if (this.onNewConsumer) {
-      this.onNewConsumer(consumer, userId, this.producerMeta.get(producerId));
+      this.onNewConsumer(consumer, userId, this.producerMeta.get(producerId) || appData);
     }
   }
 
   public getConsumersByUserId(userId: string): Consumer[] {
       return Array.from(this.consumers.values()).filter(c => c.appData?.userId === userId);
+  }
+
+  public closeConsumersByUserId(userId: string) {
+    const producersToClose = Array.from(this.producerMeta.entries())
+      .filter(([_, meta]) => meta.userId === userId)
+      .map(([producerId, _]) => producerId);
+
+    Array.from(this.consumers.values()).forEach(consumer => {
+      if (producersToClose.includes(consumer.producerId)) {
+        consumer.close();
+        this.consumers.delete(consumer.id);
+      }
+    });
+  }
+
+  private closeConsumerByProducerId(producerId: string) {
+    Array.from(this.consumers.values()).forEach(consumer => {
+      if (consumer.producerId === producerId) {
+        consumer.close();
+        this.consumers.delete(consumer.id);
+      }
+    });
+    this.producerMeta.delete(producerId);
+    this.pendingRemoteProducers = this.pendingRemoteProducers.filter(item => item.producerId !== producerId);
   }
 }

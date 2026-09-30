@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Users, MessageSquare, Crosshair, Send, Search, PanelLeftClose, Link2, Check, ChevronDown, Footprints, Radio, DoorOpen } from 'lucide-react';
 import type { InviteHistoryItem, OtherUser } from '../Arena';
 import { CanvasAvatarPreview } from '../CanvasAvatarPreview';
@@ -153,7 +153,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <>
             <div className="space-chat-messages" role="log" aria-label="Space messages" aria-live="polite">
               {!messages.length && <div className="panel-empty"><MessageSquare size={28} /><p>Start a conversation</p><span>Messages are shared with this space.</span></div>}
-              {messages.map((m, i) => <article className="space-message" key={i}><header><strong>{m.username}</strong><span>{m.scope || 'everyone'}</span><time>{m.time}</time></header><p>{m.message}</p></article>)}
+              {messages.map((m, i) => {
+                const urlRegex = /(https?:\/\/[^\s]+)/g;
+                const messageParts = m.message.split(urlRegex);
+                
+                return (
+                  <article className="space-message" key={i}>
+                    <header><strong>{m.username}</strong><span>{m.scope || 'everyone'}</span><time>{m.time}</time></header>
+                    <p>
+                      {messageParts.map((part, index) => 
+                        urlRegex.test(part) ? (
+                          <a key={index} href={part} target="_blank" rel="noopener noreferrer" className="chat-link">
+                            {part}
+                          </a>
+                        ) : (
+                          part
+                        )
+                      )}
+                    </p>
+                  </article>
+                );
+              })}
               <div ref={chatEnd} />
             </div>
             <form className="space-chat-form" onSubmit={(e) => handleSendChat(e, chatScope)}>

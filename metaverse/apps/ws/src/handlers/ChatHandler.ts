@@ -1,5 +1,6 @@
 import { RoomManager } from "../RoomManager";
 import { User } from "../User";
+import client from "@repo/db/client";
 
 export class ChatHandler {
   static handleMessage(user: User, parsedData: any) {
@@ -10,6 +11,7 @@ export class ChatHandler {
     const scope = ["everyone", "nearby", "dm", "room"].includes(rawScope) ? rawScope : "everyone";
     const targetUserId = typeof parsedData?.payload?.targetUserId === "string" ? parsedData.payload.targetUserId : undefined;
     const targetUsername = typeof parsedData?.payload?.targetUsername === "string" ? parsedData.payload.targetUsername : undefined;
+    const isRing = parsedData?.payload?.isRing === true;
     const roomManager = RoomManager.getInstance();
     const usersInSpace = roomManager.rooms.get(user.spaceId) || [];
     
@@ -22,6 +24,7 @@ export class ChatHandler {
         scope,
         targetUserId,
         targetUsername,
+        isRing,
         timestamp: new Date().toISOString(),
       }
     } as const;
@@ -61,5 +64,20 @@ export class ChatHandler {
     }
 
     roomManager.broadcast(payload, user, user.spaceId);
+
+    // Save chat history safely
+    if ((client as any).chatMessage) {
+      (client as any).chatMessage.create({
+        data: {
+          spaceId: user.spaceId,
+          userId: user.userId,
+          username: user.username || "Unknown",
+          message,
+          scope,
+          targetUserId,
+          isRing
+        }
+      }).catch((err: any) => console.error("Failed to save chat:", err));
+    }
   }
 }

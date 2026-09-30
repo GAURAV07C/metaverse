@@ -24,6 +24,7 @@ interface MapCanvasProps {
   wrapperRef: React.RefObject<HTMLDivElement | null>;
   dimensions: { w: number; h: number };
   myPos: { x: number; y: number };
+  cameraTarget?: { x: number; y: number };
   otherUsers: OtherUser[];
   proximityUsers?: string[];
   elements: SpaceElement[];
@@ -44,6 +45,7 @@ interface MapCanvasProps {
   onRemoveElement?: (id: string) => void;
   reactions?: Record<string, { emoji: string; expiresAt: number }>;
   onSelectUser?: (userId: string) => void;
+  onManualControl?: () => void;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -51,6 +53,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   wrapperRef,
   dimensions,
   myPos,
+  cameraTarget,
   otherUsers,
   proximityUsers = [],
   elements,
@@ -71,6 +74,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   onRemoveElement,
   reactions = {},
   onSelectUser,
+  onManualControl,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -167,6 +171,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const dist = Math.hypot(e.clientX - dragStartRef.current.x, e.clientY - dragStartRef.current.y);
     if (dist > 4) {
       hasDraggedRef.current = true;
+      onManualControl?.();
     }
     const dx = (e.clientX - dragStartRef.current.x) / currentCamRef.current.zoom;
     const dy = (e.clientY - dragStartRef.current.y) / currentCamRef.current.zoom;
@@ -245,6 +250,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     );
 
     if (path.length > 0) {
+      onManualControl?.();
       setAutoPath(path);
     }
   };
@@ -268,9 +274,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     // Active zoom factor
     const activeZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom));
 
-    // Camera follows player (centered) + mouse drag panOffset
-    const playerPx = myPos.x * TILE + TILE / 2;
-    const playerPy = myPos.y * TILE + TILE / 2;
+    // Camera follows either the player or the active follow target.
+    const targetPos = cameraTarget || myPos;
+    const playerPx = targetPos.x * TILE + TILE / 2;
+    const playerPy = targetPos.y * TILE + TILE / 2;
 
     let camX = playerPx - (viewW / activeZoom) / 2 + panOffset.x;
     let camY = playerPy - (viewH / activeZoom) / 2 + panOffset.y;
@@ -784,7 +791,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(myName, mx, my - (mySitting ? 15 : 23));
-  }, [canvasRef, wrapperRef, myPos, otherUsers, proximityUsers, elements, hiddenElementIds, privateZones, dimensions, myAvatarUrl, myUsername, renderTrigger, autoPath, zoom, panOffset, reactions]);
+  }, [canvasRef, wrapperRef, myPos, cameraTarget, otherUsers, proximityUsers, elements, hiddenElementIds, privateZones, dimensions, myAvatarUrl, myUsername, renderTrigger, autoPath, zoom, panOffset, reactions]);
 
   return (
     <>

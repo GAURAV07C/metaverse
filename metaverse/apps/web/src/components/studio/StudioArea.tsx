@@ -318,6 +318,25 @@ export function StudioArea({ area, allAreas = [], dimensions, isSelected, onSele
                 Target
               </button>
             )}
+
+            {area.type === 'spawn' && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onChange({ ...area, isDefaultSpawn: !area.isDefaultSpawn }); }}
+                onPointerDown={e => e.stopPropagation()}
+                style={{
+                  background: area.isDefaultSpawn ? 'rgba(34,197,94,0.25)' : 'rgba(15,23,42,0.45)',
+                  border: area.isDefaultSpawn ? '1px solid rgba(34,197,94,0.75)' : '1px solid rgba(148,163,184,0.35)',
+                  color: area.isDefaultSpawn ? '#bbf7d0' : '#e5e7eb',
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                  borderRadius: 6,
+                  fontSize: 12
+                }}
+                title="Use this spawn when users enter the space"
+              >
+                {area.isDefaultSpawn ? 'Default spawn' : 'Set default'}
+              </button>
+            )}
             
             <button 
               onClick={(e) => { e.stopPropagation(); onDelete(); }} 

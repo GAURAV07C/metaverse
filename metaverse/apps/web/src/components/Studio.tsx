@@ -29,11 +29,33 @@ export function Studio() {
   const [areas, setAreas] = useState<AreaType[]>([]);
   const [publishing, setPublishing] = useState(false);
   const [canEdit, setCanEdit] = useState<boolean | null>(null);
+  const [versions, setVersions] = useState<Array<{ id: string; version: number; createdAt: string; createdByUsername?: string | null; elementCount: number; areaCount: number }>>([]);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const [versionsLoading, setVersionsLoading] = useState(false);
+  const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
 
   // History state for Undo/Redo
   const [history, setHistory] = useState<SpaceElement[][]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const isUndoRedoActive = useRef(false);
+  const zonesToAreas = (zones: any[] = []): AreaType[] => zones.map((zone: any) => ({
+    id: zone.id,
+    name: zone.name || 'Area',
+    type: zone.type === 'private' ? 'room' : (zone.type || 'public'),
+    floor: zone.floor || '#f3f4f6',
+    color: zone.color || '#3b82f6',
+    texture: zone.texture || 'solid',
+    targetUrl: zone.targetUrl || undefined,
+    targetSpaceId: zone.targetSpaceId || undefined,
+    targetRoomId: zone.targetRoomId || undefined,
+    targetX: Number.isInteger(zone.targetX) ? zone.targetX : undefined,
+    targetY: Number.isInteger(zone.targetY) ? zone.targetY : undefined,
+    isDefaultSpawn: Boolean(zone.isDefaultSpawn),
+    x: zone.startX,
+    y: zone.startY,
+    w: Math.max(1, zone.endX - zone.startX),
+    h: Math.max(1, zone.endY - zone.startY),
+  }));
 
   // Auto-save & History tracking
   useEffect(() => {
@@ -120,13 +142,14 @@ export function Studio() {
           setHistoryIndex(0);
         } else {
           setElements(space.data.elements ?? []);
-          setAreas([]);
+          setAreas(zonesToAreas(space.data.privateZones ?? []));
           setHistory([space.data.elements ?? []]);
           setHistoryIndex(0);
         }
       }).catch(() => {
         if (!mounted) return;
         setElements(space.data.elements ?? []);
+        setAreas(zonesToAreas(space.data.privateZones ?? []));
         setHistory([space.data.elements ?? []]);
         setHistoryIndex(0);
       });
@@ -141,6 +164,47 @@ export function Studio() {
   };
 
   const goBack = () => navigate(`/space/${spaceId}`);
+
+  const loadVersions = async () => {
+    if (canEdit !== true) return;
+    setVersionsLoading(true);
+    try {
+      const res = await api.get(`/office/${spaceId}/versions`);
+      setVersions(res.data.versions || []);
+    } catch (error: any) {
+      setStatus(error?.response?.data?.message || 'Failed to load map versions.');
+    } finally {
+      setVersionsLoading(false);
+    }
+  };
+
+  const openVersions = () => {
+    setVersionsOpen(true);
+    loadVersions();
+  };
+
+  const restoreVersion = async (versionId: string) => {
+    if (canEdit !== true) return;
+    setRestoringVersionId(versionId);
+    setStatus('Restoring version...');
+    try {
+      const res = await api.post(`/office/${spaceId}/versions/${versionId}/restore`, {});
+      const data = res.data?.draft?.data || {};
+      const nextElements = data.elements || [];
+      const nextAreas = data.areas || [];
+      isUndoRedoActive.current = true;
+      setElements(nextElements);
+      setAreas(nextAreas);
+      setHistory([nextElements]);
+      setHistoryIndex(0);
+      setStatus(`Restored version ${res.data?.restoredVersion}. Publish to make it live.`);
+      setVersionsOpen(false);
+    } catch (error: any) {
+      setStatus(error?.response?.data?.message || 'Restore failed.');
+    } finally {
+      setRestoringVersionId(null);
+    }
+  };
 
   const validatePortalTargets = () => {
     for (const area of areas) {
@@ -236,6 +300,78 @@ export function Studio() {
         name={name}
         status={status}
       />
+
+      {canEdit && (
+        <div style={{ position: 'fixed', top: 14, right: 18, zIndex: 1200, display: 'grid', gap: 8, justifyItems: 'end' }}>
+          <button
+            type="button"
+            onClick={versionsOpen ? () => setVersionsOpen(false) : openVersions}
+            style={{
+              height: 36,
+              border: '1px solid rgba(148,163,184,0.32)',
+              borderRadius: 8,
+              padding: '0 12px',
+              background: '#111827',
+              color: '#f8fafc',
+              fontWeight: 700,
+              cursor: 'pointer',
+              boxShadow: '0 10px 24px rgba(15,23,42,0.28)'
+            }}
+          >
+            Versions
+          </button>
+          {versionsOpen && (
+            <div style={{
+              width: 320,
+              maxHeight: 420,
+              overflow: 'auto',
+              border: '1px solid rgba(148,163,184,0.32)',
+              borderRadius: 8,
+              background: '#0f172a',
+              color: '#e5e7eb',
+              boxShadow: '0 24px 70px rgba(15,23,42,0.45)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', borderBottom: '1px solid rgba(148,163,184,0.18)' }}>
+                <strong>Map versions</strong>
+                <button type="button" onClick={loadVersions} disabled={versionsLoading} style={{ background: 'transparent', border: 0, color: '#93c5fd', cursor: 'pointer', fontWeight: 700 }}>
+                  {versionsLoading ? 'Loading' : 'Refresh'}
+                </button>
+              </div>
+              {!versionsLoading && versions.length === 0 && (
+                <div style={{ padding: 16, color: '#94a3b8' }}>No published versions yet.</div>
+              )}
+              {versions.map(version => (
+                <div key={version.id} style={{ padding: '12px 14px', borderBottom: '1px solid rgba(148,163,184,0.12)', display: 'grid', gap: 7 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                    <strong>Version {version.version}</strong>
+                    <span style={{ color: '#94a3b8', fontSize: 12 }}>{new Date(version.createdAt).toLocaleString()}</span>
+                  </div>
+                  <div style={{ color: '#cbd5e1', fontSize: 12 }}>
+                    {version.elementCount} objects · {version.areaCount} areas{version.createdByUsername ? ` · ${version.createdByUsername}` : ''}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={restoringVersionId === version.id}
+                    onClick={() => restoreVersion(version.id)}
+                    style={{
+                      justifySelf: 'start',
+                      border: '1px solid rgba(34,197,94,0.45)',
+                      borderRadius: 7,
+                      padding: '6px 10px',
+                      background: 'rgba(34,197,94,0.14)',
+                      color: '#bbf7d0',
+                      fontWeight: 700,
+                      cursor: restoringVersionId === version.id ? 'wait' : 'pointer'
+                    }}
+                  >
+                    {restoringVersionId === version.id ? 'Restoring...' : 'Restore to draft'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <StudioCanvas
         tool={tool}

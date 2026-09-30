@@ -207,16 +207,18 @@ export class RoomManager {
     const zonesInRoom = this.zones.get(spaceId) || [];
 
     const isAudioRoom = (z: any) => z.type === 'room' || z.type === 'private';
-    const getZone = (u: User) => {
-      return zonesInRoom.find(z => isAudioRoom(z) && u.x >= z.startX && u.x < z.endX && u.y >= z.startY && u.y < z.endY);
+    const getZone = (u: User, typeFilter?: string) => {
+      return zonesInRoom.find(z => (typeFilter ? z.type === typeFilter : isAudioRoom(z)) && u.x >= z.startX && u.x < z.endX && u.y >= z.startY && u.y < z.endY);
     };
     
     const userZone = getZone(user);
+    const userSpotlightZone = getZone(user, 'spotlight');
 
     usersInRoom.forEach((otherUser) => {
       if (user.id === otherUser.id) return;
 
       const otherUserZone = getZone(otherUser);
+      const otherUserSpotlightZone = getZone(otherUser, 'spotlight');
       let inRange = false;
 
       if (userZone || otherUserZone) {
@@ -228,6 +230,11 @@ export class RoomManager {
           Math.pow(user.x - otherUser.x, 2) + Math.pow(user.y - otherUser.y, 2)
         );
         inRange = distance <= PROXIMITY_THRESHOLD;
+      }
+
+      // Spotlight override: If either is in a spotlight AND they share the same audio context (both in room X, or both public)
+      if ((userSpotlightZone || otherUserSpotlightZone) && (userZone?.id === otherUserZone?.id)) {
+          inRange = true;
       }
 
       const alreadyInProximity = user.inProximityWith.has(otherUser.id);

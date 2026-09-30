@@ -1,12 +1,12 @@
 export const WS_URL = (import.meta as any).env?.VITE_APP_WS_URL ?? 'ws://localhost:3001';
 
 export type WsIncomingMessage =
-  | { type: 'space-joined'; payload: { spawn: { x: number; y: number }; userId: string; username?: string; avatarUrl?: string; users: { id: string; userId?: string; username?: string; avatarUrl?: string; status?: 'available' | 'busy' | 'focus' | 'away'; x: number; y: number }[] } }
+  | { type: 'space-joined'; payload: { spawn: { x: number; y: number }; userId: string; username?: string; avatarUrl?: string; users: { id: string; userId?: string; username?: string; avatarUrl?: string; status?: 'available' | 'busy' | 'focus' | 'away'; x: number; y: number }[]; chatHistory?: any[] } }
   | { type: 'user-joined'; payload: { userId: string; username?: string; avatarUrl?: string; status?: 'available' | 'busy' | 'focus' | 'away'; x: number; y: number } }
   | { type: 'user-left'; payload: { userId: string } }
   | { type: 'movement'; payload: { userId: string; x: number; y: number } }
   | { type: 'movement-rejected'; payload: { x: number; y: number; reason?: 'blocked' | 'spot-occupied' | 'room-full' | 'too-far' | 'not-in-space' } }
-  | { type: 'chat-receive'; payload: { userId?: string; username?: string; message: string; timestamp: string; scope?: 'everyone' | 'nearby' | 'dm' | 'room'; targetUserId?: string; targetUsername?: string } }
+  | { type: 'chat-receive'; payload: { userId?: string; username?: string; message: string; timestamp: string; scope?: 'everyone' | 'nearby' | 'dm' | 'room'; targetUserId?: string; targetUsername?: string; isRing?: boolean } }
   | { type: 'room-invite-receive'; payload: { inviteId?: string; fromUserId?: string; fromUsername?: string; roomId: string; roomName?: string; roomUrl?: string; timestamp: string } }
   | { type: 'room-invite-response'; payload: { inviteId?: string; fromUserId?: string; fromUsername?: string; roomId: string; roomName?: string; response: 'accepted' | 'declined'; timestamp: string } }
   | { type: 'moderation-request'; payload: { action: 'mute-audio' | 'stop-video' | 'stop-screen'; fromUserId?: string; fromUsername?: string; timestamp: string } }
@@ -20,12 +20,14 @@ export type WsIncomingMessage =
   | { type: 'webrtc-transport-connected' }
   | { type: 'webrtc-produced'; payload: { id: string } }
   | { type: 'new-producer'; payload: { producerId: string; userId: string; appData: any } }
+  | { type: 'producer-closed'; payload: { producerId: string; userId?: string; appData?: any } }
   | { type: 'webrtc-consumed'; payload: { id: string; producerId: string; kind: string; rtpParameters: any } }
   | { type: 'webrtc-error'; payload: { message: string } };
 
 export class WsClient {
   private ws: WebSocket | null = null;
   private listeners: ((msg: WsIncomingMessage) => void)[] = [];
+  private connectionListeners: ((connected: boolean) => void)[] = [];
   private token: string;
   private spaceId: string;
   private shouldReconnect = true;
@@ -49,6 +51,7 @@ export class WsClient {
 
     this.ws.onopen = () => {
       this.reconnectAttempts = 0;
+      this.connectionListeners.forEach((cb) => cb(true));
       this.send({ type: 'join', payload: { spaceId: this.spaceId, token: this.token } });
     };
 
@@ -65,6 +68,7 @@ export class WsClient {
     this.ws.onclose = () => {
       console.log('WS disconnected');
       this.ws = null;
+      this.connectionListeners.forEach((cb) => cb(false));
       if (!this.shouldReconnect) return;
       const delay = Math.min(5000, 500 * Math.pow(1.6, this.reconnectAttempts));
       this.reconnectAttempts += 1;
@@ -86,7 +90,7 @@ export class WsClient {
     this.send({ type: 'teleport', payload: { x, y } });
   }
 
-  sendChat(message: string, meta?: { scope?: 'everyone' | 'nearby' | 'dm' | 'room'; targetUserId?: string; targetUsername?: string }) {
+  sendChat(message: string, meta?: { scope?: 'everyone' | 'nearby' | 'dm' | 'room'; targetUserId?: string; targetUsername?: string; isRing?: boolean }) {
     this.send({ type: 'chat-message', payload: { message, ...meta } });
   }
 
@@ -118,6 +122,13 @@ export class WsClient {
     this.listeners.push(cb);
     return () => {
       this.listeners = this.listeners.filter((l) => l !== cb);
+    };
+  }
+
+  onConnectionChange(cb: (connected: boolean) => void) {
+    this.connectionListeners.push(cb);
+    return () => {
+      this.connectionListeners = this.connectionListeners.filter((listener) => listener !== cb);
     };
   }
 

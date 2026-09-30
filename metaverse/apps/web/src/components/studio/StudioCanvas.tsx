@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { ZoomIn, ZoomOut } from 'lucide-react';
+import { ZoomIn, ZoomOut, Footprints } from 'lucide-react';
 import type { Prefab } from './types';
 import type { SpaceElement } from '../arena/ElementsPanel';
 import { StudioElement } from './StudioElement';
@@ -46,6 +46,7 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
   // Area drawing state
   const [drawingArea, setDrawingArea] = useState<{ startX: number, startY: number, curX: number, curY: number } | null>(null);
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
+  const [showWalkability, setShowWalkability] = useState(false);
 
   // --- Screen coords to grid ---
   const screenToGrid = useCallback((clientX: number, clientY: number) => {
@@ -879,7 +880,15 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
             onDuplicate={() => duplicateArea(area.id)}
             onMultiply={(config) => multiplyArea(area.id, config)}
             onChange={(updated) => {
-              if (setAreas) setAreas(prev => prev.map(a => a.id === area.id ? updated : a));
+              if (setAreas) {
+                setAreas(prev => prev.map(a => {
+                  if (a.id === area.id) return updated;
+                  if (updated.type === 'spawn' && updated.isDefaultSpawn && a.type === 'spawn') {
+                    return { ...a, isDefaultSpawn: false };
+                  }
+                  return a;
+                }));
+              }
             }}
             onDelete={() => {
               const areaRight = area.x + area.w;
@@ -972,6 +981,30 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
             }}
           />
         ))}
+
+        {/* Walkability Overlay */}
+        {showWalkability && elements.map(el => {
+          if (!el.element.static) return null;
+          const cat = String(el.element.category).toLowerCase();
+          const name = String(el.element.name).toLowerCase();
+          const id = String(el.element.id).toLowerCase();
+          if (cat.includes('room') || cat.includes('floor')) return null;
+          if (cat.includes('seating') || name.includes('chair') || name.includes('sofa') || name.includes('couch') || name.includes('bench') || name.includes('stool') || name.includes('seat') || id.includes('chair')) return null;
+          
+          return (
+            <div key={`walk-${el.id}`} style={{
+              position: 'absolute',
+              left: el.x * TILE,
+              top: el.y * TILE,
+              width: (el.element.width || 1) * TILE,
+              height: (el.element.height || 1) * TILE,
+              backgroundColor: 'rgba(239, 68, 68, 0.5)',
+              border: '1px solid rgba(239, 68, 68, 0.8)',
+              pointerEvents: 'none',
+              zIndex: 90
+            }} />
+          )
+        })}
       </div>
 
       {/* Zoom controls */}
@@ -985,8 +1018,11 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
         <button onClick={() => setZoom(1)} style={{ border: 'none', background: 'transparent', padding: '4px 10px', cursor: 'pointer', color: '#6b7280', fontSize: 10, fontWeight: 700, borderBottom: '1px solid #f3f4f6' }}>
           {Math.round(zoom * 100)}%
         </button>
-        <button onClick={() => setZoom(z => Math.max(0.2, z - 0.2))} style={{ border: 'none', background: 'transparent', padding: '8px 10px', cursor: 'pointer', color: '#374151' }}>
+        <button onClick={() => setZoom(z => Math.max(0.2, z - 0.2))} style={{ border: 'none', background: 'transparent', padding: '8px 10px', cursor: 'pointer', color: '#374151', borderBottom: '1px solid #f3f4f6' }}>
           <ZoomOut size={16} />
+        </button>
+        <button onClick={() => setShowWalkability(v => !v)} title="Toggle Impassable Overlay" style={{ border: 'none', background: showWalkability ? '#eff6ff' : 'transparent', padding: '8px 10px', cursor: 'pointer', color: showWalkability ? '#3b82f6' : '#374151' }}>
+          <Footprints size={16} />
         </button>
       </div>
 

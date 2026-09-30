@@ -94,7 +94,7 @@ Implemented:
 - User presence count and participant sidebar.
 - Participant actions: message, follow, locate.
 - Map-user profile card when clicking another avatar: avatar preview, room/location status, message, follow, locate, and invite-to-current-room action.
-- Follow mode with top-right following chip.
+- Follow mode with top-right following chip and camera target tracking.
 - Locate mode as one-time camera pan.
 - Presence status: available, busy, focus, away.
 - Live reactions over avatars.
@@ -112,6 +112,10 @@ Implemented:
 - Room URL deep links using `?room=<roomId>`.
 - Room auto-join from URL.
 - Copy room link.
+- Portal URL spawn/deep-link coordinates use server teleport, not normal movement.
+- In-space portals can jump to explicit target coordinates or fall back to the paired portal.
+- Portal prompt supports keyboard `X` and a clickable Use button.
+- Join spawn selection uses the Studio default spawn when one is set.
 - Room directory in sidebar with online count and vacant spot count.
 - Room join moves to a walkable available spot.
 - Leave room clears room URL param.
@@ -187,8 +191,13 @@ Implemented:
 - Unread badges on rail and chat panel title.
 - Notification toasts for joins, leaves, DMs, and incoming messages.
 - Persisted notification preferences for joins/leaves, chat/DMs, room invites, invite sounds, reconnect banner, and focus/busy filtering.
+- Server-backed notification preferences through `NotificationPreference` and `/office/:spaceId/notification-preferences`.
 - Reconnect/offline banner with browser online/offline awareness.
 - Selected-user room invite sends a WebSocket invite when the current user is inside a room.
+- Space membership roles are persisted through `SpaceMember`.
+- Owner/Admin can manage members in Settings.
+- Admin/Builder roles can edit maps and use office edit APIs.
+- Member/Guest roles can be listed and enforced by role-aware space APIs.
 
 Missing or incomplete:
 
@@ -196,7 +205,7 @@ Missing or incomplete:
 - Server errors for failed DM targets are not surfaced.
 - Threaded object/room chat history is not persisted.
 - Room invites are client-accepted/declined with expiry and sender acknowledgement; invite event history is persisted server-side.
-- Notification preferences are local-browser only.
+- Notification preferences are server-backed with local browser fallback.
 - Notification sound coverage is currently limited to room invite ringing.
 - No markdown/link previews.
 
@@ -226,10 +235,14 @@ Implemented:
 - Seat/spot tool.
 - Area tool.
 - Spawn, portal, spotlight tools.
+- Spawn areas can be marked as the default join location.
 - Portal target editor for URL, space, room, and coordinate destinations.
 - Portal quick target picker and client/server publish validation.
+- Portal target metadata is persisted on published map zones.
 - Room generator with spots.
 - Publish flow.
+- Publish creates map version snapshots.
+- Studio can restore a published map version back into draft.
 - Legacy private zones normalized toward rooms in behavior.
 
 Missing or incomplete:
@@ -241,7 +254,7 @@ Missing or incomplete:
 - Portal targets are configurable; cross-map picker UX still needs polish.
 - Tile effects need a polished visual editing UI.
 - Collision preview and walkable tile validation should be clearer before publish.
-- Version history / restore map version is missing.
+- Version history exists; diff preview and version naming are still missing.
 - Map templates and room template browser need better production organization.
 
 ### Permissions
@@ -255,8 +268,9 @@ Implemented:
 
 Missing or incomplete:
 
-- Full membership roles are missing: admin, builder, member, guest, moderator.
-- Backend permission enforcement now covers core office edit APIs; organization/team and future membership-scoped writes still need role-aware enforcement.
+- Membership roles now cover owner, admin, builder, member, and guest for core space/office editing.
+- Backend permission enforcement now covers core office edit APIs and space APIs; organization/team and future membership-scoped writes still need role-aware enforcement.
+- Moderator-specific policy remains separate from builder/admin permissions.
 - Room-level moderator controls are missing.
 - Guest access and invite permission policies are incomplete.
 - Space privacy controls need owner/admin UI.
@@ -365,7 +379,7 @@ Current status:
 - Private areas and room audio boundaries.
 - Spotlight behavior that boosts speaker/video.
 - Portals between rooms/spaces.
-- Spawn management and default spawn picker.
+- Advanced spawn rules, such as guest/member-specific spawns.
 - Follow / request lead / lead group mode.
 - Ring / call user / invite user to current room.
 - Do-not-disturb and focus behavior.
@@ -379,7 +393,7 @@ Current status:
 - Tile effects palette with live preview.
 - Collision/walkability overlay.
 - Publish validation.
-- Version history.
+- Version diff preview and version naming.
 - Role-aware edit mode.
 - Custom object interaction editor.
 
@@ -406,7 +420,7 @@ Need to add:
 - User status persistence if needed.
 - Object interaction persistence and validation.
 - Portal target validation.
-- Server-backed notification preferences if these should roam across browsers.
+- Organization-wide notification defaults and policy controls if needed.
 - Media room lifecycle and cleanup metrics.
 
 ## Frontend Gaps
@@ -415,7 +429,7 @@ Need to add:
 
 - Prejoin polish.
 - Device settings modal.
-- Cross-browser notification preference sync if required.
+- Organization-wide notification policy defaults if required.
 - Meeting host controls.
 - Screen share controls.
 - Better mobile layout.
@@ -425,9 +439,9 @@ Need to add:
 
 1. Add prejoin/device settings parity.
 2. Add persisted invite history.
-3. Expand notification sounds and server-backed notification preferences if needed.
+3. Expand notification sounds and organization-wide notification policy controls if needed.
 4. Add remote meeting moderation signaling.
-5. Add map version history and publish validation.
+5. Add version diff preview and stronger publish validation.
 6. Add onboarding and contextual help polish.
 
 ## Exact Missing Feature Backlog
@@ -441,7 +455,7 @@ Use this as the task queue. Do not assume everything is already done because the
 
 - Cross-room/cross-space portal QA with real linked maps.
 - Portal destination picker polish for browsing other spaces.
-- Spawn editor and default spawn selection.
+- Advanced spawn rules for guest/member/event-specific entry points.
 - Spotlight stream priority behavior.
 - Follow leader / request lead mode.
 - DND/focus behavior that affects ring/notifications.
@@ -450,12 +464,13 @@ Use this as the task queue. Do not assume everything is already done because the
 
 ### P2: Must-Have For Admin/Production
 
-- Full membership role model: admin, builder, member, guest.
-- Role-aware enforcement beyond owner-only editing.
+- Organization/team membership model beyond single-space roles.
+- Moderator role policy and moderation-specific permissions.
+- Role-aware enforcement audit for every future write endpoint.
 - Invite links with role/scope.
 - Private/public space controls.
 - Audit log for map edits.
-- Map version history and restore.
+- Map version diff preview and named releases.
 - Media diagnostics.
 - TURN server deployment config.
 - Load testing for WS and media.

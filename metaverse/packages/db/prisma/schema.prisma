@@ -29,6 +29,11 @@ model User {
   avatar Avatar? @relation(fields: [avatarId] , references: [id])
   assignedDesks DeskAssignment[]
   studioDrafts SpaceDraft[]
+  mapVersions SpaceMapVersion[]
+  spaceMemberships SpaceMember[] @relation("SpaceMemberUser")
+  createdSpaceMemberships SpaceMember[] @relation("SpaceMemberCreator")
+  notificationPreferences NotificationPreference[]
+  chatMessages ChatMessage[]
 
   @@index([avatarId])
   @@index([orgId])
@@ -48,11 +53,15 @@ model Space {
   meetings     Meeting[]
   settings     SpaceSettings?
   inviteLinks  InviteLink[]
+  members      SpaceMember[]
   deskAssignments DeskAssignment[]
   studioDraft  SpaceDraft?
   smartObjects  SmartObject[]
   roomInviteEvents RoomInviteEvent[]
   moderationAuditEvents ModerationAuditEvent[]
+  mapVersions SpaceMapVersion[]
+  notificationPreferences NotificationPreference[]
+  chatMessages ChatMessage[]
 
   @@index([creatorId])
 }
@@ -182,6 +191,12 @@ model PrivateZone {
   floor   String? @default("#f3f4f6")
   color   String? @default("#3b82f6")
   texture String? @default("solid")
+  targetUrl String?
+  targetSpaceId String?
+  targetRoomId String?
+  targetX Int?
+  targetY Int?
+  isDefaultSpawn Boolean @default(false)
 
   @@index([spaceId])
 }
@@ -248,6 +263,24 @@ model InviteLink {
   @@index([token])
 }
 
+model SpaceMember {
+  id          String   @id @default(cuid())
+  spaceId     String
+  space       Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation("SpaceMemberUser", fields: [userId], references: [id], onDelete: Cascade)
+  role        String   @default("Member")
+  createdById String?
+  createdBy   User?    @relation("SpaceMemberCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([spaceId, userId])
+  @@index([userId])
+  @@index([spaceId, role])
+  @@index([createdById])
+}
+
 model DeskAssignment {
   id        String   @id @default(cuid())
   spaceId   String
@@ -278,6 +311,21 @@ model SpaceDraft {
   updatedAt   DateTime @updatedAt
 
   @@index([updatedById])
+}
+
+model SpaceMapVersion {
+  id          String   @id @default(cuid())
+  spaceId     String
+  space       Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  version     Int
+  data        Json
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  @@unique([spaceId, version])
+  @@index([spaceId, createdAt])
+  @@index([createdById])
 }
 
 model SmartObject {
@@ -330,5 +378,41 @@ model ModerationAuditEvent {
 
   @@index([spaceId, createdAt])
   @@index([actorUserId])
+  @@index([targetUserId])
+}
+
+model NotificationPreference {
+  id           String   @id @default(cuid())
+  spaceId      String
+  space        Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joins        Boolean  @default(true)
+  chat         Boolean  @default(true)
+  roomInvites  Boolean  @default(true)
+  sounds       Boolean  @default(true)
+  reconnecting Boolean  @default(true)
+  respectFocus Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([spaceId, userId])
+  @@index([userId])
+}
+
+model ChatMessage {
+  id           String   @id @default(cuid())
+  spaceId      String
+  space        Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  username     String
+  message      String
+  scope        String   @default("everyone")
+  targetUserId String?
+  isRing       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([spaceId, createdAt])
   @@index([targetUserId])
 }

@@ -31,6 +31,7 @@ export class MediasoupManager {
   public transports: Map<string, WebRtcTransport> = new Map();
   public producers: Map<string, Producer> = new Map();
   public consumers: Map<string, Consumer> = new Map();
+  public producerMeta: Map<string, { spaceId: string; userId?: string; appData?: any }> = new Map();
 
   private constructor() {}
 
@@ -142,14 +143,44 @@ export class MediasoupManager {
     await transport.connect({ dtlsParameters });
   }
 
-  public async createProducer(transportId: string, kind: any, rtpParameters: any): Promise<Producer> {
+  public async createProducer(transportId: string, kind: any, rtpParameters: any, meta: { spaceId: string; userId?: string; appData?: any }): Promise<Producer> {
     const transport = this.transports.get(transportId);
     if (!transport) throw new Error("Transport not found");
     const producer = await transport.produce({ kind, rtpParameters });
     this.producers.set(producer.id, producer);
+    this.producerMeta.set(producer.id, meta);
 
-    producer.on("transportclose", () => producer.close());
+    producer.on("transportclose", () => {
+      this.producers.delete(producer.id);
+      this.producerMeta.delete(producer.id);
+      producer.close();
+    });
     return producer;
+  }
+
+  public closeProducer(producerId: string) {
+    const producer = this.producers.get(producerId);
+    if (producer && !producer.closed) producer.close();
+    this.producers.delete(producerId);
+    this.producerMeta.delete(producerId);
+  }
+
+  public closeUserProducers(spaceId: string, userId?: string) {
+    if (!userId) return [];
+    const closed: string[] = [];
+    for (const [producerId, meta] of this.producerMeta.entries()) {
+      if (meta.spaceId === spaceId && meta.userId === userId) {
+        this.closeProducer(producerId);
+        closed.push(producerId);
+      }
+    }
+    return closed;
+  }
+
+  public getProducersForSpace(spaceId: string, exceptUserId?: string) {
+    return Array.from(this.producerMeta.entries())
+      .filter(([producerId, meta]) => meta.spaceId === spaceId && meta.userId !== exceptUserId && this.producers.has(producerId))
+      .map(([producerId, meta]) => ({ producerId, userId: meta.userId, appData: meta.appData }));
   }
 
   public async createConsumer(transportId: string, producerId: string, rtpCapabilities: any, spaceId: string): Promise<Consumer> {
@@ -164,7 +195,7 @@ export class MediasoupManager {
     const consumer = await transport.consume({
       producerId,
       rtpCapabilities,
-      paused: true,
+      paused: false,
     });
     this.consumers.set(consumer.id, consumer);
 

@@ -1,0 +1,1 @@
+ALTER TABLE "PrivateZone" ADD COLUMN "isDefaultSpawn" BOOLEAN NOT NULL DEFAULT false;

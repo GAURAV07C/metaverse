@@ -111,87 +111,130 @@ export class User {
 
           this.userId = userId;
 
-          // Fetch username and avatar from DB for display
-          const dbUser = await client.user.findUnique({
-            where: { id: userId },
-            select: { username: true, avatar: { select: { imageUrl: true } } },
-          });
-          this.username = dbUser?.username ?? 'Unknown';
-          this.avatarUrl = dbUser?.avatar?.imageUrl ?? undefined;
+          try {
+            // Fetch username and avatar from DB for display
+            const dbUser = await client.user.findUnique({
+              where: { id: userId },
+              select: { username: true, avatar: { select: { imageUrl: true } } },
+            });
+            this.username = dbUser?.username ?? 'Unknown';
+            this.avatarUrl = dbUser?.avatar?.imageUrl ?? undefined;
 
-          const space = await client.space.findFirst({
-            where: { id: spaceId },
-          });
+            const space = await client.space.findFirst({
+              where: { id: spaceId },
+            });
 
-          if (!space) {
-            this.ws.close();
-            return;
-          }
+            if (!space) {
+              this.ws.close();
+              return;
+            }
 
-          this.spaceId = spaceId;
-          RoomManager.getInstance().addUser(spaceId, this);
-          await RoomManager.getInstance().loadSpaceZones(spaceId);
-          await RoomManager.getInstance().loadSpaceBounds(spaceId);
+            this.spaceId = spaceId;
+            RoomManager.getInstance().addUser(spaceId, this);
+            await RoomManager.getInstance().loadSpaceZones(spaceId);
+            await RoomManager.getInstance().loadSpaceBounds(spaceId);
 
-          let spawn = { x: 0, y: 0 };
-          
-          const zones = RoomManager.getInstance().zones.get(spaceId) || [];
-          
-          const spawnZone = zones.find((z: any) => z.type === "spawn");
-          if (spawnZone || zones.length > 0) {
-            const z = spawnZone || zones[0];
-            spawn = {
-              x: Math.floor((z.startX + z.endX) / 2),
-              y: Math.floor((z.startY + z.endY) / 2)
-            };
-          } else {
-            // Fallback to searching for a random unblocked spot in the space
-            for (let i = 0; i < 200; i += 1) {
-              const candidate = {
-                x: Math.floor(Math.random() * space.width),
-                y: Math.floor(Math.random() * (space.height ?? 1)),
+            let spawn = { x: 0, y: 0 };
+
+            const zones = RoomManager.getInstance().zones.get(spaceId) || [];
+
+            const spawnZone = zones.find((z: any) => z.type === "spawn" && z.isDefaultSpawn) || zones.find((z: any) => z.type === "spawn");
+            if (spawnZone || zones.length > 0) {
+              const z = spawnZone || zones[0];
+              spawn = {
+                x: Math.floor((z.startX + z.endX) / 2),
+                y: Math.floor((z.startY + z.endY) / 2)
               };
-              if (await RoomManager.getInstance().canOccupy(spaceId, candidate.x, candidate.y)) {
-                spawn = candidate;
-                break;
+            } else {
+              // Fallback to searching for a random unblocked spot in the space
+              for (let i = 0; i < 200; i += 1) {
+                const candidate = {
+                  x: Math.floor(Math.random() * space.width),
+                  y: Math.floor(Math.random() * (space.height ?? 1)),
+                };
+                if (await RoomManager.getInstance().canOccupy(spaceId, candidate.x, candidate.y)) {
+                  spawn = candidate;
+                  break;
+                }
               }
             }
-          }
-          this.x = spawn.x;
-          this.y = spawn.y;
+            this.x = spawn.x;
+            this.y = spawn.y;
 
-          this.send({
-            type: "space-joined",
-            payload: {
-              spawn: { x: this.x, y: this.y },
-              userId: this.userId,
-              username: this.username,
-              avatarUrl: this.avatarUrl,
-              users:
-                RoomManager.getInstance()
-                  .rooms.get(spaceId)
-                  ?.filter((x) => x.id !== this.id)
-                  ?.map((u) => ({ id: u.id, userId: u.userId, username: u.username, avatarUrl: u.avatarUrl, status: u.status, x: u.x, y: u.y })) ?? [],
-            },
-          });
+            let chatHistory: any[] = [];
+            if ((client as any).chatMessage) {
+              try {
+                const recentChats = await (client as any).chatMessage.findMany({
+                  where: { spaceId },
+                  orderBy: { createdAt: "desc" },
+                  take: 50,
+                });
+                chatHistory = recentChats.reverse().map((c: any) => ({
+                  userId: c.userId,
+                  username: c.username,
+                  message: c.message,
+                  scope: c.scope,
+                  targetUserId: c.targetUserId,
+                  isRing: c.isRing,
+                  timestamp: c.createdAt.toISOString()
+                }));
+              } catch (err) {
+                console.error("Failed to fetch chat history:", err);
+              }
+            } else {
+              console.warn("ChatMessage model not available in Prisma client. Restart dev server to generate.");
+            }
 
-          RoomManager.getInstance().broadcast(
-            {
-              type: "user-joined",
+            this.send({
+              type: "space-joined",
               payload: {
+                chatHistory,
+                spawn: { x: this.x, y: this.y },
                 userId: this.userId,
                 username: this.username,
                 avatarUrl: this.avatarUrl,
-                status: this.status,
-                x: this.x,
-                y: this.y,
+                users:
+                  RoomManager.getInstance()
+                    .rooms.get(spaceId)
+                    ?.filter((x) => x.id !== this.id)
+                    ?.map((u) => ({ id: u.id, userId: u.userId, username: u.username, avatarUrl: u.avatarUrl, status: u.status, x: u.x, y: u.y })) ?? [],
               },
-            },
-            this,
-            this.spaceId!,
-          );
+            });
 
-          RoomManager.getInstance().checkProximity(this, this.spaceId!);
+            for (const producer of MediasoupManager.getInstance().getProducersForSpace(spaceId, this.userId)) {
+              if (!producer.userId) continue;
+              this.send({
+                type: "new-producer",
+                payload: {
+                  producerId: producer.producerId,
+                  userId: producer.userId,
+                  appData: producer.appData,
+                },
+              });
+            }
+
+            RoomManager.getInstance().broadcast(
+              {
+                type: "user-joined",
+                payload: {
+                  userId: this.userId,
+                  username: this.username,
+                  avatarUrl: this.avatarUrl,
+                  status: this.status,
+                  x: this.x,
+                  y: this.y,
+                },
+              },
+              this,
+              this.spaceId!,
+            );
+
+            RoomManager.getInstance().checkProximity(this, this.spaceId!);
+          } catch (error) {
+            console.error("Failed to join space", error instanceof Error ? error.message : error);
+            this.send({ type: "webrtc-error", payload: { message: "Unable to join space. Please try again." } });
+            this.ws.close();
+          }
 
           break;
         }
@@ -387,16 +430,19 @@ export class User {
           break;
         }
         case "webrtc-get-router-rtp-capabilities":
-          await WebRTCHandler.handleGetRouterRtpCapabilities(this);
+          await WebRTCHandler.handleGetRouterRtpCapabilities(this, parsedData);
           break;
         case "webrtc-create-transport":
-          await WebRTCHandler.handleCreateTransport(this);
+          await WebRTCHandler.handleCreateTransport(this, parsedData);
           break;
         case "webrtc-connect-transport":
           await WebRTCHandler.handleConnectTransport(this, parsedData);
           break;
         case "webrtc-produce":
           await WebRTCHandler.handleProduce(this, parsedData);
+          break;
+        case "webrtc-stop-producer":
+          await WebRTCHandler.handleStopProducer(this, parsedData);
           break;
         case "webrtc-consume":
           await WebRTCHandler.handleConsume(this, parsedData);
@@ -407,6 +453,20 @@ export class User {
 
   destroy() {
     if (!this.spaceId) return;
+    const closedProducerIds = MediasoupManager.getInstance().closeUserProducers(this.spaceId, this.userId);
+    closedProducerIds.forEach((producerId) => {
+      RoomManager.getInstance().broadcast(
+        {
+          type: "producer-closed",
+          payload: {
+            producerId,
+            userId: this.userId,
+          },
+        },
+        this,
+        this.spaceId!,
+      );
+    });
     RoomManager.getInstance().broadcast(
       {
         type: "user-left",

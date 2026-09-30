@@ -16,12 +16,20 @@ function parseDimensions(dimensions: string) {
   return { width, height };
 }
 
-function getSpaceRole(space: { creatorId: string }, userId: string) {
-  return space.creatorId === userId ? "Owner" : "Guest";
+const SPACE_MEMBER_ROLES = ["Admin", "Builder", "Member", "Guest"] as const;
+const EDITOR_ROLES = new Set(["Owner", "Admin", "Builder"]);
+
+function cleanSpaceRole(role: any) {
+  return SPACE_MEMBER_ROLES.includes(role) ? role : "Member";
 }
 
-function canEditSpace(space: { creatorId: string }, userId: string) {
-  return getSpaceRole(space, userId) === "Owner";
+function getSpaceRole(space: { creatorId: string; members?: { role: string }[] }, userId: string) {
+  if (space.creatorId === userId) return "Owner";
+  return cleanSpaceRole(space.members?.[0]?.role || "Guest");
+}
+
+function canEditSpace(space: { creatorId: string; members?: { role: string }[] }, userId: string) {
+  return EDITOR_ROLES.has(getSpaceRole(space, userId));
 }
 
 spaceRouter.post("/", userMiddleware, async (req, res) => {
@@ -122,11 +130,15 @@ spaceRouter.delete("/element", userMiddleware, async (req, res) => {
         id:parseData.data.id,
     },
     include: {
-        space:true,
+        space: {
+          include: {
+            members: { where: { userId: req.userId! }, select: { role: true } },
+          },
+        },
     }
    })
 
-   if(!spaceElement?.space.creatorId || spaceElement.space.creatorId !== req.userId){
+   if(!spaceElement?.space || !canEditSpace(spaceElement.space, req.userId!)){
     res.status(403).json({message:"Unauthorized"})
     return;
    }
@@ -150,7 +162,12 @@ spaceRouter.put("/:spaceId", userMiddleware, async (req, res) => {
 
   const space = await client.space.findUnique({
     where: { id: req.params.spaceId as string },
-    select: { creatorId: true, width: true, height: true },
+    select: {
+      creatorId: true,
+      width: true,
+      height: true,
+      members: { where: { userId: req.userId! }, select: { role: true } },
+    },
   });
 
   if (!space) {
@@ -215,6 +232,7 @@ spaceRouter.delete("/:spaceId", userMiddleware, async (req, res) => {
     },
     select: {
       creatorId: true,
+      members: { where: { userId: req.userId! }, select: { role: true } },
     },
   });
 
@@ -251,8 +269,14 @@ spaceRouter.delete("/:spaceId", userMiddleware, async (req, res) => {
 spaceRouter.get("/all", userMiddleware, async (req, res) => {
     const spaces = await client.space.findMany({
         where: {
-            creatorId: req.userId
-        }
+            OR: [
+              { creatorId: req.userId },
+              { members: { some: { userId: req.userId! } } },
+            ],
+        },
+        include: {
+          members: { where: { userId: req.userId! }, select: { role: true } },
+        },
     })
 
     res.json({
@@ -261,6 +285,8 @@ spaceRouter.get("/all", userMiddleware, async (req, res) => {
             name: s.name,
             thumbnail: s.thumbnail,
             dimensions: `${s.width}x${s.height}`,
+            currentUserRole: getSpaceRole(s, req.userId!),
+            canEdit: canEditSpace(s, req.userId!),
         }))
     })
 
@@ -282,6 +308,7 @@ spaceRouter.post("/element", userMiddleware, async (req, res) => {
         width: true,
         height: true,
         creatorId: true,
+        members: { where: { userId: req.userId! }, select: { role: true } },
     }
   })
 
@@ -343,6 +370,10 @@ spaceRouter.get("/:spaceId", userMiddleware, async (req, res) => {
             },
             privateZones: true,
             studioDraft: true,
+            members: {
+                where: { userId: req.userId! },
+                select: { role: true },
+            },
         }
     })
 
@@ -364,11 +395,12 @@ spaceRouter.get("/:spaceId", userMiddleware, async (req, res) => {
         if (!draftArea) return zone;
         return {
             ...zone,
-            targetUrl: draftArea.targetUrl || null,
-            targetSpaceId: draftArea.targetSpaceId || null,
-            targetRoomId: draftArea.targetRoomId || null,
-            targetX: Number.isInteger(draftArea.targetX) ? draftArea.targetX : null,
-            targetY: Number.isInteger(draftArea.targetY) ? draftArea.targetY : null,
+            targetUrl: zone.targetUrl || draftArea.targetUrl || null,
+            targetSpaceId: zone.targetSpaceId || draftArea.targetSpaceId || null,
+            targetRoomId: zone.targetRoomId || draftArea.targetRoomId || null,
+            targetX: Number.isInteger(zone.targetX) ? zone.targetX : (Number.isInteger(draftArea.targetX) ? draftArea.targetX : null),
+            targetY: Number.isInteger(zone.targetY) ? zone.targetY : (Number.isInteger(draftArea.targetY) ? draftArea.targetY : null),
+            isDefaultSpawn: Boolean(zone.isDefaultSpawn || draftArea.isDefaultSpawn),
         };
     });
 

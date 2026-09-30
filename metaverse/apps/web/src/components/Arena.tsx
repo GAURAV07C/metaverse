@@ -14,6 +14,8 @@ import { ActionToolbar } from './arena/ActionToolbar';
 import { MiniMap } from './arena/MiniMap';
 import { InteractionLayer } from './arena/InteractionLayer';
 import { CanvasAvatarPreview } from './CanvasAvatarPreview';
+import { PrejoinScreen } from './arena/PrejoinScreen';
+import { findPath } from '../utils/pathfinding';
 
 export interface OtherUser {
   userId: string;
@@ -138,6 +140,7 @@ export function Arena() {
   const [spaceName, setSpaceName] = useState('Office');
   const [canEditSpace, setCanEditSpace] = useState(false);
   const [currentUserRole, setCurrentUserRole] = useState('Guest');
+  const [hasJoined, setHasJoined] = useState(false);
   const [connected, setConnected] = useState(false);
   const [presenceStatus, setPresenceStatus] = useState<'available' | 'busy' | 'focus' | 'away'>('available');
   const [notificationPrefs, setNotificationPrefs] = useState<NotificationPrefs>(() => readNotificationPreferences());
@@ -267,6 +270,22 @@ export function Arena() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!spaceId) return;
+    let cancelled = false;
+    api.get(`/office/${spaceId}/notification-preferences`)
+      .then((res) => {
+        if (cancelled || !res.data?.preferences) return;
+        const next = { ...DEFAULT_NOTIFICATION_PREFS, ...res.data.preferences };
+        setNotificationPrefs(next);
+        localStorage.setItem(NOTIFICATION_PREF_KEY, JSON.stringify(next));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [spaceId]);
+
   // Invite / copy state
   const [copied, setCopied] = useState(false);
   const [copiedRoomId, setCopiedRoomId] = useState<string | null>(null);
@@ -354,6 +373,9 @@ export function Arena() {
       y: (y - myPos.y) * liveTileSize,
     });
   };
+  const stopFollowing = useCallback(() => {
+    setFollowingUserId(null);
+  }, []);
 
   const followedUser = followingUserId ? otherUsers.find(u => u.userId === followingUserId) : null;
   const selectedUser = selectedUserId ? otherUsers.find(u => u.userId === selectedUserId) : null;
@@ -469,6 +491,30 @@ export function Arena() {
     }
   }, [camOn, micOn, replaceLocalMediaTrack]);
 
+  const handleNotificationPreferenceChange = useCallback(async (key: keyof NotificationPrefs, value: boolean) => {
+    const next = { ...notificationPrefsRef.current, [key]: value };
+    notificationPrefsRef.current = next;
+    setNotificationPrefs(next);
+    localStorage.setItem(NOTIFICATION_PREF_KEY, JSON.stringify(next));
+    if (!spaceId) return;
+    try {
+      const res = await api.put(`/office/${spaceId}/notification-preferences`, next);
+      if (res.data?.preferences) {
+        const saved = { ...DEFAULT_NOTIFICATION_PREFS, ...res.data.preferences };
+        notificationPrefsRef.current = saved;
+        setNotificationPrefs(saved);
+        localStorage.setItem(NOTIFICATION_PREF_KEY, JSON.stringify(saved));
+      }
+    } catch {
+      pushToast({
+        title: 'Notification settings saved locally',
+        detail: 'Server sync failed, but this browser will keep the preference.',
+        kind: 'warning',
+        category: 'system',
+      });
+    }
+  }, [pushToast, spaceId]);
+
   useEffect(() => {
     if (roomInvites.length === 0) return;
     const interval = window.setInterval(() => {
@@ -533,13 +579,14 @@ export function Arena() {
 
   // ── WebSocket setup ─────────────────────
   useEffect(() => {
-    if (!spaceId || !token) return;
+    if (!spaceId || !token || !hasJoined) return;
 
     const ws = new WsClient(spaceId, token);
     wsRef.current = ws;
 
     const ms = new MediasoupClient(ws);
     msRef.current = ms;
+    setConnected(false);
 
     ms.onNewConsumer = (consumer, userId, appData) => {
       const isScreenMedia = appData?.type === 'screen' || appData?.type === 'screen-audio';
@@ -550,6 +597,10 @@ export function Arena() {
         return { ...prev, [userId]: existing };
       });
     };
+
+    const unsubConnection = ws.onConnectionChange((isSocketOpen) => {
+      if (!isSocketOpen) setConnected(false);
+    });
 
     const unsub = ws.onMessage((msg: any) => {
       switch (msg.type) {
@@ -568,7 +619,7 @@ export function Arena() {
           if (Number.isInteger(portalX) && Number.isInteger(portalY)) {
             targetX = portalX;
             targetY = portalY;
-            ws.send({ type: 'move', payload: { x: targetX, y: targetY } });
+            ws.send({ type: 'teleport', payload: { x: targetX, y: targetY } });
           } else if (savedPosStr) {
             try {
               const parsed = JSON.parse(savedPosStr);
@@ -576,7 +627,7 @@ export function Arena() {
                 targetX = parsed.x;
                 targetY = parsed.y;
                 // Tell the server we are actually at our saved location, not the default spawn
-                ws.send({ type: 'move', payload: { x: targetX, y: targetY } });
+                ws.send({ type: 'teleport', payload: { x: targetX, y: targetY } });
               }
             } catch(e) {
               console.error(e);
@@ -596,6 +647,15 @@ export function Arena() {
             }));
           setOtherUsers(filteredJoined);
           setMyAvatarUrl(normalizeAssetUrl(msg.payload.avatarUrl) || normalizeAssetUrl(storedAvatarUrl));
+
+          if (msg.payload.chatHistory) {
+             setMessages(msg.payload.chatHistory.map((c: any) => ({
+               username: c.username || 'Unknown',
+               message: c.message,
+               time: new Date(c.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+               scope: c.scope || 'everyone',
+             })));
+          }
 
           ms.init(); // Initialize mediasoup after joining
           break;
@@ -645,6 +705,7 @@ export function Arena() {
           break;
         case 'proximity-left':
           setProximityUsers(prev => prev.filter(id => id !== msg.payload.userId));
+          msRef.current?.closeConsumersByUserId(msg.payload.userId);
           setStreams(prev => {
             const next = { ...prev };
             delete next[msg.payload.userId];
@@ -657,6 +718,11 @@ export function Arena() {
           });
           break;
         case 'chat-receive':
+          if (msg.payload.isRing) {
+            playInviteRing();
+            pushToast({ title: 'Incoming Ring', detail: `${msg.payload.username || 'Someone'} is ringing you!`, kind: 'info', category: 'system' });
+            break;
+          }
           if (!(showUsersRef.current && activeTabRef.current === 'chat')) {
             setUnreadChatCount(count => count + 1);
           }
@@ -856,8 +922,8 @@ export function Arena() {
     });
 
     ws.connect();
-    return () => { unsub(); ws.disconnect(); };
-  }, [spaceId, token, myUserId, storedAvatarUrl, pushToast, playInviteRing, recordInviteHistory, recordModerationHistory]);
+    return () => { unsub(); unsubConnection(); ws.disconnect(); setConnected(false); };
+  }, [spaceId, token, hasJoined, myUserId, storedAvatarUrl, pushToast, playInviteRing, recordInviteHistory, recordModerationHistory]);
 
   // Save myPos to localStorage whenever it changes
   useEffect(() => {
@@ -880,6 +946,7 @@ export function Arena() {
 
     if (moved) {
       e.preventDefault();
+      stopFollowing();
       setPanOffset({ x: 0, y: 0 }); // Recenter camera on player keyboard move
       setAutoPath([]);
     } else {
@@ -913,7 +980,7 @@ export function Arena() {
 
     setMyPos({ x: nx, y: ny });
     wsRef.current?.move(nx, ny);
-  }, [connected, myPos, dimensions, elements, otherUsers]);
+  }, [connected, myPos, dimensions, elements, otherUsers, stopFollowing]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -931,7 +998,7 @@ export function Arena() {
         const newPath = prevPath.slice(1);
 
         const isCollidingWithUser = otherUsers.some((u) => u.x === nextStep.x && u.y === nextStep.y);
-        if (isCollidingWithUser) return [];
+        if (isCollidingWithUser && !followingUserId) return []; // Stop if colliding, UNLESS we are following (leader might move)
 
         setMyPos({ x: nextStep.x, y: nextStep.y });
         wsRef.current?.move(nextStep.x, nextStep.y);
@@ -940,7 +1007,42 @@ export function Arena() {
     }, 120);
 
     return () => clearInterval(interval);
-  }, [autoPath, otherUsers]);
+  }, [autoPath, otherUsers, followingUserId]);
+
+  // ── Follow leader movement ────────────
+  useEffect(() => {
+    if (!followingUserId || !connected || !followedUser) return;
+    
+    const dist = Math.abs(myPos.x - followedUser.x) + Math.abs(myPos.y - followedUser.y);
+    if (dist > 1) {
+        const isWalkableForPath = (x: number, y: number) => {
+          if (x < 0 || y < 0 || x >= dimensions.w || y >= dimensions.h) return false;
+          if (x === followedUser.x && y === followedUser.y) return true;
+          
+          const isCollidingWithElement = elements.some((el) => {
+            if (el.element.category === 'Rooms' || String(el.element.category).toLowerCase().includes('floor')) return false;
+            const text = `${el.element.id} ${el.element.name ?? ''} ${el.element.category ?? ''}`.toLowerCase();
+            const isSeat = text.includes('seating') || text.includes('chair') || text.includes('sofa') || text.includes('couch') || text.includes('bench') || text.includes('stool') || text.includes('seat');
+            if (isSeat) return false;
+            if (!el.element.static) return false;
+            return x >= el.x && x < el.x + el.element.width && y >= el.y && y < el.y + el.element.height;
+          });
+          if (isCollidingWithElement) return false;
+
+          const isCollidingWithUser = otherUsers.some((u) => u.x === x && u.y === y);
+          if (isCollidingWithUser) return false;
+          
+          return true;
+        };
+
+        const path = findPath(myPos, { x: followedUser.x, y: followedUser.y }, dimensions.w, dimensions.h, isWalkableForPath);
+        if (path.length > 2) {
+          setAutoPath(path.slice(1, -1)); // Walk up to them, stopping 1 tile away
+        } else if (path.length <= 2) {
+          setAutoPath([]);
+        }
+    }
+  }, [followingUserId, connected, followedUser, myPos, dimensions.w, dimensions.h, elements, otherUsers]);
 
   const handleSendChat = (e: React.FormEvent, requestedScope?: Exclude<ChatScope, 'invites'>) => {
     e.preventDefault();
@@ -1093,10 +1195,10 @@ export function Arena() {
     : null;
   const currentPortal = privateZones.find(z =>
     z.type === 'portal' &&
-    myPos.x >= z.startX &&
-    myPos.x < z.endX &&
-    myPos.y >= z.startY &&
-    myPos.y < z.endY
+    myPos.x >= z.startX - 1 &&
+    myPos.x <= z.endX &&
+    myPos.y >= z.startY - 1 &&
+    myPos.y <= z.endY
   );
   const currentSpotlight = privateZones.find(z =>
     z.type === 'spotlight' &&
@@ -1117,6 +1219,12 @@ export function Arena() {
     setPanOffset({ x: 0, y: 0 });
     setMyPos({ x, y });
     wsRef.current?.move(x, y);
+  };
+  const teleportToTile = (x: number, y: number) => {
+    setAutoPath([]);
+    setPanOffset({ x: 0, y: 0 });
+    setMyPos({ x, y });
+    wsRef.current?.teleport(x, y);
   };
   const buildPortalUrl = (portal: any) => {
     if (portal.targetUrl) return portal.targetUrl;
@@ -1139,7 +1247,13 @@ export function Arena() {
     if (Number.isInteger(currentPortal.targetX) && Number.isInteger(currentPortal.targetY)) {
       const x = Math.max(0, Math.min(dimensions.w - 1, currentPortal.targetX));
       const y = Math.max(0, Math.min(dimensions.h - 1, currentPortal.targetY));
-      moveToTile(x, y);
+      const targetZone = privateZones.find(z =>
+        z.id !== currentPortal.id &&
+        (z.type === 'portal' || z.type === 'spawn' || isAudioRoomZone(z)) &&
+        isTileInZone(x, y, z)
+      );
+      const availableTarget = targetZone ? findWalkableTileInZone(targetZone) : null;
+      teleportToTile(availableTarget?.x ?? x, availableTarget?.y ?? y);
       return;
     }
     const portals = privateZones.filter(z => z.type === 'portal');
@@ -1149,9 +1263,10 @@ export function Arena() {
     const target = nextPortal || privateZones.find(z => z.type === 'spawn');
     if (!target) return;
 
-    const x = Math.max(target.startX, Math.min(target.endX - 1, Math.floor((target.startX + target.endX) / 2)));
-    const y = Math.max(target.startY, Math.min(target.endY - 1, Math.floor((target.startY + target.endY) / 2)));
-    moveToTile(x, y);
+    const availableTarget = findWalkableTileInZone(target);
+    const x = availableTarget?.x ?? Math.max(target.startX, Math.min(target.endX - 1, Math.floor((target.startX + target.endX) / 2)));
+    const y = availableTarget?.y ?? Math.max(target.startY, Math.min(target.endY - 1, Math.floor((target.startY + target.endY) / 2)));
+    teleportToTile(x, y);
   };
   const isSpotOccupied = (spot: any) => {
     return isZoneOccupied(spot);
@@ -1274,9 +1389,9 @@ export function Arena() {
     panCameraToTile(x, y);
   };
 
-  const handleFollowOtherUser = (userId: string, x: number, y: number) => {
+  const handleFollowOtherUser = (userId: string) => {
     setFollowingUserId(prev => prev === userId ? null : userId);
-    panCameraToTile(x, y);
+    setPanOffset({ x: 0, y: 0 });
   };
 
   const messageUser = (username: string) => {
@@ -1389,8 +1504,8 @@ export function Arena() {
       setFollowingUserId(null);
       return;
     }
-    panCameraToTile(user.x, user.y);
-  }, [followingUserId, otherUsers, myPos]);
+    setPanOffset({ x: 0, y: 0 });
+  }, [followingUserId, otherUsers]);
 
   useEffect(() => {
     if (currentRoom && chatScope === 'everyone') {
@@ -1528,6 +1643,7 @@ export function Arena() {
   };
 
   const handleLocateUser = () => {
+    stopFollowing();
     setPanOffset({ x: 0, y: 0 });
   };
 
@@ -1575,6 +1691,19 @@ export function Arena() {
     window.addEventListener('keydown', onInteract);
     return () => window.removeEventListener('keydown', onInteract);
   }, [activeInteraction, currentPortal, promptInteraction, showShortcuts]);
+
+  if (!hasJoined) {
+    return (
+      <PrejoinScreen
+        spaceName={spaceName}
+        onJoin={(startMic, startCam) => {
+          setMicOn(startMic);
+          setCamOn(startCam);
+          setHasJoined(true);
+        }}
+      />
+    );
+  }
 
   return (
     <div className={`arena ${showUsers ? 'with-sidebar' : ''}`}>
@@ -1688,9 +1817,10 @@ export function Arena() {
               </div>
               <div className="map-user-actions">
                 <button onClick={() => messageUser(selectedUser.username)}><MessageSquare size={15} />Message</button>
-                <button onClick={() => handleFollowOtherUser(selectedUser.userId, selectedUser.x, selectedUser.y)}><Footprints size={15} />{followingUserId === selectedUser.userId ? 'Unfollow' : 'Follow'}</button>
+                <button onClick={() => handleFollowOtherUser(selectedUser.userId)}><Footprints size={15} />{followingUserId === selectedUser.userId ? 'Unfollow' : 'Follow'}</button>
                 <button onClick={() => handleLocateOtherUser(selectedUser.x, selectedUser.y)}><Crosshair size={15} />Locate</button>
                 <button disabled={!currentRoom} onClick={() => inviteUserToCurrentRoom(selectedUser)}><DoorOpen size={15} />Invite room</button>
+                <button onClick={() => { wsRef.current?.sendChat('', { scope: 'dm', targetUserId: selectedUser.userId, isRing: true }); pushToast({ title: `Ringing ${selectedUser.username}...`, kind: 'info', category: 'system' }); setSelectedUserId(null); }}><Bell size={15} />Ring</button>
               </div>
             </aside>
           )}
@@ -1849,8 +1979,8 @@ export function Arena() {
 
           {currentPortal && !activeInteraction && (
             <div className="interaction-prompt portal-prompt">
-              Press <kbd>X</kbd> to use {currentPortal.name || 'portal'}
-              {currentPortal.targetRoomId ? ` → ${currentPortal.targetRoomId}` : ''}
+              <span>Press <kbd>X</kbd> to use {currentPortal.name || 'portal'}{currentPortal.targetRoomId ? ` → ${currentPortal.targetRoomId}` : ''}</span>
+              <button type="button" onClick={usePortal}>Use</button>
             </div>
           )}
 
@@ -1859,6 +1989,7 @@ export function Arena() {
             wrapperRef={wrapperRef}
             dimensions={dimensions}
             myPos={myPos}
+            cameraTarget={followedUser ? { x: followedUser.x, y: followedUser.y } : myPos}
             otherUsers={otherUsers}
             proximityUsers={proximityUsers}
             elements={elements}
@@ -1879,6 +2010,7 @@ export function Arena() {
             onRemoveElement={handleRemoveElement}
             reactions={reactions}
             onSelectUser={setSelectedUserId}
+            onManualControl={stopFollowing}
           />
 
           <ActionToolbar
@@ -1940,6 +2072,11 @@ export function Arena() {
           camOn={camOn}
           setCamOn={setCamOn}
           onDevicePreferenceChange={handleDevicePreferenceChange}
+          notificationPreferences={notificationPrefs}
+          onNotificationPreferenceChange={handleNotificationPreferenceChange}
+          spaceId={spaceId}
+          currentUserRole={currentUserRole}
+          canManageMembers={currentUserRole === 'Owner' || currentUserRole === 'Admin'}
         />
     </div>
   );

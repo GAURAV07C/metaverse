@@ -8,21 +8,50 @@ import { DeskAssignmentSchema, OfficeSettingsSchema, SpaceDraftSchema } from "..
 export const officeRouter = Router();
 officeRouter.use(userMiddleware);
 
+const SPACE_MEMBER_ROLES = ["Admin", "Builder", "Member", "Guest"] as const;
+const EDITOR_ROLES = new Set(["Owner", "Admin", "Builder"]);
+const MANAGER_ROLES = new Set(["Owner", "Admin"]);
+
+function cleanSpaceRole(role: any) {
+  return SPACE_MEMBER_ROLES.includes(role) ? role : "Member";
+}
+
 async function getSpaceForUser(spaceId: string, userId: string) {
-  return client.space.findUnique({ where: { id: spaceId }, select: { id: true, name: true, width: true, height: true, creatorId: true } });
+  return client.space.findUnique({
+    where: { id: spaceId },
+    select: {
+      id: true,
+      name: true,
+      width: true,
+      height: true,
+      creatorId: true,
+      members: { where: { userId }, select: { role: true } },
+    },
+  });
 }
 
-function getSpaceRole(space: { creatorId: string }, userId: string) {
-  return space.creatorId === userId ? "Owner" : "Guest";
+function getSpaceRole(space: { creatorId: string; members?: { role: string }[] }, userId: string) {
+  if (space.creatorId === userId) return "Owner";
+  return cleanSpaceRole(space.members?.[0]?.role || "Guest");
 }
 
-function canEditSpace(space: { creatorId: string }, userId: string) {
-  return getSpaceRole(space, userId) === "Owner";
+function canEditSpace(space: { creatorId: string; members?: { role: string }[] }, userId: string) {
+  return EDITOR_ROLES.has(getSpaceRole(space, userId));
 }
 
-function requireSpaceEditor(space: { creatorId: string }, userId: string, res: any) {
+function canManageMembers(space: { creatorId: string; members?: { role: string }[] }, userId: string) {
+  return MANAGER_ROLES.has(getSpaceRole(space, userId));
+}
+
+function requireSpaceEditor(space: { creatorId: string; members?: { role: string }[] }, userId: string, res: any) {
   if (canEditSpace(space, userId)) return true;
-  res.status(403).json({ message: "Only the space owner can edit this office" });
+  res.status(403).json({ message: "Only owners, admins, and builders can edit this office" });
+  return false;
+}
+
+function requireSpaceManager(space: { creatorId: string; members?: { role: string }[] }, userId: string, res: any) {
+  if (canManageMembers(space, userId)) return true;
+  res.status(403).json({ message: "Only owners and admins can manage members" });
   return false;
 }
 
@@ -30,6 +59,29 @@ function publicSettings(settings: any) {
   if (!settings) return null;
   const { id, spaceId, createdAt, updatedAt, ...rest } = settings;
   return { id, spaceId, ...rest, createdAt, updatedAt };
+}
+
+const defaultNotificationPreferences = {
+  joins: true,
+  chat: true,
+  roomInvites: true,
+  sounds: true,
+  reconnecting: true,
+  respectFocus: true,
+};
+
+function cleanNotificationPreferences(body: any) {
+  return Object.fromEntries(
+    Object.keys(defaultNotificationPreferences)
+      .filter((key) => typeof body?.[key] === "boolean")
+      .map((key) => [key, body[key]])
+  );
+}
+
+function publicNotificationPreferences(preferences: any) {
+  if (!preferences) return defaultNotificationPreferences;
+  const { id, spaceId, userId, createdAt, updatedAt, ...rest } = preferences;
+  return { ...defaultNotificationPreferences, ...rest };
 }
 
 function validatePortalTargets(data: any, width: number, height: number) {
@@ -91,6 +143,27 @@ officeRouter.put("/:spaceId/settings", async (req, res) => {
   res.json({ settings: publicSettings(settings) });
 });
 
+officeRouter.get("/:spaceId/notification-preferences", async (req, res) => {
+  const space = await getSpaceForUser(req.params.spaceId, req.userId);
+  if (!space) return res.status(404).json({ message: "Space not found" });
+  const preferences = await (client as any).notificationPreference.findUnique({
+    where: { spaceId_userId: { spaceId: space.id, userId: req.userId } },
+  });
+  res.json({ preferences: publicNotificationPreferences(preferences) });
+});
+
+officeRouter.put("/:spaceId/notification-preferences", async (req, res) => {
+  const space = await getSpaceForUser(req.params.spaceId, req.userId);
+  if (!space) return res.status(404).json({ message: "Space not found" });
+  const data = cleanNotificationPreferences(req.body);
+  const preferences = await (client as any).notificationPreference.upsert({
+    where: { spaceId_userId: { spaceId: space.id, userId: req.userId } },
+    update: data,
+    create: { spaceId: space.id, userId: req.userId, ...defaultNotificationPreferences, ...data },
+  });
+  res.json({ preferences: publicNotificationPreferences(preferences) });
+});
+
 officeRouter.get("/:spaceId/invites", async (req, res) => {
   const space = await getSpaceForUser(req.params.spaceId, req.userId);
   if (!space) return res.status(404).json({ message: "Space not found" });
@@ -108,11 +181,126 @@ officeRouter.post("/:spaceId/invites", async (req, res) => {
     data: {
       spaceId: space.id,
       token,
-      role: typeof req.body?.role === "string" ? req.body.role.slice(0, 32) : "Member",
+      role: cleanSpaceRole(req.body?.role),
       expiresAt: req.body?.expiresAt ? new Date(req.body.expiresAt) : null,
     },
   });
   res.json({ invite, url: `/space/${space.id}/join?invite=${token}` });
+});
+
+officeRouter.get("/:spaceId/members", async (req, res) => {
+  const space = await getSpaceForUser(req.params.spaceId, req.userId);
+  if (!space) return res.status(404).json({ message: "Space not found" });
+  if (!requireSpaceManager(space, req.userId, res)) return;
+
+  const [owner, members] = await Promise.all([
+    client.user.findUnique({ where: { id: space.creatorId }, select: { id: true, username: true, avatar: true } }),
+    (client as any).spaceMember.findMany({
+      where: { spaceId: space.id },
+      orderBy: [{ role: "asc" }, { createdAt: "asc" }],
+      include: { user: { select: { id: true, username: true, avatar: true } } },
+    }),
+  ]);
+
+  res.json({
+    members: [
+      {
+        id: "owner",
+        userId: space.creatorId,
+        username: owner?.username || "Owner",
+        avatar: owner?.avatar || null,
+        role: "Owner",
+        createdAt: null,
+        updatedAt: null,
+      },
+      ...members
+        .filter((member: any) => member.userId !== space.creatorId)
+        .map((member: any) => ({
+          id: member.id,
+          userId: member.userId,
+          username: member.user?.username || "Unknown",
+          avatar: member.user?.avatar || null,
+          role: cleanSpaceRole(member.role),
+          createdAt: member.createdAt,
+          updatedAt: member.updatedAt,
+        })),
+    ],
+  });
+});
+
+officeRouter.post("/:spaceId/members", async (req, res) => {
+  const space = await getSpaceForUser(req.params.spaceId, req.userId);
+  if (!space) return res.status(404).json({ message: "Space not found" });
+  if (!requireSpaceManager(space, req.userId, res)) return;
+
+  const username = typeof req.body?.username === "string" ? req.body.username.trim() : "";
+  if (!username) return res.status(400).json({ message: "Username is required" });
+
+  const user = await client.user.findUnique({ where: { username }, select: { id: true, username: true, avatar: true } });
+  if (!user) return res.status(404).json({ message: "User not found" });
+  if (user.id === space.creatorId) return res.status(400).json({ message: "Owner already has full access" });
+
+  const role = cleanSpaceRole(req.body?.role);
+  const member = await (client as any).spaceMember.upsert({
+    where: { spaceId_userId: { spaceId: space.id, userId: user.id } },
+    update: { role },
+    create: { spaceId: space.id, userId: user.id, role, createdById: req.userId },
+    include: { user: { select: { id: true, username: true, avatar: true } } },
+  });
+
+  res.json({
+    member: {
+      id: member.id,
+      userId: member.userId,
+      username: member.user?.username || "Unknown",
+      avatar: member.user?.avatar || null,
+      role: cleanSpaceRole(member.role),
+      createdAt: member.createdAt,
+      updatedAt: member.updatedAt,
+    },
+  });
+});
+
+officeRouter.put("/:spaceId/members/:userId", async (req, res) => {
+  const space = await getSpaceForUser(req.params.spaceId, req.userId);
+  if (!space) return res.status(404).json({ message: "Space not found" });
+  if (!requireSpaceManager(space, req.userId, res)) return;
+  if (req.params.userId === space.creatorId) return res.status(400).json({ message: "Owner role cannot be changed" });
+
+  const user = await client.user.findUnique({ where: { id: req.params.userId }, select: { id: true, username: true, avatar: true } });
+  if (!user) return res.status(404).json({ message: "User not found" });
+
+  const role = cleanSpaceRole(req.body?.role);
+  const member = await (client as any).spaceMember.upsert({
+    where: { spaceId_userId: { spaceId: space.id, userId: user.id } },
+    update: { role },
+    create: { spaceId: space.id, userId: user.id, role, createdById: req.userId },
+    include: { user: { select: { id: true, username: true, avatar: true } } },
+  });
+
+  res.json({
+    member: {
+      id: member.id,
+      userId: member.userId,
+      username: member.user?.username || "Unknown",
+      avatar: member.user?.avatar || null,
+      role: cleanSpaceRole(member.role),
+      createdAt: member.createdAt,
+      updatedAt: member.updatedAt,
+    },
+  });
+});
+
+officeRouter.delete("/:spaceId/members/:userId", async (req, res) => {
+  const space = await getSpaceForUser(req.params.spaceId, req.userId);
+  if (!space) return res.status(404).json({ message: "Space not found" });
+  if (!requireSpaceManager(space, req.userId, res)) return;
+  if (req.params.userId === space.creatorId) return res.status(400).json({ message: "Owner cannot be removed" });
+
+  await (client as any).spaceMember.deleteMany({
+    where: { spaceId: space.id, userId: req.params.userId },
+  });
+  res.json({ success: true });
 });
 
 officeRouter.get("/:spaceId/invite-events", async (req, res) => {
@@ -237,6 +425,50 @@ officeRouter.put("/:spaceId/draft", async (req, res) => {
   res.json({ draft });
 });
 
+officeRouter.get("/:spaceId/versions", async (req, res) => {
+  const space = await getSpaceForUser(req.params.spaceId, req.userId);
+  if (!space) return res.status(404).json({ message: "Space not found" });
+  if (!requireSpaceEditor(space, req.userId, res)) return;
+  const versions = await (client as any).spaceMapVersion.findMany({
+    where: { spaceId: space.id },
+    orderBy: { version: "desc" },
+    take: 30,
+    include: { createdBy: { select: { username: true } } },
+  });
+  res.json({
+    versions: versions.map((version: any) => {
+      const data = version.data || {};
+      return {
+        id: version.id,
+        version: version.version,
+        createdAt: version.createdAt,
+        createdByUsername: version.createdBy?.username || null,
+        elementCount: Array.isArray(data.elements) ? data.elements.length : 0,
+        areaCount: Array.isArray(data.areas) ? data.areas.length : 0,
+      };
+    }),
+  });
+});
+
+officeRouter.post("/:spaceId/versions/:versionId/restore", async (req, res) => {
+  const space = await getSpaceForUser(req.params.spaceId, req.userId);
+  if (!space) return res.status(404).json({ message: "Space not found" });
+  if (!requireSpaceEditor(space, req.userId, res)) return;
+
+  const version = await (client as any).spaceMapVersion.findFirst({
+    where: { id: req.params.versionId, spaceId: space.id },
+  });
+  if (!version) return res.status(404).json({ message: "Version not found" });
+
+  const draft = await client.spaceDraft.upsert({
+    where: { spaceId: space.id },
+    update: { data: version.data as Prisma.InputJsonValue, updatedById: req.userId },
+    create: { spaceId: space.id, data: version.data as Prisma.InputJsonValue, updatedById: req.userId },
+  });
+
+  res.json({ draft, restoredVersion: version.version });
+});
+
 officeRouter.post("/:spaceId/publish", async (req, res) => {
   const space = await getSpaceForUser(req.params.spaceId, req.userId);
   if (!space) return res.status(404).json({ message: "Space not found" });
@@ -301,7 +533,11 @@ officeRouter.post("/:spaceId/publish", async (req, res) => {
   if (data.areas && Array.isArray(data.areas)) {
     await client.privateZone.deleteMany({ where: { spaceId: space.id } });
     
-    const areasToInsert = data.areas.map((a: any) => ({
+    let defaultSpawnConsumed = false;
+    const areasToInsert = data.areas.map((a: any) => {
+      const isDefaultSpawn = a.type === 'spawn' && Boolean(a.isDefaultSpawn) && !defaultSpawnConsumed;
+      if (isDefaultSpawn) defaultSpawnConsumed = true;
+      return ({
       id: typeof a.id === 'string' && a.id ? a.id : undefined,
       spaceId: space.id,
       name: a.name || 'Area',
@@ -313,7 +549,14 @@ officeRouter.post("/:spaceId/publish", async (req, res) => {
       floor: a.floor,
       color: a.color,
       texture: a.texture,
-    }));
+      isDefaultSpawn,
+      targetUrl: a.type === 'portal' && typeof a.targetUrl === 'string' && a.targetUrl.trim() ? a.targetUrl.trim() : undefined,
+      targetSpaceId: a.type === 'portal' && typeof a.targetSpaceId === 'string' && a.targetSpaceId.trim() ? a.targetSpaceId.trim() : undefined,
+      targetRoomId: a.type === 'portal' && typeof a.targetRoomId === 'string' && a.targetRoomId.trim() ? a.targetRoomId.trim() : undefined,
+      targetX: a.type === 'portal' && Number.isInteger(a.targetX) ? a.targetX : undefined,
+      targetY: a.type === 'portal' && Number.isInteger(a.targetY) ? a.targetY : undefined,
+    });
+    });
 
     if (areasToInsert.length > 0) {
       await client.privateZone.createMany({
@@ -321,6 +564,21 @@ officeRouter.post("/:spaceId/publish", async (req, res) => {
       });
     }
   }
+
+  const latestVersion = await (client as any).spaceMapVersion.findFirst({
+    where: { spaceId: space.id },
+    orderBy: { version: "desc" },
+    select: { version: true },
+  });
+  const nextVersion = (latestVersion?.version || 0) + 1;
+  await (client as any).spaceMapVersion.create({
+    data: {
+      spaceId: space.id,
+      version: nextVersion,
+      data: data as Prisma.InputJsonValue,
+      createdById: req.userId,
+    },
+  });
 
   const updatedDraft = await client.spaceDraft.update({ where: { spaceId: space.id }, data: { publishedAt: new Date() } }).catch(() => null);
   res.json({ message: "Office draft published", draft: updatedDraft });

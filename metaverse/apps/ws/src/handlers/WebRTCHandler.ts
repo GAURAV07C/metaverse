@@ -3,18 +3,22 @@ import { RoomManager } from "../RoomManager";
 import { User } from "../User";
 
 export class WebRTCHandler {
-  static async handleGetRouterRtpCapabilities(user: User) {
+  private static getRequestId(parsedData: any) {
+    return typeof parsedData?.payload?.requestId === "string" ? parsedData.payload.requestId : undefined;
+  }
+
+  static async handleGetRouterRtpCapabilities(user: User, parsedData?: any) {
     await this.handle(user, async () => {
       if (!user.spaceId) return;
       const router = await MediasoupManager.getInstance().getRouter(user.spaceId);
       user.send({
         type: "webrtc-router-rtp-capabilities",
-        payload: { rtpCapabilities: router.rtpCapabilities },
+        payload: { rtpCapabilities: router.rtpCapabilities, requestId: this.getRequestId(parsedData) },
       });
     });
   }
 
-  static async handleCreateTransport(user: User) {
+  static async handleCreateTransport(user: User, parsedData?: any) {
     await this.handle(user, async () => {
       if (!user.spaceId) return;
       const transport = await MediasoupManager.getInstance().createWebRtcTransport(user.spaceId);
@@ -25,6 +29,7 @@ export class WebRTCHandler {
           iceParameters: transport.iceParameters,
           iceCandidates: transport.iceCandidates,
           dtlsParameters: transport.dtlsParameters,
+          requestId: this.getRequestId(parsedData),
         },
       });
     });
@@ -34,7 +39,7 @@ export class WebRTCHandler {
     await this.handle(user, async () => {
       const { transportId, dtlsParameters } = parsedData.payload;
       await MediasoupManager.getInstance().connectTransport(transportId, dtlsParameters);
-      user.send({ type: "webrtc-transport-connected" });
+      user.send({ type: "webrtc-transport-connected", payload: { requestId: this.getRequestId(parsedData) } });
     });
   }
 
@@ -42,10 +47,14 @@ export class WebRTCHandler {
     await this.handle(user, async () => {
       if (!user.spaceId) return;
       const { transportId, kind, rtpParameters, appData } = parsedData.payload;
-      const producer = await MediasoupManager.getInstance().createProducer(transportId, kind, rtpParameters);
+      const producer = await MediasoupManager.getInstance().createProducer(transportId, kind, rtpParameters, {
+        spaceId: user.spaceId,
+        userId: user.userId,
+        appData,
+      });
       user.send({
         type: "webrtc-produced",
-        payload: { id: producer.id },
+        payload: { id: producer.id, requestId: this.getRequestId(parsedData) },
       });
 
       RoomManager.getInstance().broadcast({
@@ -55,6 +64,28 @@ export class WebRTCHandler {
           userId: user.userId,
           appData,
         }
+      }, user, user.spaceId);
+    });
+  }
+
+  static async handleStopProducer(user: User, parsedData: any) {
+    await this.handle(user, async () => {
+      if (!user.spaceId) return;
+      const producerId = typeof parsedData?.payload?.producerId === "string" ? parsedData.payload.producerId : "";
+      if (!producerId) return;
+
+      const manager = MediasoupManager.getInstance();
+      const meta = manager.producerMeta.get(producerId);
+      if (!meta || meta.spaceId !== user.spaceId || meta.userId !== user.userId) return;
+
+      manager.closeProducer(producerId);
+      RoomManager.getInstance().broadcast({
+        type: "producer-closed",
+        payload: {
+          producerId,
+          userId: user.userId,
+          appData: meta.appData,
+        },
       }, user, user.spaceId);
     });
   }
@@ -71,6 +102,7 @@ export class WebRTCHandler {
           producerId,
           kind: consumer.kind,
           rtpParameters: consumer.rtpParameters,
+          requestId: this.getRequestId(parsedData),
         },
       });
     });

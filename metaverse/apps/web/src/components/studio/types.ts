@@ -23,6 +23,7 @@ export interface AreaType {
   targetRoomId?: string;
   targetX?: number;
   targetY?: number;
+  isDefaultSpawn?: boolean;
   x: number;
   y: number;
   w: number;

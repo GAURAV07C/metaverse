@@ -1,5 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* ── Design Tokens ─────────────────────────── */
 :root {
   --bg-primary:    #060b18;
@@ -56,6 +60,7 @@ body {
   white-space: nowrap;
 }
 .btn:hover { background: var(--accent-hover); transform: translateY(-2px); box-shadow: 0 6px 20px var(--accent-glow); }
+.btn:active { transform: translateY(0); box-shadow: 0 2px 8px var(--accent-glow); }
 .btn:disabled { opacity: 0.55; pointer-events: none; }
 .btn-full { width: 100%; }
 .btn-ghost { background: rgba(255,255,255,0.06); }
@@ -1257,6 +1262,29 @@ kbd {
 .portal-prompt {
   border-color: rgba(168, 85, 247, 0.65);
   box-shadow: 0 12px 26px rgba(88, 28, 135, 0.3);
+  pointer-events: auto;
+}
+
+.portal-prompt span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.portal-prompt button {
+  height: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  padding: 0 12px;
+  background: #fff;
+  color: #312e81;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.portal-prompt button:hover {
+  background: #ede9fe;
 }
 
 .interaction-modal {
@@ -1828,12 +1856,21 @@ kbd {
 .settings-hint { margin: 0; color: #6b625a; font-size: 12px; line-height: 1.45; }
 .settings-toggle { display: flex !important; justify-content: space-between; align-items: center; grid-template-columns: none !important; border: 1px solid #e7dfd4; border-radius: 14px; padding: 14px; }
 .settings-table { border: 1px solid #e6ded3; border-radius: 14px; overflow: hidden; }
-.settings-table div { display: grid; grid-template-columns: 1fr 140px 140px; padding: 14px; border-bottom: 1px solid #eee6db; }
+.settings-table div { display: grid; grid-template-columns: minmax(0, 1fr) 150px 110px; gap: 12px; align-items: center; padding: 14px; border-bottom: 1px solid #eee6db; }
+.settings-table b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-table select { width: 100%; min-width: 0; padding: 8px 10px; border: 1px solid #d9d1c7; border-radius: 10px; background: #fff; }
+.settings-table button { border: 1px solid #ddd4c8; border-radius: 999px; padding: 8px 10px; background: #fff; font-weight: 750; }
+.settings-member-manager { display: grid; gap: 14px; margin-top: 18px; }
+.settings-member-add { display: grid; grid-template-columns: minmax(0, 1fr) 140px auto; gap: 10px; }
+.settings-member-add input, .settings-member-add select { min-width: 0; padding: 12px; border: 1px solid #d9d1c7; border-radius: 12px; background: #fff; }
+.settings-member-add button { border: 0; border-radius: 999px; padding: 0 18px; background: #262626; color: #fff; font-weight: 800; }
+.settings-member-add button:disabled { opacity: .45; cursor: not-allowed; }
 .settings-empty { min-height: 220px; display: grid; place-items: center; align-content: center; gap: 8px; color: #716b64; background: #fbfaf7; border: 1px dashed #ddd4c8; border-radius: 16px; }
 .gather-settings footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 26px; }
 .gather-settings footer button { border: 1px solid #ddd4c8; border-radius: 999px; padding: 11px 15px; background: #fff; font-weight: 750; }
 .gather-settings footer button:last-child { background: #262626; color: #fff; border-color: #262626; }
 @media (max-width: 760px) { .create-office-page, .studio-page, .desk-page { display: block; } .create-left-panel { display: none; } .create-flow-card { width: auto; margin: 18px; } .studio-panel, .desk-panel { height: auto; } .gather-settings { grid-template-columns: 1fr; } .gather-settings aside { display: none; } }
+@media (max-width: 560px) { .settings-member-add, .settings-table div { grid-template-columns: 1fr; } }
 
 .join-page, .create-office-page { display: flex; min-height: 100vh; background: #e7e5df; color: #232323; font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
 
@@ -2321,4 +2358,23 @@ kbd {
   border: 1px solid var(--glass-border);
   border-radius: 8px;
 }
+/* ── Polish ───────────────────────────────────── */
+.chat-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: text-decoration-color 0.2s;
+  word-break: break-all;
+}
+.chat-link:hover {
+  text-decoration-color: var(--accent);
+}
 
+.panel-empty {
+  animation: fadeIn 0.4s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
