@@ -1,9 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Camera, CameraOff, ChevronRight, Mic, MicOff, MonitorDown, Settings, Sparkles, User2 } from 'lucide-react';
+import { Camera, CameraOff, ChevronRight, Mic, MicOff, MonitorDown, Settings, Sparkles } from 'lucide-react';
 import { useUserStore } from '../store';
 import { api } from '../utils/api';
 import { CanvasAvatarPreview } from './CanvasAvatarPreview';
+
+type DevicePrefs = {
+  audioInputId?: string;
+  videoInputId?: string;
+  audioOutputId?: string;
+};
+
+const DEVICE_PREF_KEY = 'metaverse_device_preferences';
+const readDevicePrefs = (): DevicePrefs => {
+  try {
+    return JSON.parse(localStorage.getItem(DEVICE_PREF_KEY) || '{}');
+  } catch {
+    return {};
+  }
+};
 
 export function JoinSpace() {
   const { spaceId } = useParams();
@@ -17,9 +32,16 @@ export function JoinSpace() {
   const [step, setStep] = useState<'devices' | 'welcome'>('devices');
   const [spaceName, setSpaceName] = useState('Office');
   const [deviceMessage, setDeviceMessage] = useState('Camera and microphone are optional. You can join with both off.');
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [devicePrefs, setDevicePrefs] = useState<DevicePrefs>(() => readDevicePrefs());
   
   const [avatars, setAvatars] = useState<any[]>([]);
   const [selectedAvatarId, setSelectedAvatarId] = useState<string | null>(avatarId);
+
+  const normalizeAssetUrl = (url?: string | null) => {
+    if (!url || url.startsWith('class:') || url.startsWith('http') || url.startsWith('/') || url.startsWith('data:')) return url ?? null;
+    return `/${url}`;
+  };
 
   useEffect(() => {
     if (!spaceId) return;
@@ -33,15 +55,26 @@ export function JoinSpace() {
   }, [spaceId, selectedAvatarId]);
 
   useEffect(() => {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    navigator.mediaDevices.enumerateDevices()
+      .then(setDevices)
+      .catch(() => setDeviceMessage('Device list is unavailable until browser permission is granted.'));
+  }, []);
+
+  useEffect(() => {
     async function syncDevices() {
       streamRef.current?.getTracks().forEach(track => track.stop());
       streamRef.current = null;
       if (!camEnabled && !micEnabled) return;
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: camEnabled, audio: micEnabled });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: camEnabled ? { deviceId: devicePrefs.videoInputId ? { exact: devicePrefs.videoInputId } : undefined } : false,
+          audio: micEnabled ? { deviceId: devicePrefs.audioInputId ? { exact: devicePrefs.audioInputId } : undefined } : false,
+        });
         streamRef.current = stream;
         if (videoRef.current && camEnabled) videoRef.current.srcObject = stream;
         setDeviceMessage('Devices connected. You can change them after joining.');
+        navigator.mediaDevices.enumerateDevices().then(setDevices).catch(() => {});
       } catch {
         setCamEnabled(false);
         setMicEnabled(false);
@@ -50,13 +83,20 @@ export function JoinSpace() {
     }
     syncDevices();
     return () => streamRef.current?.getTracks().forEach(track => track.stop());
-  }, [camEnabled, micEnabled]);
+  }, [camEnabled, micEnabled, devicePrefs.audioInputId, devicePrefs.videoInputId]);
+
+  const saveDevicePref = (key: keyof DevicePrefs, value: string) => {
+    const next = { ...devicePrefs, [key]: value || undefined };
+    setDevicePrefs(next);
+    localStorage.setItem(DEVICE_PREF_KEY, JSON.stringify(next));
+  };
 
   const handleJoin = async () => {
     if (selectedAvatarId) {
       try {
         await api.post('/user/metadata', { avatarId: selectedAvatarId });
-        setAvatar(selectedAvatarId);
+        const selectedAvatar = avatars.find(av => av.id === selectedAvatarId);
+        setAvatar(selectedAvatarId, normalizeAssetUrl(selectedAvatar?.imageUrl));
       } catch (e) {
         console.error("Failed to update avatar", e);
       }
@@ -64,6 +104,10 @@ export function JoinSpace() {
     streamRef.current?.getTracks().forEach(track => track.stop());
     navigate(`/space/${spaceId || 'default'}`);
   };
+
+  const audioInputs = devices.filter(device => device.kind === 'audioinput');
+  const videoInputs = devices.filter(device => device.kind === 'videoinput');
+  const audioOutputs = devices.filter(device => device.kind === 'audiooutput');
 
   return <div className="join-page">
     <aside className="join-left-panel">
@@ -86,13 +130,33 @@ export function JoinSpace() {
             <div className="ready-badge"><Sparkles size={24} /></div>
             <h1>Ready to join?</h1>
             <p>Check your camera and microphone before entering {spaceName}.</p>
+            <div className="join-device-selectors">
+              <label htmlFor="join-audio-input">Microphone
+                <select id="join-audio-input" name="joinAudioInput" value={devicePrefs.audioInputId || ''} onChange={e => saveDevicePref('audioInputId', e.target.value)}>
+                  <option value="">System default microphone</option>
+                  {audioInputs.map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `Microphone ${index + 1}`}</option>)}
+                </select>
+              </label>
+              <label htmlFor="join-video-input">Camera
+                <select id="join-video-input" name="joinVideoInput" value={devicePrefs.videoInputId || ''} onChange={e => saveDevicePref('videoInputId', e.target.value)}>
+                  <option value="">System default camera</option>
+                  {videoInputs.map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `Camera ${index + 1}`}</option>)}
+                </select>
+              </label>
+              <label htmlFor="join-audio-output">Speaker
+                <select id="join-audio-output" name="joinAudioOutput" value={devicePrefs.audioOutputId || ''} onChange={e => saveDevicePref('audioOutputId', e.target.value)}>
+                  <option value="">System default speaker</option>
+                  {audioOutputs.map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `Speaker ${index + 1}`}</option>)}
+                </select>
+              </label>
+            </div>
             <button className="primary-next" onClick={() => setStep('welcome')}>Next <ChevronRight size={18} /></button>
           </div>
         </> : <>
           <div className="join-right-col" style={{ gridColumn: '1 / -1', maxWidth: '500px', margin: '0 auto' }}>
             <h1>Welcome to {spaceName}</h1>
-            <label className="join-label">Display name
-              <input className="join-input" value={name} onChange={e => setName(e.target.value)} placeholder="Enter your name" />
+            <label className="join-label" htmlFor="join-display-name">Display name
+              <input id="join-display-name" name="joinDisplayName" className="join-input" value={name} onChange={e => setName(e.target.value)} placeholder="Enter your name" />
             </label>
             
             <label className="join-label" style={{ marginTop: '1.5rem' }}>Select Avatar</label>

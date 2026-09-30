@@ -1,12 +1,18 @@
 export const WS_URL = (import.meta as any).env?.VITE_APP_WS_URL ?? 'ws://localhost:3001';
 
 export type WsIncomingMessage =
-  | { type: 'space-joined'; payload: { spawn: { x: number; y: number }; userId: string; username?: string; avatarUrl?: string; users: { id: string; userId?: string; username?: string; avatarUrl?: string; x: number; y: number }[] } }
-  | { type: 'user-joined'; payload: { userId: string; username?: string; avatarUrl?: string; x: number; y: number } }
+  | { type: 'space-joined'; payload: { spawn: { x: number; y: number }; userId: string; username?: string; avatarUrl?: string; users: { id: string; userId?: string; username?: string; avatarUrl?: string; status?: 'available' | 'busy' | 'focus' | 'away'; x: number; y: number }[] } }
+  | { type: 'user-joined'; payload: { userId: string; username?: string; avatarUrl?: string; status?: 'available' | 'busy' | 'focus' | 'away'; x: number; y: number } }
   | { type: 'user-left'; payload: { userId: string } }
   | { type: 'movement'; payload: { userId: string; x: number; y: number } }
-  | { type: 'movement-rejected'; payload: { x: number; y: number } }
-  | { type: 'chat-receive'; payload: { userId?: string; username?: string; message: string; timestamp: string } }
+  | { type: 'movement-rejected'; payload: { x: number; y: number; reason?: 'blocked' | 'spot-occupied' | 'room-full' | 'too-far' | 'not-in-space' } }
+  | { type: 'chat-receive'; payload: { userId?: string; username?: string; message: string; timestamp: string; scope?: 'everyone' | 'nearby' | 'dm' | 'room'; targetUserId?: string; targetUsername?: string } }
+  | { type: 'room-invite-receive'; payload: { inviteId?: string; fromUserId?: string; fromUsername?: string; roomId: string; roomName?: string; roomUrl?: string; timestamp: string } }
+  | { type: 'room-invite-response'; payload: { inviteId?: string; fromUserId?: string; fromUsername?: string; roomId: string; roomName?: string; response: 'accepted' | 'declined'; timestamp: string } }
+  | { type: 'moderation-request'; payload: { action: 'mute-audio' | 'stop-video' | 'stop-screen'; fromUserId?: string; fromUsername?: string; timestamp: string } }
+  | { type: 'moderation-response'; payload: { action: 'mute-audio' | 'stop-video' | 'stop-screen'; targetUserId?: string; targetUsername?: string; accepted: boolean; timestamp: string } }
+  | { type: 'reaction-receive'; payload: { userId: string; username?: string; emoji: string; timestamp: string } }
+  | { type: 'status-update'; payload: { userId: string; username?: string; status: 'available' | 'busy' | 'focus' | 'away'; timestamp: string } }
   | { type: 'proximity-entered'; payload: { userId: string } }
   | { type: 'proximity-left'; payload: { userId: string } }
   | { type: 'webrtc-router-rtp-capabilities'; payload: { rtpCapabilities: any } }
@@ -22,6 +28,9 @@ export class WsClient {
   private listeners: ((msg: WsIncomingMessage) => void)[] = [];
   private token: string;
   private spaceId: string;
+  private shouldReconnect = true;
+  private reconnectTimer: number | null = null;
+  private reconnectAttempts = 0;
 
   constructor(spaceId: string, token: string) {
     this.spaceId = spaceId;
@@ -29,9 +38,17 @@ export class WsClient {
   }
 
   connect() {
+    this.shouldReconnect = true;
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
+    if (this.reconnectTimer) {
+      window.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
     this.ws = new WebSocket(WS_URL);
 
     this.ws.onopen = () => {
+      this.reconnectAttempts = 0;
       this.send({ type: 'join', payload: { spaceId: this.spaceId, token: this.token } });
     };
 
@@ -42,8 +59,17 @@ export class WsClient {
       } catch {}
     };
 
-    this.ws.onerror = (err) => console.error('WS error', err);
-    this.ws.onclose = () => console.log('WS disconnected');
+    this.ws.onerror = (err) => {
+      if (this.shouldReconnect) console.error('WS error', err);
+    };
+    this.ws.onclose = () => {
+      console.log('WS disconnected');
+      this.ws = null;
+      if (!this.shouldReconnect) return;
+      const delay = Math.min(5000, 500 * Math.pow(1.6, this.reconnectAttempts));
+      this.reconnectAttempts += 1;
+      this.reconnectTimer = window.setTimeout(() => this.connect(), delay);
+    };
   }
 
   send(data: object) {
@@ -56,8 +82,36 @@ export class WsClient {
     this.send({ type: 'move', payload: { x, y } });
   }
 
-  sendChat(message: string) {
-    this.send({ type: 'chat-message', payload: { message } });
+  teleport(x: number, y: number) {
+    this.send({ type: 'teleport', payload: { x, y } });
+  }
+
+  sendChat(message: string, meta?: { scope?: 'everyone' | 'nearby' | 'dm' | 'room'; targetUserId?: string; targetUsername?: string }) {
+    this.send({ type: 'chat-message', payload: { message, ...meta } });
+  }
+
+  sendRoomInvite(targetUserId: string, room: { id: string; name?: string; url?: string }) {
+    this.send({ type: 'room-invite-send', payload: { targetUserId, roomId: room.id, roomName: room.name, roomUrl: room.url } });
+  }
+
+  respondToRoomInvite(invite: { inviteId?: string; targetUserId?: string; roomId: string; roomName?: string; response: 'accepted' | 'declined' }) {
+    this.send({ type: 'room-invite-respond', payload: invite });
+  }
+
+  sendModerationRequest(targetUserId: string, action: 'mute-audio' | 'stop-video' | 'stop-screen') {
+    this.send({ type: 'moderation-request', payload: { targetUserId, action } });
+  }
+
+  sendModerationResponse(action: 'mute-audio' | 'stop-video' | 'stop-screen', accepted: boolean, requesterId?: string) {
+    this.send({ type: 'moderation-response', payload: { action, accepted, requesterId } });
+  }
+
+  sendReaction(emoji: string) {
+    this.send({ type: 'reaction-send', payload: { emoji } });
+  }
+
+  setStatus(status: 'available' | 'busy' | 'focus' | 'away') {
+    this.send({ type: 'status-set', payload: { status } });
   }
 
   onMessage(cb: (msg: WsIncomingMessage) => void) {
@@ -68,7 +122,22 @@ export class WsClient {
   }
 
   disconnect() {
-    this.ws?.close();
+    this.shouldReconnect = false;
+    if (this.reconnectTimer) {
+      window.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.ws) {
+      const socket = this.ws;
+      socket.onerror = null;
+      socket.onmessage = null;
+      socket.onclose = null;
+      if (socket.readyState === WebSocket.CONNECTING) {
+        socket.onopen = () => socket.close();
+      } else {
+        socket.close();
+      }
+    }
     this.ws = null;
   }
 }

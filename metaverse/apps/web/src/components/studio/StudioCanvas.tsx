@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { ZoomIn, ZoomOut } from 'lucide-react';
 import type { Prefab } from './types';
 import type { SpaceElement } from '../arena/ElementsPanel';
 import { StudioElement } from './StudioElement';
@@ -19,14 +19,11 @@ interface Props {
   setSelectedElId: (id: string | null) => void;
   setStatus: (s: string) => void;
   onExit: () => void;
-  onFitToContent?: (zoom: number, pan: { x: number; y: number }) => void;
 }
 
 const TILE = 32;
-const ZOOM_MIN = 0.15;  // Can see very large maps fully
-const ZOOM_MAX = 4.0;   // Detailed editing zoom
 
-export function StudioCanvas({ tool, availableElements, elements, setElements, areas = [], setAreas, dimensions, selectedElId, setSelectedElId, setStatus, onExit, onFitToContent }: Props) {
+export function StudioCanvas({ tool, availableElements, elements, setElements, areas = [], setAreas, dimensions, selectedElId, setSelectedElId, setStatus, onExit }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Pan
@@ -36,58 +33,7 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
 
   // Zoom
   const [zoom, setZoom] = useState(1);
-
-  // ── Fit all content to view ──────────────────────────────
-  const fitToContent = useCallback(() => {
-    if (!containerRef.current) return;
-    const container = containerRef.current;
-    const viewW = container.clientWidth;
-    const viewH = container.clientHeight;
-
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    elements.forEach(el => {
-      const w = el.element?.width || 1;
-      const h = el.element?.height || 1;
-      minX = Math.min(minX, el.x); minY = Math.min(minY, el.y);
-      maxX = Math.max(maxX, el.x + w); maxY = Math.max(maxY, el.y + h);
-    });
-    areas.forEach(a => {
-      minX = Math.min(minX, a.x); minY = Math.min(minY, a.y);
-      maxX = Math.max(maxX, a.x + a.w); maxY = Math.max(maxY, a.y + a.h);
-    });
-
-    // If no content, fit whole map
-    if (!isFinite(minX)) {
-      minX = 0; minY = 0; maxX = dimensions.w; maxY = dimensions.h;
-    }
-
-    const contentWPx = (maxX - minX) * TILE;
-    const contentHPx = (maxY - minY) * TILE;
-    const PADDING = 0.85;
-    const newZoom = Math.max(0.2, Math.min(2, Math.min(
-      (viewW * PADDING) / Math.max(contentWPx, 1),
-      (viewH * PADDING) / Math.max(contentHPx, 1)
-    )));
-
-    const centerX = (minX + maxX) / 2 * TILE * newZoom;
-    const centerY = (minY + maxY) / 2 * TILE * newZoom;
-    const newPan = {
-      x: viewW / 2 - centerX,
-      y: viewH / 2 - centerY,
-    };
-    setZoom(newZoom);
-    setPan(newPan);
-    onFitToContent?.(newZoom, newPan);
-  }, [elements, areas, dimensions, onFitToContent]);
-
-  // Auto fit on first load when elements or areas arrive
-  const hasAutoFitted = useRef(false);
-  useEffect(() => {
-    if (hasAutoFitted.current) return;
-    if (elements.length === 0 && areas.length === 0) return;
-    fitToContent();
-    hasAutoFitted.current = true;
-  }, [elements, areas, fitToContent]);
+  const hasFitContent = useRef(false);
 
   // Drag preview state
   const [dragHoverPos, setDragHoverPos] = useState<{ x: number, y: number, occupied: boolean } | null>(null);
@@ -142,7 +88,7 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
 
       const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
       setZoom(prevZoom => {
-        const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, prevZoom * zoomFactor));
+        const newZoom = Math.max(0.2, Math.min(3, prevZoom * zoomFactor));
         if (newZoom !== prevZoom) {
           const logicalX = (mouseX - pan.x) / prevZoom;
           const logicalY = (mouseY - pan.y) / prevZoom;
@@ -161,6 +107,48 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
 
   const [pendingRoom, setPendingRoom] = useState<{ x: number, y: number, prefab: Prefab } | null>(null);
   const [roomConfig, setRoomConfig] = useState({ people: 4, floor: '#f3f4f6', wall: '#64748b', tint: '' });
+
+  useEffect(() => {
+    if (hasFitContent.current || !containerRef.current) return;
+    if (elements.length === 0 && areas.length === 0) return;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    elements.forEach((el) => {
+      const w = el.element.width || 1;
+      const h = el.element.height || 1;
+      minX = Math.min(minX, el.x);
+      minY = Math.min(minY, el.y);
+      maxX = Math.max(maxX, el.x + w);
+      maxY = Math.max(maxY, el.y + h);
+    });
+
+    areas.forEach((area) => {
+      minX = Math.min(minX, area.x);
+      minY = Math.min(minY, area.y);
+      maxX = Math.max(maxX, area.x + area.w);
+      maxY = Math.max(maxY, area.y + area.h);
+    });
+
+    if (!Number.isFinite(minX) || !Number.isFinite(minY)) return;
+
+    const rect = containerRef.current.getBoundingClientRect();
+    const contentW = Math.max(1, (maxX - minX) * TILE);
+    const contentH = Math.max(1, (maxY - minY) * TILE);
+    const nextZoom = Math.max(0.35, Math.min(1.25, Math.min((rect.width * 0.82) / contentW, (rect.height * 0.82) / contentH)));
+    const contentCenterX = ((minX + maxX) / 2) * TILE;
+    const contentCenterY = ((minY + maxY) / 2) * TILE;
+
+    setZoom(nextZoom);
+    setPan({
+      x: rect.width / 2 - contentCenterX * nextZoom,
+      y: rect.height / 2 - contentCenterY * nextZoom,
+    });
+    hasFitContent.current = true;
+  }, [elements, areas]);
 
   // --- Place from sidebar drop ---
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
@@ -282,6 +270,7 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
     
     const { x, y, prefab } = pendingRoom;
     const newEls: SpaceElement[] = [];
+    const newAreas: AreaType[] = [];
     const baseId = `room-${Date.now()}`;
     
     // Calculate dynamic size based on people
@@ -294,23 +283,18 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
       height += Math.floor((roomConfig.people - 4) / 2);
     }
     
-    if (setAreas) {
-      setAreas(prev => [
-        ...prev,
-        {
-          id: `room-area-${Date.now()}`,
-          name: `${prefab.title} (${roomConfig.people} pax)`,
-          type: 'private',
-          floor: roomConfig.floor || '#ffffff',
-          color: roomConfig.wall || '#9ca3af',
-          texture: 'solid',
-          x,
-          y,
-          w: width,
-          h: height
-        }
-      ]);
-    }
+    newAreas.push({
+      id: `room-area-${Date.now()}`,
+      name: `${prefab.title} (${roomConfig.people} pax)`,
+      type: 'room',
+      floor: roomConfig.floor || '#ffffff',
+      color: roomConfig.wall || '#9ca3af',
+      texture: 'solid',
+      x,
+      y,
+      w: width,
+      h: height
+    });
     // Pick some default table and chair for the room
     const tables = availableElements.filter(e => e.area === 'Tables');
     const chairs = availableElements.filter(e => e.area === 'Seating');
@@ -351,12 +335,26 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
             id: defaultChair.kind, width: 1, height: 1, imageUrl: defaultChair.thumb || '', static: true, name: defaultChair.title, category: defaultChair.area
           }
         });
+
+        newAreas.push({
+          id: `${baseId}-spot-${i}`,
+          name: `Spot ${i + 1}`,
+          type: 'seat',
+          floor: 'rgba(249, 115, 22, 0.3)',
+          color: '#f97316',
+          texture: 'solid',
+          x: cx,
+          y: cy,
+          w: 1,
+          h: 1
+        });
       }
     }
     
     setElements(prev => [...prev, ...newEls]);
+    if (setAreas) setAreas(prev => [...prev, ...newAreas]);
     setSelectedElId(null);
-    setStatus(`${prefab.title} generated as a Private Area!`);
+    setStatus(`${prefab.title} generated as an audio room! Add spots inside it for seating.`);
     setPendingRoom(null);
   };
 
@@ -391,7 +389,7 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
       return;
     }
 
-    if (e.button === 0 && (tool === 'area' || tool === 'room' || tool === 'seat')) {
+    if (e.button === 0 && (tool === 'area' || tool === 'room' || tool === 'seat' || tool === 'spawn' || tool === 'portal' || tool === 'spotlight')) {
       const { x, y } = screenToGrid(e.clientX, e.clientY);
       setDrawingArea({ startX: x, startY: y, curX: x, curY: y });
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
@@ -440,7 +438,7 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
         const newRoomArea: AreaType = {
           id: `room-area-${Date.now()}`,
           name: 'New Room',
-          type: 'private',
+          type: 'room',
           floor: '#ffffff',
           color: '#9ca3af', // Gray color to signify walls
           texture: 'solid',
@@ -452,11 +450,11 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
         setAreas(prev => [...prev, newRoomArea]);
         setSelectedAreaId(newRoomArea.id);
         setSelectedElId(null);
-        setStatus("Room created! Give it a name.");
+        setStatus("Room created! Add spots inside it for seats.");
       } else if (tool === 'seat' && setAreas) {
         const newSeatArea: AreaType = {
           id: `seat-area-${Date.now()}`,
-          name: 'Seat',
+          name: 'Spot',
           type: 'seat',
           floor: 'rgba(249, 115, 22, 0.3)',
           color: '#f97316',
@@ -469,7 +467,29 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
         setAreas(prev => [...prev, newSeatArea]);
         setSelectedAreaId(newSeatArea.id);
         setSelectedElId(null);
-        setStatus("Seat Area created!");
+        setStatus("Room spot created!");
+      } else if ((tool === 'spawn' || tool === 'portal' || tool === 'spotlight') && setAreas) {
+        const effectMeta = {
+          spawn: { name: 'Spawn Point', floor: 'rgba(34, 197, 94, 0.28)', color: '#22c55e', status: 'Spawn point created!' },
+          portal: { name: 'Portal', floor: 'rgba(168, 85, 247, 0.28)', color: '#a855f7', status: 'Portal created! Add another portal to connect them.' },
+          spotlight: { name: 'Spotlight', floor: 'rgba(250, 204, 21, 0.28)', color: '#facc15', status: 'Spotlight area created!' },
+        }[tool as 'spawn' | 'portal' | 'spotlight'];
+        const newEffectArea: AreaType = {
+          id: `${tool}-area-${Date.now()}`,
+          name: effectMeta.name,
+          type: tool as 'spawn' | 'portal' | 'spotlight',
+          floor: effectMeta.floor,
+          color: effectMeta.color,
+          texture: 'solid',
+          x: minX,
+          y: minY,
+          w,
+          h
+        };
+        setAreas(prev => [...prev, newEffectArea]);
+        setSelectedAreaId(newEffectArea.id);
+        setSelectedElId(null);
+        setStatus(effectMeta.status);
       }
       
       setDrawingArea(null);
@@ -847,6 +867,8 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
           <StudioArea
             key={area.id}
             area={area}
+            allAreas={areas}
+            dimensions={dimensions}
             isSelected={selectedAreaId === area.id}
             onSelect={() => {
               setSelectedAreaId(area.id);
@@ -957,21 +979,14 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
         position: 'absolute', bottom: 80, right: 24, display: 'flex', flexDirection: 'column',
         background: '#fff', borderRadius: 8, border: '1px solid #e5e5e5', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', zIndex: 10, overflow: 'hidden',
       }}>
-        <button onClick={() => setZoom(z => Math.min(ZOOM_MAX, z + 0.2))} style={{ border: 'none', background: 'transparent', padding: '8px 10px', cursor: 'pointer', color: '#374151', borderBottom: '1px solid #f3f4f6' }}>
+        <button onClick={() => setZoom(z => Math.min(3, z + 0.2))} style={{ border: 'none', background: 'transparent', padding: '8px 10px', cursor: 'pointer', color: '#374151', borderBottom: '1px solid #f3f4f6' }}>
           <ZoomIn size={16} />
         </button>
         <button onClick={() => setZoom(1)} style={{ border: 'none', background: 'transparent', padding: '4px 10px', cursor: 'pointer', color: '#6b7280', fontSize: 10, fontWeight: 700, borderBottom: '1px solid #f3f4f6' }}>
           {Math.round(zoom * 100)}%
         </button>
-        <button onClick={() => setZoom(z => Math.max(ZOOM_MIN, z - 0.2))} style={{ border: 'none', background: 'transparent', padding: '8px 10px', cursor: 'pointer', color: '#374151', borderBottom: '1px solid #f3f4f6' }}>
+        <button onClick={() => setZoom(z => Math.max(0.2, z - 0.2))} style={{ border: 'none', background: 'transparent', padding: '8px 10px', cursor: 'pointer', color: '#374151' }}>
           <ZoomOut size={16} />
-        </button>
-        <button
-          onClick={fitToContent}
-          title="Fit all content to view"
-          style={{ border: 'none', background: 'transparent', padding: '8px 10px', cursor: 'pointer', color: '#6366f1' }}
-        >
-          <Maximize2 size={16} />
         </button>
       </div>
 

@@ -51,6 +51,8 @@ model Space {
   deskAssignments DeskAssignment[]
   studioDraft  SpaceDraft?
   smartObjects  SmartObject[]
+  roomInviteEvents RoomInviteEvent[]
+  moderationAuditEvents ModerationAuditEvent[]
 
   @@index([creatorId])
 }
@@ -291,4 +293,42 @@ model SmartObject {
 
   @@index([spaceId])
   @@index([type])
+}
+
+model RoomInviteEvent {
+  id           String   @id @default(cuid())
+  spaceId      String
+  space        Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  inviteId     String?
+  direction    String
+  status       String
+  fromUserId   String?
+  fromUsername String?
+  toUserId     String?
+  toUsername   String?
+  roomId       String
+  roomName     String
+  createdAt    DateTime @default(now())
+
+  @@index([spaceId, createdAt])
+  @@index([inviteId])
+  @@index([fromUserId])
+  @@index([toUserId])
+}
+
+model ModerationAuditEvent {
+  id             String   @id @default(cuid())
+  spaceId        String
+  space          Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  action         String
+  status         String
+  actorUserId    String?
+  actorUsername  String?
+  targetUserId   String?
+  targetUsername String?
+  createdAt      DateTime @default(now())
+
+  @@index([spaceId, createdAt])
+  @@index([actorUserId])
+  @@index([targetUserId])
 }

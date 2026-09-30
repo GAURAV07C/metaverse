@@ -16,6 +16,14 @@ function parseDimensions(dimensions: string) {
   return { width, height };
 }
 
+function getSpaceRole(space: { creatorId: string }, userId: string) {
+  return space.creatorId === userId ? "Owner" : "Guest";
+}
+
+function canEditSpace(space: { creatorId: string }, userId: string) {
+  return getSpaceRole(space, userId) === "Owner";
+}
+
 spaceRouter.post("/", userMiddleware, async (req, res) => {
   const parsedData = CreateSpaceSchema.safeParse(req.body);
   if (!parsedData.success) {
@@ -149,7 +157,7 @@ spaceRouter.put("/:spaceId", userMiddleware, async (req, res) => {
     return res.status(400).json({ message: "space not found" });
   }
 
-  if (space.creatorId !== req.userId) {
+  if (!canEditSpace(space, req.userId!)) {
     return res.status(403).json({ message: "Unauthorized" });
   }
 
@@ -216,7 +224,7 @@ spaceRouter.delete("/:spaceId", userMiddleware, async (req, res) => {
     });
   }
 
-  if (space.creatorId !== req.userId) {
+  if (!canEditSpace(space, req.userId!)) {
     return res.status(403).json({ message: "Unauthorized" });
   }
 
@@ -281,7 +289,7 @@ spaceRouter.post("/element", userMiddleware, async (req, res) => {
     return res.status(400).json({ message: "Space not found" });
   }
 
-  if (space.creatorId !== req.userId) {
+  if (!canEditSpace(space, req.userId!)) {
     return res.status(403).json({ message: "Unauthorized" });
   }
 
@@ -334,6 +342,7 @@ spaceRouter.get("/:spaceId", userMiddleware, async (req, res) => {
                 }
             },
             privateZones: true,
+            studioDraft: true,
         }
     })
 
@@ -343,12 +352,34 @@ spaceRouter.get("/:spaceId", userMiddleware, async (req, res) => {
         return ;
     }
 
+    const draftData = space.studioDraft?.data as any;
+    const draftAreas: any[] = Array.isArray(draftData?.areas) ? draftData.areas : [];
+    const draftAreaById = new Map<string, any>(draftAreas.filter((area: any) => area?.id).map((area: any) => [area.id, area]));
+    const draftAreaByBounds = new Map<string, any>(draftAreas.map((area: any) => [
+        `${area.type === 'private' ? 'room' : (area.type || 'public')}:${area.x}:${area.y}:${area.x + area.w}:${area.y + area.h}`,
+        area
+    ]));
+    const privateZones = space.privateZones.map((zone: any) => {
+        const draftArea = draftAreaById.get(zone.id) || draftAreaByBounds.get(`${zone.type}:${zone.startX}:${zone.startY}:${zone.endX}:${zone.endY}`);
+        if (!draftArea) return zone;
+        return {
+            ...zone,
+            targetUrl: draftArea.targetUrl || null,
+            targetSpaceId: draftArea.targetSpaceId || null,
+            targetRoomId: draftArea.targetRoomId || null,
+            targetX: Number.isInteger(draftArea.targetX) ? draftArea.targetX : null,
+            targetY: Number.isInteger(draftArea.targetY) ? draftArea.targetY : null,
+        };
+    });
+
     res.json({
         id: space.id,
         name: space.name,
         thumbnail: space.thumbnail,
         dimensions: `${space.width}x${space.height}`,
         ownerId: space.creatorId,
+        currentUserRole: getSpaceRole(space, req.userId!),
+        canEdit: canEditSpace(space, req.userId!),
         elements: space.elements.map((e: any) => {
             const customData = typeof e.customData === 'string' ? JSON.parse(e.customData) : (e.customData || {});
             return {
@@ -365,12 +396,12 @@ spaceRouter.get("/:spaceId", userMiddleware, async (req, res) => {
                     floor: customData.floor ?? null,
                     wall: customData.wall ?? null,
                     color: customData.color ?? null,
-                    interactiveObjects: e.element.interactiveObjects,
+                    interactiveObjects: customData.interactiveObjects ?? e.element.interactiveObjects,
                 },
                 x: e.x,
                 y: e.y,
             };
         }),
-        privateZones: space.privateZones,
+        privateZones,
     });
 });

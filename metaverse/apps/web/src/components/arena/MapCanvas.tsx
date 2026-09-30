@@ -5,13 +5,14 @@ import type { SpaceElement } from './ElementsPanel';
 import { findPath } from '../../utils/pathfinding';
 import { drawDynamicAvatar } from '../../utils/drawAvatar';
 
-const TILE = 28;
-const ZOOM_MIN = 0.4;   // Overview of whole map
-const ZOOM_MAX = 2.5;   // Close-up on avatar
+const TILE = 32;
+const ZOOM_MIN = 0.35;
+const ZOOM_MAX = 3.0;
 
 export interface PrivateZone {
   id: string;
   name: string;
+  type?: 'public' | 'room' | 'seat' | 'private' | 'spawn' | 'portal' | 'spotlight';
   startX: number;
   startY: number;
   endX: number;
@@ -24,6 +25,7 @@ interface MapCanvasProps {
   dimensions: { w: number; h: number };
   myPos: { x: number; y: number };
   otherUsers: OtherUser[];
+  proximityUsers?: string[];
   elements: SpaceElement[];
   hiddenElementIds?: string[];
   privateZones?: PrivateZone[];
@@ -35,10 +37,13 @@ interface MapCanvasProps {
   handleLocateUser: () => void;
   panOffset: { x: number; y: number };
   setPanOffset: React.Dispatch<React.SetStateAction<{ x: number; y: number }>>;
+  myUsername?: string | null;
   onDropElement?: (elementId: string, x: number, y: number) => void;
   addingElement?: string | null;
   builderMode?: 'pointer' | 'brush' | 'eraser';
   onRemoveElement?: (id: string) => void;
+  reactions?: Record<string, { emoji: string; expiresAt: number }>;
+  onSelectUser?: (userId: string) => void;
 }
 
 export const MapCanvas: React.FC<MapCanvasProps> = ({
@@ -47,6 +52,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   dimensions,
   myPos,
   otherUsers,
+  proximityUsers = [],
   elements,
   hiddenElementIds = [],
   privateZones = [],
@@ -58,10 +64,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   handleLocateUser,
   panOffset,
   setPanOffset,
+  myUsername,
   onDropElement,
   addingElement,
   builderMode = 'pointer',
   onRemoveElement,
+  reactions = {},
+  onSelectUser,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -70,6 +79,11 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
   const imageCacheRef = useRef<Record<string, HTMLImageElement>>({});
   const userAnimStateRef = useRef<Record<string, { lastX: number; lastY: number; facing: 'down' | 'up' | 'left' | 'right'; step: number; isMoving: boolean }>>({});
   const [renderTrigger, setRenderTrigger] = useState(0);
+
+  const normalizeAssetUrl = (url: string) => {
+    if (url.startsWith('class:') || url.startsWith('http') || url.startsWith('/') || url.startsWith('data:')) return url;
+    return `/${url}`;
+  };
 
   // Handle window resize
   useEffect(() => {
@@ -192,6 +206,16 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     if (gridX < 0 || gridY < 0 || gridX >= dimensions.w || gridY >= dimensions.h) return;
 
+    const clickedUser = otherUsers.find((user) => {
+      const px = user.x * TILE + TILE / 2;
+      const py = user.y * TILE + TILE / 2 - 4;
+      return Math.hypot(worldX - px, worldY - py) <= 22;
+    });
+    if (clickedUser) {
+      onSelectUser?.(clickedUser.userId);
+      return;
+    }
+
     if (builderMode === 'brush' || builderMode === 'eraser') {
       return; // Handled by mouseDown/mouseMove
     }
@@ -235,14 +259,8 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
     const viewW = wrapper.clientWidth;
     const viewH = wrapper.clientHeight;
-    
-    // High DPI scaling for sharp rendering
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = viewW * dpr;
-    canvas.height = viewH * dpr;
-    ctx.scale(dpr, dpr);
-    canvas.style.width = `${viewW}px`;
-    canvas.style.height = `${viewH}px`;
+    canvas.width = viewW;
+    canvas.height = viewH;
 
     const worldW = dimensions.w * TILE;
     const worldH = dimensions.h * TILE;
@@ -257,24 +275,18 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     let camX = playerPx - (viewW / activeZoom) / 2 + panOffset.x;
     let camY = playerPy - (viewH / activeZoom) / 2 + panOffset.y;
 
-    // Handle camera bounds: if map is smaller than screen when zoomed out, center it!
+    // Handle camera bounds. Keep a little free pan even when the whole map fits
+    // so drag does not feel broken in overview mode.
     const visibleWorldW = viewW / activeZoom;
     const visibleWorldH = viewH / activeZoom;
+    const padding = Math.max(TILE * 3, Math.min(visibleWorldW, visibleWorldH) * 0.18);
+    const minCamX = worldW <= visibleWorldW ? -(visibleWorldW - worldW) / 2 - padding : -padding;
+    const maxCamX = worldW <= visibleWorldW ? -(visibleWorldW - worldW) / 2 + padding : worldW - visibleWorldW + padding;
+    const minCamY = worldH <= visibleWorldH ? -(visibleWorldH - worldH) / 2 - padding : -padding;
+    const maxCamY = worldH <= visibleWorldH ? -(visibleWorldH - worldH) / 2 + padding : worldH - visibleWorldH + padding;
 
-    // Add some padding so the user can pan slightly past the edges
-    const padding = TILE * 3;
-
-    if (worldW <= visibleWorldW) {
-      camX = -(visibleWorldW - worldW) / 2;
-    } else {
-      camX = Math.max(-padding, Math.min(camX, worldW - visibleWorldW + padding));
-    }
-
-    if (worldH <= visibleWorldH) {
-      camY = -(visibleWorldH - worldH) / 2;
-    } else {
-      camY = Math.max(-padding, Math.min(camY, worldH - visibleWorldH + padding));
-    }
+    camX = Math.max(minCamX, Math.min(camX, maxCamX));
+    camY = Math.max(minCamY, Math.min(camY, maxCamY));
 
     // Save current camera transform parameters for mouse click calculations
     currentCamRef.current = { camX, camY, zoom: activeZoom };
@@ -304,7 +316,9 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
     }
 
-    // Render Areas / Private Zones
+    const isRoomZone = (zone: any) => zone.type === 'room' || zone.type === 'private';
+
+    // Render public areas, audio rooms, and room spots
     privateZones.forEach((zone: any) => {
       const zx = zone.startX * TILE;
       const zy = zone.startY * TILE;
@@ -322,17 +336,30 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
       ctx.fillRect(zx, zy, zw, zh);
 
-      // Draw Area Border to perfectly match StudioArea (2px dashed by default)
-      ctx.strokeStyle = isInside ? '#2563eb' : (zone.color || 'rgba(59, 130, 246, 0.5)');
-      ctx.lineWidth = isInside ? 4 : 2;
-      
-      // StudioArea uses dashed by default when not selected, regardless of texture
-      if (zone.texture === 'solid') {
-        ctx.setLineDash([]);
-      } else if (zone.texture === 'dotted') {
-        ctx.setLineDash([3, 6]);
+      if (isRoomZone(zone)) {
+        ctx.strokeStyle = isInside ? '#22c55e' : (zone.color || '#16a34a');
+        ctx.lineWidth = isInside ? 4 : 2;
+        ctx.setLineDash([10, 6]);
+      } else if (zone.type === 'seat') {
+        ctx.strokeStyle = isInside ? '#f97316' : (zone.color || '#f97316');
+        ctx.lineWidth = isInside ? 3 : 2;
+        ctx.setLineDash([4, 4]);
+      } else if (zone.type === 'spawn') {
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = isInside ? 4 : 2;
+        ctx.setLineDash([2, 5]);
+      } else if (zone.type === 'portal') {
+        ctx.strokeStyle = '#a855f7';
+        ctx.lineWidth = isInside ? 4 : 2;
+        ctx.setLineDash([8, 4, 2, 4]);
+      } else if (zone.type === 'spotlight') {
+        ctx.strokeStyle = '#facc15';
+        ctx.lineWidth = isInside ? 4 : 2;
+        ctx.setLineDash([12, 5]);
       } else {
-        ctx.setLineDash([8, 8]); // Default dashed to match StudioArea
+        ctx.strokeStyle = isInside ? '#2563eb' : (zone.color || 'rgba(59, 130, 246, 0.5)');
+        ctx.lineWidth = isInside ? 3 : 2;
+        ctx.setLineDash([8, 8]);
       }
       
       ctx.strokeRect(zx, zy, zw, zh);
@@ -356,6 +383,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             labelText = occupants[0].username || "Occupied";
           }
         }
+
+        if (zone.type === 'spawn' && !labelText) labelText = 'Spawn';
+        if (zone.type === 'portal' && !labelText) labelText = 'Portal';
+        if (zone.type === 'spotlight' && !labelText) labelText = 'Spotlight';
 
         if (labelText) {
           // Solid background for text readability
@@ -397,6 +428,50 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     // Draw Objects & Walls sorted by Y coordinate for depth
     const objects = visibleElements.filter(el => !isFloorElement(el)).sort((a, b) => a.y - b.y);
 
+    const isInteractiveElement = (el: SpaceElement) => {
+      const text = `${el.element.id} ${el.element.name ?? ''} ${el.element.category ?? ''}`.toLowerCase();
+      return Boolean(el.element.interactiveObjects?.length) ||
+        text.includes('whiteboard') ||
+        text.includes('screen') ||
+        text.includes('terminal') ||
+        text.includes('arcade') ||
+        text.includes('game') ||
+        text.includes('interactive') ||
+        text.includes('smart');
+    };
+
+    const drawInteractiveBadge = (el: SpaceElement) => {
+      if (!isInteractiveElement(el)) return;
+      const px = el.x * TILE;
+      const py = el.y * TILE;
+      const w = el.element.width * TILE;
+      const cx = el.x + (el.element.width || 1) / 2;
+      const cy = el.y + (el.element.height || 1) / 2;
+      const nearby = Math.hypot(cx - myPos.x, cy - myPos.y) <= 2.25;
+
+      ctx.save();
+      if (nearby) {
+        ctx.strokeStyle = '#facc15';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+        ctx.shadowColor = 'rgba(250, 204, 21, 0.55)';
+        ctx.shadowBlur = 10;
+        ctx.strokeRect(px + 2, py + 2, el.element.width * TILE - 4, el.element.height * TILE - 4);
+        ctx.setLineDash([]);
+      }
+
+      ctx.fillStyle = nearby ? '#facc15' : 'rgba(15, 23, 42, 0.86)';
+      ctx.beginPath();
+      ctx.roundRect(px + w - 22, py + 4, 18, 18, 5);
+      ctx.fill();
+      ctx.fillStyle = nearby ? '#111827' : '#fff';
+      ctx.font = '800 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('X', px + w - 13, py + 13);
+      ctx.restore();
+    };
+
     const drawElement = (el: SpaceElement, isFloor: boolean) => {
       const px = el.x * TILE;
       const py = el.y * TILE;
@@ -416,12 +491,14 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       }
 
       if (el.element.imageUrl) {
-        let img = imageCacheRef.current[el.element.imageUrl];
+        const imageUrl = normalizeAssetUrl(el.element.imageUrl);
+        let img = imageCacheRef.current[imageUrl];
         if (!img) {
           img = new Image();
-          img.src = el.element.imageUrl;
+          img.src = imageUrl;
           img.onload = () => setRenderTrigger(t => t + 1);
-          imageCacheRef.current[el.element.imageUrl] = img;
+          img.onerror = () => setRenderTrigger(t => t + 1);
+          imageCacheRef.current[imageUrl] = img;
         }
         if (img.complete && img.naturalWidth > 0) {
           if (!isFloor) {
@@ -440,6 +517,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
             ctx.fillRect(px, py, w, h);
             ctx.restore();
           }
+          drawInteractiveBadge(el);
           return;
         }
       }
@@ -482,6 +560,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         ctx.textBaseline = 'middle';
         ctx.fillText(el.element.name, px + w / 2, py + h / 2);
       }
+      drawInteractiveBadge(el);
     };
 
     floors.forEach(el => drawElement(el, true));
@@ -544,6 +623,37 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       return userAnimStateRef.current[id];
     };
 
+    const audioGroupUsers = otherUsers.filter(u => proximityUsers.includes(u.userId));
+    if (audioGroupUsers.length > 0) {
+      const points = [
+        { x: myPos.x * TILE + TILE / 2, y: myPos.y * TILE + TILE / 2 },
+        ...audioGroupUsers.map(u => ({ x: u.x * TILE + TILE / 2, y: u.y * TILE + TILE / 2 }))
+      ];
+      const minX = Math.min(...points.map(p => p.x)) - 26;
+      const minY = Math.min(...points.map(p => p.y)) - 34;
+      const maxX = Math.max(...points.map(p => p.x)) + 26;
+      const maxY = Math.max(...points.map(p => p.y)) + 26;
+
+      ctx.save();
+      ctx.strokeStyle = '#22c55e';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([5, 7]);
+      ctx.shadowColor = 'rgba(34, 197, 94, 0.55)';
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.roundRect(minX, minY, maxX - minX, maxY - minY, 14);
+      ctx.stroke();
+
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      points.forEach((point, index) => {
+        if (index === 0) ctx.moveTo(point.x, point.y);
+        else ctx.lineTo(point.x, point.y);
+      });
+      ctx.stroke();
+      ctx.restore();
+    }
+
     const drawHumanCharacter = (
       x: number,
       y: number,
@@ -557,13 +667,15 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
 
       // If it's a real image (not a class prefix), draw it properly as a circle
       if (url && !url.startsWith('class:')) {
-        let img = imageCacheRef.current[url];
+        const imageUrl = normalizeAssetUrl(url);
+        let img = imageCacheRef.current[imageUrl];
         if (!img) {
           img = new Image();
-          if (url.startsWith('http')) img.crossOrigin = 'anonymous';
-          img.src = url;
+          if (imageUrl.startsWith('http')) img.crossOrigin = 'anonymous';
+          img.src = imageUrl;
           img.onload = () => setRenderTrigger(t => t + 1);
-          imageCacheRef.current[url] = img;
+          img.onerror = () => setRenderTrigger(t => t + 1);
+          imageCacheRef.current[imageUrl] = img;
         }
         if (img.complete && img.naturalWidth > 0) {
           const drawY = isSitting ? y + 4 : y - 4;
@@ -594,6 +706,27 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       drawDynamicAvatar(ctx, x, y, userId, username, url, isSitting, anim, isMe);
     };
 
+    const drawReaction = (userId: string, x: number, y: number, isSitting: boolean) => {
+      const reaction = reactions[userId];
+      if (!reaction || reaction.expiresAt <= Date.now()) return;
+      const fade = Math.min(1, Math.max(0, (reaction.expiresAt - Date.now()) / 450));
+      const bubbleY = y - (isSitting ? 44 : 52);
+      ctx.save();
+      ctx.globalAlpha = fade;
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.72)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.roundRect(x - 18, bubbleY - 16, 36, 32, 12);
+      ctx.fill();
+      ctx.stroke();
+      ctx.font = '22px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(reaction.emoji, x, bubbleY + 1);
+      ctx.restore();
+    };
+
     const isChair = (tx: number, ty: number) => visibleElements.some(el => {
       const text = `${el.element.id} ${el.element.name ?? ''} ${el.element.category ?? ''}`.toLowerCase();
       const isSeat = text.includes('seating') || text.includes('chair') || text.includes('sofa') || text.includes('couch') || text.includes('bench') || text.includes('stool') || text.includes('seat');
@@ -608,6 +741,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       const name = u.username || u.userId.slice(0, 5);
 
       drawHumanCharacter(px, py, u.userId, name, u.avatarUrl, sitting, false);
+      drawReaction(u.userId, px, py, sitting);
 
       ctx.fillStyle = 'rgba(99,102,241,0.88)';
       const tagW = name.length * 6 + 8;
@@ -624,7 +758,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const mx = myPos.x * TILE + TILE / 2;
     const my = myPos.y * TILE + TILE / 2 - 4;
     const mySitting = isChair(myPos.x, myPos.y);
-    const myName = (window as any).__myStoredUsername || 'You';
+    const myName = myUsername || 'You';
 
     if (!mySitting) {
       const grd = ctx.createRadialGradient(mx, my, 0, mx, my, 18);
@@ -637,6 +771,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     }
 
     drawHumanCharacter(mx, my, 'me', myName, myAvatarUrl ?? undefined, mySitting, true);
+    drawReaction('me', mx, my, mySitting);
 
     // My name pill badge
     ctx.fillStyle = '#3b82f6';
@@ -649,7 +784,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(myName, mx, my - (mySitting ? 15 : 23));
-  }, [canvasRef, wrapperRef, myPos, otherUsers, elements, hiddenElementIds, privateZones, dimensions, myAvatarUrl, renderTrigger, autoPath, zoom, panOffset]);
+  }, [canvasRef, wrapperRef, myPos, otherUsers, proximityUsers, elements, hiddenElementIds, privateZones, dimensions, myAvatarUrl, myUsername, renderTrigger, autoPath, zoom, panOffset, reactions]);
 
   return (
     <>
@@ -660,7 +795,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
-          onDoubleClick={handleCanvasClick}
+          onClick={handleCanvasClick}
           onDragOver={(e) => {
             e.preventDefault();
             e.dataTransfer.dropEffect = 'copy';
@@ -686,13 +821,13 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       </div>
 
       <div className="map-controls">
-        <button className="map-ctrl-btn" onClick={() => setZoom(z => Math.min(ZOOM_MAX, z * 1.25))} title="Zoom In">
+        <button className="map-ctrl-btn" onClick={() => setZoom(z => Math.min(z * 1.25, ZOOM_MAX))} title="Zoom In">
           <PlusCircle size={20} />
         </button>
-        <button className="map-ctrl-btn" onClick={() => setZoom(z => Math.max(ZOOM_MIN, z / 1.25))} title="Zoom Out">
+        <button className="map-ctrl-btn" onClick={() => setZoom(z => Math.max(z / 1.25, ZOOM_MIN))} title="Zoom Out (Diagram View)">
           <MinusCircle size={20} />
         </button>
-        <button className="map-ctrl-btn" onClick={() => setZoom(ZOOM_MIN)} title="Full Overview">
+        <button className="map-ctrl-btn" onClick={() => setZoom(ZOOM_MIN)} title="Layout Overview (Gather View)">
           <MapIcon size={20} />
         </button>
         <button className="map-ctrl-btn" onClick={handleLocateUser} title="Locate Me">

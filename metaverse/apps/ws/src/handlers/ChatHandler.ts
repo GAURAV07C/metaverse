@@ -6,15 +6,60 @@ export class ChatHandler {
     if (!user.spaceId) return;
     const message = typeof parsedData?.payload?.message === "string" ? parsedData.payload.message.trim() : "";
     if (!message || message.length > 500) return;
+    const rawScope = typeof parsedData?.payload?.scope === "string" ? parsedData.payload.scope : "everyone";
+    const scope = ["everyone", "nearby", "dm", "room"].includes(rawScope) ? rawScope : "everyone";
+    const targetUserId = typeof parsedData?.payload?.targetUserId === "string" ? parsedData.payload.targetUserId : undefined;
+    const targetUsername = typeof parsedData?.payload?.targetUsername === "string" ? parsedData.payload.targetUsername : undefined;
+    const roomManager = RoomManager.getInstance();
+    const usersInSpace = roomManager.rooms.get(user.spaceId) || [];
     
-    RoomManager.getInstance().broadcast({
+    const payload = {
       type: "chat-receive",
       payload: {
         userId: user.userId,
         username: user.username,
         message,
+        scope,
+        targetUserId,
+        targetUsername,
         timestamp: new Date().toISOString(),
       }
-    }, user, user.spaceId);
+    } as const;
+
+    if (scope === "dm") {
+      const target = usersInSpace.find((u) =>
+        (targetUserId && u.userId === targetUserId) ||
+        (targetUsername && u.username?.toLowerCase() === targetUsername.toLowerCase())
+      );
+      if (target && target.id !== user.id) target.send(payload);
+      return;
+    }
+
+    if (scope === "nearby") {
+      roomManager.sendToUsers(payload, user.spaceId, (u) => u.id !== user.id && user.inProximityWith.has(u.id));
+      return;
+    }
+
+    if (scope === "room") {
+      const zones = roomManager.zones.get(user.spaceId) || [];
+      const currentRoom = zones.find((z: any) =>
+        (z.type === "room" || z.type === "private") &&
+        user.x >= z.startX &&
+        user.x < z.endX &&
+        user.y >= z.startY &&
+        user.y < z.endY
+      );
+      if (!currentRoom) return;
+      roomManager.sendToUsers(payload, user.spaceId, (u) =>
+        u.id !== user.id &&
+        u.x >= currentRoom.startX &&
+        u.x < currentRoom.endX &&
+        u.y >= currentRoom.startY &&
+        u.y < currentRoom.endY
+      );
+      return;
+    }
+
+    roomManager.broadcast(payload, user, user.spaceId);
   }
 }

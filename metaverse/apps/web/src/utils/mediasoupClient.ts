@@ -14,10 +14,12 @@ export class MediasoupClient {
 
   private producers: Map<string, Producer> = new Map();
   private consumers: Map<string, Consumer> = new Map();
+  private producerMeta: Map<string, { userId: string; type?: string }> = new Map();
+  private initPromise?: Promise<void>;
 
   private pendingRequests: Map<string, { resolve: (val: any) => void; reject: (err: Error) => void }> = new Map();
 
-  public onNewConsumer?: (consumer: Consumer, userId: string) => void;
+  public onNewConsumer?: (consumer: Consumer, userId: string, appData?: any) => void;
 
   constructor(ws: WsClient) {
     this.device = new Device();
@@ -45,6 +47,7 @@ export class MediasoupClient {
           break;
         case 'new-producer':
           // Another user started producing, we should consume it
+          this.producerMeta.set(msg.payload.producerId, { userId: msg.payload.userId, type: msg.payload.appData?.type });
           await this.consume(msg.payload.producerId, msg.payload.userId);
           break;
       }
@@ -88,14 +91,23 @@ export class MediasoupClient {
   }
 
   public async init() {
+    if (this.initPromise) return this.initPromise;
+    this.initPromise = this.initOnce();
+    return this.initPromise;
+  }
+
+  private async initOnce() {
     try {
       const { rtpCapabilities } = await this.request('webrtc-get-router-rtp-capabilities');
-      await this.device.load({ routerRtpCapabilities: rtpCapabilities });
+      if (!this.device.loaded) {
+        await this.device.load({ routerRtpCapabilities: rtpCapabilities });
+      }
 
       await this.initSendTransport();
       await this.initRecvTransport();
     } catch (err) {
       console.error('Mediasoup init error', err);
+      this.initPromise = undefined;
     }
   }
 
@@ -151,14 +163,29 @@ export class MediasoupClient {
     });
   }
 
-  public async produce(track: MediaStreamTrack, userId: string) {
+  public async produce(track: MediaStreamTrack, userId: string, appData?: Record<string, unknown>) {
     if (!this.sendTransport) throw new Error('Send transport not initialized');
-    const producer = await this.sendTransport.produce({ track, appData: { userId } });
-    this.producers.set(track.kind, producer);
+    const type = typeof appData?.type === 'string' ? appData.type : track.kind;
+    const producer = await this.sendTransport.produce({ track, appData: { userId, ...appData } });
+    this.producers.set(type, producer);
     return producer;
   }
 
-  public async stopProduce(kind: 'audio' | 'video') {
+  public async replaceProducerTrack(type: 'audio' | 'camera' | 'screen' | string, track: MediaStreamTrack, userId: string, appData?: Record<string, unknown>) {
+    const producer = this.producers.get(type);
+    if (!producer || producer.closed) {
+      return this.produce(track, userId, { type, ...appData });
+    }
+    await producer.replaceTrack({ track });
+    return producer;
+  }
+
+  public hasProducer(type: 'audio' | 'camera' | 'screen' | string) {
+    const producer = this.producers.get(type);
+    return Boolean(producer && !producer.closed);
+  }
+
+  public async stopProduce(kind: 'audio' | 'video' | 'screen' | string) {
     const producer = this.producers.get(kind);
     if (producer) {
       producer.close();
@@ -186,7 +213,7 @@ export class MediasoupClient {
     this.consumers.set(consumer.id, consumer);
 
     if (this.onNewConsumer) {
-      this.onNewConsumer(consumer, userId);
+      this.onNewConsumer(consumer, userId, this.producerMeta.get(producerId));
     }
   }
 

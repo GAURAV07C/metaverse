@@ -55,6 +55,13 @@ export class RoomManager {
     });
   }
 
+  public sendToUsers(message: OutgoingMessage, roomId: string, predicate: (user: User) => boolean) {
+    if (!this.rooms.has(roomId)) return;
+    this.rooms.get(roomId)?.forEach((u) => {
+      if (predicate(u)) u.send(message);
+    });
+  }
+
   public async loadSpaceZones(spaceId: string) {
     if (this.zones.has(spaceId)) return;
     const zones = await client.privateZone.findMany({ where: { spaceId } });
@@ -127,13 +134,81 @@ export class RoomManager {
     return !bounds.blocked.has(`${x}:${y}`);
   }
 
+  private isAudioRoom(zone: any) {
+    return zone?.type === 'room' || zone?.type === 'private';
+  }
+
+  private isInsideZone(x: number, y: number, zone: any) {
+    return x >= zone.startX && x < zone.endX && y >= zone.startY && y < zone.endY;
+  }
+
+  public getAudioRoomAt(spaceId: string, x: number, y: number) {
+    const zones = this.zones.get(spaceId) || [];
+    return zones.find((zone: any) => this.isAudioRoom(zone) && this.isInsideZone(x, y, zone));
+  }
+
+  public getSeatAt(spaceId: string, x: number, y: number) {
+    const zones = this.zones.get(spaceId) || [];
+    return zones.find((zone: any) => zone.type === 'seat' && this.isInsideZone(x, y, zone));
+  }
+
+  public getSeatsInRoom(spaceId: string, room: any) {
+    const zones = this.zones.get(spaceId) || [];
+    return zones.filter((zone: any) =>
+      zone.type === 'seat' &&
+      zone.startX >= room.startX &&
+      zone.endX <= room.endX &&
+      zone.startY >= room.startY &&
+      zone.endY <= room.endY
+    );
+  }
+
+  public canEnterDynamic(user: User, x: number, y: number): { ok: boolean; reason?: string } {
+    if (!user.spaceId) return { ok: false, reason: 'not-in-space' };
+    const users = this.rooms.get(user.spaceId) || [];
+    const targetSeat = this.getSeatAt(user.spaceId, x, y);
+
+    if (targetSeat) {
+      const occupied = users.some((other) =>
+        other.id !== user.id &&
+        this.isInsideZone(other.x, other.y, targetSeat)
+      );
+      if (occupied) return { ok: false, reason: 'spot-occupied' };
+    }
+
+    const targetRoom = this.getAudioRoomAt(user.spaceId, x, y);
+    const currentRoom = this.getAudioRoomAt(user.spaceId, user.x, user.y);
+    if (!targetRoom || currentRoom?.id === targetRoom.id) return { ok: true };
+
+    const seats = this.getSeatsInRoom(user.spaceId, targetRoom);
+    if (seats.length === 0) return { ok: true };
+
+    const occupants = users.filter((other) =>
+      other.id !== user.id &&
+      this.isInsideZone(other.x, other.y, targetRoom)
+    );
+    if (occupants.length >= seats.length) {
+      return { ok: false, reason: 'room-full' };
+    }
+
+    return { ok: true };
+  }
+
+  public async canEnterTile(user: User, x: number, y: number): Promise<{ ok: boolean; reason?: string }> {
+    if (!user.spaceId) return { ok: false, reason: 'not-in-space' };
+    const canOccupyStatic = await this.canOccupy(user.spaceId, x, y);
+    if (!canOccupyStatic) return { ok: false, reason: 'blocked' };
+    return this.canEnterDynamic(user, x, y);
+  }
+
   public checkProximity(user: User, spaceId: string) {
     const PROXIMITY_THRESHOLD = 5; // Distance in grid units
     const usersInRoom = this.rooms.get(spaceId) || [];
     const zonesInRoom = this.zones.get(spaceId) || [];
 
+    const isAudioRoom = (z: any) => z.type === 'room' || z.type === 'private';
     const getZone = (u: User) => {
-      return zonesInRoom.find(z => z.type === 'private' && u.x >= z.startX && u.x <= z.endX && u.y >= z.startY && u.y <= z.endY);
+      return zonesInRoom.find(z => isAudioRoom(z) && u.x >= z.startX && u.x < z.endX && u.y >= z.startY && u.y < z.endY);
     };
     
     const userZone = getZone(user);

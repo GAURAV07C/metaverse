@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../utils/api';
+import { useUserStore } from '../store';
 import type { SpaceElement } from './arena/ElementsPanel';
 
 import { StudioRail, type StudioTool } from './studio/StudioRail';
@@ -10,6 +11,7 @@ import type { Prefab, AreaType } from './studio/types';
 export function Studio() {
   const { spaceId } = useParams();
   const navigate = useNavigate();
+  const myUserId = useUserStore((s) => s.userId);
 
   // UI state
   const [welcome, setWelcome] = useState(() => sessionStorage.getItem('studio-welcome-seen') !== '1');
@@ -26,6 +28,7 @@ export function Studio() {
   const [elements, setElements] = useState<SpaceElement[]>([]);
   const [areas, setAreas] = useState<AreaType[]>([]);
   const [publishing, setPublishing] = useState(false);
+  const [canEdit, setCanEdit] = useState<boolean | null>(null);
 
   // History state for Undo/Redo
   const [history, setHistory] = useState<SpaceElement[][]>([]);
@@ -34,6 +37,7 @@ export function Studio() {
 
   // Auto-save & History tracking
   useEffect(() => {
+    if (canEdit !== true) return;
     if (elements.length === 0 && areas.length === 0 && history.length === 0) return;
     
     // Auto-save to draft (debounce to avoid spamming API)
@@ -53,7 +57,7 @@ export function Studio() {
     isUndoRedoActive.current = false;
 
     return () => clearTimeout(timer);
-  }, [elements, areas, historyIndex, history.length, areas.length, spaceId]);
+  }, [elements, areas, historyIndex, history.length, areas.length, spaceId, canEdit]);
 
   useEffect(() => {
     let mounted = true;
@@ -96,6 +100,13 @@ export function Studio() {
       setMapImage(space.data.thumbnail || '/map-template.jpg');
       const dim = (space.data.dimensions || '100x100').split('x');
       setDimensions({ w: parseInt(dim[0]) || 100, h: parseInt(dim[1]) || 100 });
+      const allowedToEdit = Boolean(space.data.canEdit ?? (myUserId && space.data.ownerId === myUserId));
+      setCanEdit(allowedToEdit);
+      if (!allowedToEdit) {
+        setStatus('Only the space owner can edit this office.');
+        window.setTimeout(() => navigate(`/space/${spaceId}`), 900);
+        return;
+      }
       
       // Look for draft first, otherwise load published elements
       api.get(`/office/${spaceId}/draft`).then(draftRes => {
@@ -122,7 +133,7 @@ export function Studio() {
       
     }).catch(() => setStatus('Preview mode'));
     return () => { mounted = false; };
-  }, [spaceId, selectedPrefab]);
+  }, [spaceId, selectedPrefab, myUserId, navigate]);
 
   const closeWelcome = () => {
     sessionStorage.setItem('studio-welcome-seen', '1');
@@ -131,13 +142,52 @@ export function Studio() {
 
   const goBack = () => navigate(`/space/${spaceId}`);
 
+  const validatePortalTargets = () => {
+    for (const area of areas) {
+      if (area.type !== 'portal') continue;
+      const label = area.name || 'Portal';
+      const hasX = area.targetX !== undefined;
+      const hasY = area.targetY !== undefined;
+      if (hasX !== hasY) return `${label}: target X and Y dono set karo.`;
+      if (hasX && hasY) {
+        if (!Number.isInteger(area.targetX) || !Number.isInteger(area.targetY)) return `${label}: target coordinates valid numbers hone chahiye.`;
+        if (!area.targetSpaceId && (area.targetX! < 0 || area.targetX! >= dimensions.w || area.targetY! < 0 || area.targetY! >= dimensions.h)) {
+          return `${label}: target coordinates map ke andar hone chahiye.`;
+        }
+      }
+      if (area.targetUrl) {
+        const url = area.targetUrl.trim();
+        const isValidUrl = url.startsWith('/') || /^https?:\/\//i.test(url);
+        if (!isValidUrl) return `${label}: URL /space/... ya https:// se start hona chahiye.`;
+      }
+      if (area.targetRoomId && !area.targetSpaceId && !areas.some(candidate => candidate.id === area.targetRoomId && (candidate.type === 'room' || candidate.type === 'private'))) {
+        return `${label}: destination room id current map me nahi mila.`;
+      }
+    }
+    return '';
+  };
+
   const publish = async () => {
+    if (canEdit !== true) {
+      setStatus('Only the space owner can publish changes.');
+      return;
+    }
+    const validationError = validatePortalTargets();
+    if (validationError) {
+      setStatus(validationError);
+      return;
+    }
     setPublishing(true);
     setStatus('Publishing...');
-    await api.put(`/office/${spaceId}/draft`, { data: { elements, areas, elementCount: elements.length, savedAt: new Date().toISOString() } }).catch(() => null);
-    await api.post(`/office/${spaceId}/publish`, {}).catch(() => null);
-    setPublishing(false);
-    setStatus('Published!');
+    try {
+      await api.put(`/office/${spaceId}/draft`, { data: { elements, areas, elementCount: elements.length, savedAt: new Date().toISOString() } });
+      await api.post(`/office/${spaceId}/publish`, {});
+      setStatus('Published!');
+    } catch (error: any) {
+      setStatus(error?.response?.data?.message || 'Publish failed. Please try again.');
+    } finally {
+      setPublishing(false);
+    }
   };
 
   const selectPrefab = (card: Prefab) => {

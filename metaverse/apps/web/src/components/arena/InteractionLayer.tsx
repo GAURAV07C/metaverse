@@ -1,5 +1,5 @@
 import React from 'react';
-import { X } from 'lucide-react';
+import { ExternalLink, MonitorUp, X } from 'lucide-react';
 
 interface InteractionLayerProps {
   promptInteraction: any;
@@ -12,28 +12,52 @@ export const InteractionLayer: React.FC<InteractionLayerProps> = ({
   activeInteraction,
   setActiveInteraction
 }) => {
+  const title = activeInteraction?.state?.title || activeInteraction?.name || `Interactive ${activeInteraction?.type || 'Object'}`;
+  const url = activeInteraction?.url || activeInteraction?.state?.url;
+  const description = activeInteraction?.state?.description;
+  const embedTypes = ['EMBED', 'VIDEO', 'GAME'];
+
   return (
     <>
       {/* ── Interaction Prompt ── */}
       {promptInteraction && !activeInteraction && (
-        <div style={{ position: 'absolute', bottom: '100px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.8)', color: 'white', padding: '0.5rem 1rem', borderRadius: '20px', fontSize: '0.9rem', fontWeight: 600, border: '2px solid var(--accent)', animation: 'floatIn 0.3s' }}>
-          Press <kbd style={{ background: '#333', padding: '2px 6px', borderRadius: '4px' }}>X</kbd> to interact
+        <div className="interaction-prompt">
+          Press <kbd>X</kbd> to interact with {promptInteraction.name || 'object'}
         </div>
       )}
 
       {/* ── Active Interaction Modal ── */}
       {activeInteraction && (
         <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, pointerEvents: 'auto' }}>
-          <div style={{ width: '80%', height: '80%', background: 'white', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ background: '#f1f1f1', padding: '0.5rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #ddd' }}>
-              <h3 style={{ margin: 0, color: '#333' }}>Interactive {activeInteraction.type}</h3>
-              <button onClick={() => setActiveInteraction(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#666' }}><X size={20}/></button>
+          <div className="interaction-modal">
+            <div className="interaction-modal-header">
+              <div>
+                <h3>{title}</h3>
+                <span>{activeInteraction.type}</span>
+              </div>
+              <button onClick={() => setActiveInteraction(null)}><X size={20}/></button>
             </div>
             {activeInteraction.type === 'WHITEBOARD' ? (
-              <iframe src="https://excalidraw.com/" style={{ width: '100%', height: '100%', border: 'none' }} title="Whiteboard" />
+              <iframe src="https://excalidraw.com/" className="interaction-frame" title="Whiteboard" />
+            ) : activeInteraction.type === 'SCREENSHARE' ? (
+              <div className="interaction-empty">
+                <MonitorUp size={42} />
+                <b>Screen share object</b>
+                <span>Use the bottom toolbar share button to present inside this space.</span>
+              </div>
+            ) : url && embedTypes.includes(activeInteraction.type) ? (
+              <iframe src={url} className="interaction-frame" title={title} />
+            ) : url ? (
+              <div className="interaction-empty">
+                <ExternalLink size={42} />
+                <b>{title}</b>
+                <span>{description || url}</span>
+                <button onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}>Open link</button>
+              </div>
             ) : (
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333' }}>
-                <p>Interaction Type: {activeInteraction.type}</p>
+              <div className="interaction-empty">
+                <b>{title}</b>
+                <span>{description || 'This object is interactive. Configure its URL/state in Studio to launch an app here.'}</span>
               </div>
             )}
           </div>

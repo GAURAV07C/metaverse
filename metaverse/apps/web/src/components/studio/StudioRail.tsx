@@ -1,6 +1,6 @@
-import { ArrowLeft, MousePointer2, Hand, BoxSelect, Grid3X3, Eraser, Undo2, Redo2, Send, HelpCircle, SquareDashed, Armchair } from 'lucide-react';
+import { ArrowLeft, MousePointer2, Hand, BoxSelect, Grid3X3, Eraser, Undo2, Redo2, Send, HelpCircle, SquareDashed, Armchair, MapPin, DoorOpen, Star } from 'lucide-react';
 
-export type StudioTool = 'select' | 'hand' | 'erase' | 'room' | 'object' | 'area' | 'seat';
+export type StudioTool = 'select' | 'hand' | 'erase' | 'room' | 'object' | 'area' | 'seat' | 'spawn' | 'portal' | 'spotlight';
 
 const tools: { id: StudioTool; label: string; icon: any }[] = [
   { id: 'select', label: 'Select', icon: MousePointer2 },
@@ -8,6 +8,9 @@ const tools: { id: StudioTool; label: string; icon: any }[] = [
   { id: 'area', label: 'Area', icon: SquareDashed },
   { id: 'room', label: 'Room', icon: BoxSelect },
   { id: 'seat', label: 'Seat', icon: Armchair },
+  { id: 'spawn', label: 'Spawn', icon: MapPin },
+  { id: 'portal', label: 'Portal', icon: DoorOpen },
+  { id: 'spotlight', label: 'Spotlight', icon: Star },
   { id: 'object', label: 'Object', icon: Grid3X3 },
   { id: 'erase', label: 'Erase', icon: Eraser },
 ];

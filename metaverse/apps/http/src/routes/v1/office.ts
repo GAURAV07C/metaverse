@@ -12,10 +12,54 @@ async function getSpaceForUser(spaceId: string, userId: string) {
   return client.space.findUnique({ where: { id: spaceId }, select: { id: true, name: true, width: true, height: true, creatorId: true } });
 }
 
+function getSpaceRole(space: { creatorId: string }, userId: string) {
+  return space.creatorId === userId ? "Owner" : "Guest";
+}
+
+function canEditSpace(space: { creatorId: string }, userId: string) {
+  return getSpaceRole(space, userId) === "Owner";
+}
+
+function requireSpaceEditor(space: { creatorId: string }, userId: string, res: any) {
+  if (canEditSpace(space, userId)) return true;
+  res.status(403).json({ message: "Only the space owner can edit this office" });
+  return false;
+}
+
 function publicSettings(settings: any) {
   if (!settings) return null;
   const { id, spaceId, createdAt, updatedAt, ...rest } = settings;
   return { id, spaceId, ...rest, createdAt, updatedAt };
+}
+
+function validatePortalTargets(data: any, width: number, height: number) {
+  const areas = Array.isArray(data?.areas) ? data.areas : [];
+  const roomIds = new Set(
+    areas
+      .filter((area: any) => area?.id && (area.type === "room" || area.type === "private"))
+      .map((area: any) => area.id)
+  );
+  for (const area of areas) {
+    if (area?.type !== "portal") continue;
+    const label = area.name || "Portal";
+    const hasX = area.targetX !== undefined && area.targetX !== null && area.targetX !== "";
+    const hasY = area.targetY !== undefined && area.targetY !== null && area.targetY !== "";
+    if (hasX !== hasY) return `${label}: target X and Y both are required`;
+    if (hasX && hasY) {
+      if (!Number.isInteger(area.targetX) || !Number.isInteger(area.targetY)) return `${label}: target coordinates must be integers`;
+      if (!area.targetSpaceId && (area.targetX < 0 || area.targetX >= width || area.targetY < 0 || area.targetY >= height)) {
+        return `${label}: target coordinates must stay inside the map`;
+      }
+    }
+    if (typeof area.targetUrl === "string" && area.targetUrl.trim()) {
+      const url = area.targetUrl.trim();
+      if (!url.startsWith("/") && !/^https?:\/\//i.test(url)) return `${label}: target URL must start with / or http(s)`;
+    }
+    if (area.targetRoomId && !area.targetSpaceId && !roomIds.has(area.targetRoomId)) {
+      return `${label}: target room does not exist in this map`;
+    }
+  }
+  return "";
 }
 
 officeRouter.get("/:spaceId/settings", async (req, res) => {
@@ -36,6 +80,7 @@ officeRouter.put("/:spaceId/settings", async (req, res) => {
 
   const space = await getSpaceForUser(req.params.spaceId, req.userId);
   if (!space) return res.status(404).json({ message: "Space not found" });
+  if (!requireSpaceEditor(space, req.userId, res)) return;
 
   const settingsData = Object.fromEntries(Object.entries(parsed.data).filter(([, value]) => value !== undefined));
   const settings = await client.spaceSettings.upsert({
@@ -49,6 +94,7 @@ officeRouter.put("/:spaceId/settings", async (req, res) => {
 officeRouter.get("/:spaceId/invites", async (req, res) => {
   const space = await getSpaceForUser(req.params.spaceId, req.userId);
   if (!space) return res.status(404).json({ message: "Space not found" });
+  if (!requireSpaceEditor(space, req.userId, res)) return;
   const invites = await client.inviteLink.findMany({ where: { spaceId: space.id }, orderBy: { createdAt: "desc" } });
   res.json({ invites });
 });
@@ -56,6 +102,7 @@ officeRouter.get("/:spaceId/invites", async (req, res) => {
 officeRouter.post("/:spaceId/invites", async (req, res) => {
   const space = await getSpaceForUser(req.params.spaceId, req.userId);
   if (!space) return res.status(404).json({ message: "Space not found" });
+  if (!requireSpaceEditor(space, req.userId, res)) return;
   const token = crypto.randomBytes(18).toString("base64url");
   const invite = await client.inviteLink.create({
     data: {
@@ -66,6 +113,40 @@ officeRouter.post("/:spaceId/invites", async (req, res) => {
     },
   });
   res.json({ invite, url: `/space/${space.id}/join?invite=${token}` });
+});
+
+officeRouter.get("/:spaceId/invite-events", async (req, res) => {
+  const space = await getSpaceForUser(req.params.spaceId, req.userId);
+  if (!space) return res.status(404).json({ message: "Space not found" });
+  const take = Math.min(Math.max(Number(req.query.take) || 50, 1), 100);
+  const where = canEditSpace(space, req.userId)
+    ? { spaceId: space.id }
+    : {
+        spaceId: space.id,
+        OR: [
+          { fromUserId: req.userId },
+          { toUserId: req.userId },
+        ],
+      };
+  const events = await (client as any).roomInviteEvent.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+    take,
+  });
+  res.json({ events });
+});
+
+officeRouter.get("/:spaceId/moderation-audit", async (req, res) => {
+  const space = await getSpaceForUser(req.params.spaceId, req.userId);
+  if (!space) return res.status(404).json({ message: "Space not found" });
+  if (!requireSpaceEditor(space, req.userId, res)) return;
+  const take = Math.min(Math.max(Number(req.query.take) || 50, 1), 100);
+  const events = await (client as any).moderationAuditEvent.findMany({
+    where: { spaceId: space.id },
+    orderBy: { createdAt: "desc" },
+    take,
+  });
+  res.json({ events });
 });
 
 officeRouter.get("/:spaceId/desks", async (req, res) => {
@@ -81,6 +162,7 @@ officeRouter.post("/:spaceId/desks", async (req, res) => {
 
   const space = await getSpaceForUser(req.params.spaceId, req.userId);
   if (!space) return res.status(404).json({ message: "Space not found" });
+  if (!requireSpaceEditor(space, req.userId, res)) return;
   if (parsed.data.x < 0 || parsed.data.y < 0 || parsed.data.x >= space.width || parsed.data.y >= (space.height ?? 0)) {
     return res.status(400).json({ message: "Desk is outside the office" });
   }
@@ -93,6 +175,7 @@ officeRouter.post("/:spaceId/desks", async (req, res) => {
 officeRouter.put("/:spaceId/desks/:deskId", async (req, res) => {
   const space = await getSpaceForUser(req.params.spaceId, req.userId);
   if (!space) return res.status(404).json({ message: "Space not found" });
+  if (!requireSpaceEditor(space, req.userId, res)) return;
   try {
     let dataToUpdate = { ...req.body };
     
@@ -120,6 +203,7 @@ officeRouter.put("/:spaceId/desks/:deskId", async (req, res) => {
 officeRouter.delete("/:spaceId/desks/:deskId", async (req, res) => {
   const space = await getSpaceForUser(req.params.spaceId, req.userId);
   if (!space) return res.status(404).json({ message: "Space not found" });
+  if (!requireSpaceEditor(space, req.userId, res)) return;
   try {
     await client.deskAssignment.delete({
       where: { id: req.params.deskId, spaceId: space.id },
@@ -133,6 +217,7 @@ officeRouter.delete("/:spaceId/desks/:deskId", async (req, res) => {
 officeRouter.get("/:spaceId/draft", async (req, res) => {
   const space = await getSpaceForUser(req.params.spaceId, req.userId);
   if (!space) return res.status(404).json({ message: "Space not found" });
+  if (!requireSpaceEditor(space, req.userId, res)) return;
   const draft = await client.spaceDraft.findUnique({ where: { spaceId: space.id } });
   res.json({ draft: draft ?? null });
 });
@@ -143,6 +228,7 @@ officeRouter.put("/:spaceId/draft", async (req, res) => {
 
   const space = await getSpaceForUser(req.params.spaceId, req.userId);
   if (!space) return res.status(404).json({ message: "Space not found" });
+  if (!requireSpaceEditor(space, req.userId, res)) return;
   const draft = await client.spaceDraft.upsert({
     where: { spaceId: space.id },
     update: { data: parsed.data.data as Prisma.InputJsonValue, updatedById: req.userId },
@@ -154,6 +240,7 @@ officeRouter.put("/:spaceId/draft", async (req, res) => {
 officeRouter.post("/:spaceId/publish", async (req, res) => {
   const space = await getSpaceForUser(req.params.spaceId, req.userId);
   if (!space) return res.status(404).json({ message: "Space not found" });
+  if (!requireSpaceEditor(space, req.userId, res)) return;
 
   const draft = await client.spaceDraft.findUnique({ where: { spaceId: space.id } });
   if (!draft || !draft.data) {
@@ -161,6 +248,11 @@ officeRouter.post("/:spaceId/publish", async (req, res) => {
   }
 
   const data = draft.data as any;
+  const portalTargetError = validatePortalTargets(data, space.width, space.height || space.width);
+  if (portalTargetError) {
+    return res.status(400).json({ message: portalTargetError });
+  }
+
   if (data.elements && Array.isArray(data.elements)) {
     // Fetch all existing element IDs in database
     const dbElements = await client.element.findMany({ select: { id: true } });
@@ -191,7 +283,8 @@ officeRouter.post("/:spaceId/publish", async (req, res) => {
             name: e.element.name,
             category: e.element.category,
             imageUrl: e.element.imageUrl,
-            colorMaskUrl: e.element.colorMaskUrl
+            colorMaskUrl: e.element.colorMaskUrl,
+            interactiveObjects: Array.isArray(e.element.interactiveObjects) ? e.element.interactiveObjects : undefined
           }
         };
       })
@@ -209,9 +302,10 @@ officeRouter.post("/:spaceId/publish", async (req, res) => {
     await client.privateZone.deleteMany({ where: { spaceId: space.id } });
     
     const areasToInsert = data.areas.map((a: any) => ({
+      id: typeof a.id === 'string' && a.id ? a.id : undefined,
       spaceId: space.id,
       name: a.name || 'Area',
-      type: a.type || 'private',
+      type: a.type === 'private' ? 'room' : (a.type || 'public'),
       startX: a.x,
       startY: a.y,
       endX: a.x + a.w,

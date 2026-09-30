@@ -1,4 +1,4 @@
-import { Trash2, GripVertical } from 'lucide-react';
+import { Trash2, GripVertical, MousePointerClick } from 'lucide-react';
 import type { SpaceElement } from '../arena/ElementsPanel';
 import React, { useState } from 'react';
 
@@ -14,6 +14,20 @@ interface Props {
 
 export function StudioElement({ el, isSelected, tool, TILE, onDelete, onUpdate, onElementPointerDown }: Props) {
   const [status, setStatus] = useState('');
+  const interaction = el.element.interactiveObjects?.[0];
+  const interactionState = interaction?.state || {};
+  const updateInteraction = (patch: { type?: string; state?: any } | null) => {
+    if (!patch) {
+      onUpdate({ ...el, element: { ...el.element, interactiveObjects: [] } });
+      return;
+    }
+    const next = {
+      id: interaction?.id || `interaction-${el.id}`,
+      type: patch.type || interaction?.type || 'INFO',
+      state: { ...interactionState, ...(patch.state || {}) },
+    };
+    onUpdate({ ...el, element: { ...el.element, interactiveObjects: [next] } });
+  };
 
   return (
     <div
@@ -64,7 +78,7 @@ export function StudioElement({ el, isSelected, tool, TILE, onDelete, onUpdate, 
           </div>
 
           {/* Color (Tint) Picker - Available for ALL elements */}
-          <div 
+          <div
             style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', position: 'relative', padding: '0 12px' }}
             onClick={(e) => { e.stopPropagation(); setStatus(status === 'colorPicker' ? '' : 'colorPicker'); }}
           >
@@ -139,6 +153,71 @@ export function StudioElement({ el, isSelected, tool, TILE, onDelete, onUpdate, 
               </div>
             </div>
           )}
+
+          {/* Interaction editor */}
+          <div 
+            style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', position: 'relative', padding: '0 12px', borderLeft: '1px solid #333' }}
+            onClick={(e) => { e.stopPropagation(); setStatus(status === 'interactionEditor' ? '' : 'interactionEditor'); }}
+          >
+            <MousePointerClick size={14} />
+            <span style={{ color: interaction ? '#bbf7d0' : '#aaa', fontSize: 12 }}>Action</span>
+            {status === 'interactionEditor' && (
+              <div
+                onPointerDown={e => e.stopPropagation()}
+                onClick={e => e.stopPropagation()}
+                style={{
+                  position: 'absolute', top: '100%', right: 0, marginTop: 8, width: 280,
+                  background: '#222', padding: 12, borderRadius: 12,
+                  display: 'grid', gap: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', zIndex: 40
+                }}
+              >
+                <label style={{ display: 'grid', gap: 5, color: '#ddd', fontSize: 12 }}>
+                  Action type
+                  <select
+                    value={interaction?.type || 'NONE'}
+                    onChange={e => e.target.value === 'NONE' ? updateInteraction(null) : updateInteraction({ type: e.target.value })}
+                    style={{ background: '#111', border: '1px solid #444', color: '#fff', borderRadius: 6, minHeight: 32, padding: '0 8px' }}
+                  >
+                    <option value="NONE">None</option>
+                    <option value="INFO">Info card</option>
+                    <option value="URL">Open URL</option>
+                    <option value="EMBED">Embed</option>
+                    <option value="WHITEBOARD">Whiteboard</option>
+                    <option value="VIDEO">Video</option>
+                    <option value="GAME">Game</option>
+                  </select>
+                </label>
+                <label style={{ display: 'grid', gap: 5, color: '#ddd', fontSize: 12 }}>
+                  Title
+                  <input
+                    value={interactionState.title || ''}
+                    onChange={e => updateInteraction({ state: { title: e.target.value } })}
+                    placeholder="Action title"
+                    style={{ background: '#111', border: '1px solid #444', color: '#fff', borderRadius: 6, minHeight: 32, padding: '0 8px' }}
+                  />
+                </label>
+                <label style={{ display: 'grid', gap: 5, color: '#ddd', fontSize: 12 }}>
+                  URL / embed source
+                  <input
+                    value={interactionState.url || ''}
+                    onChange={e => updateInteraction({ state: { url: e.target.value } })}
+                    placeholder="https://..."
+                    style={{ background: '#111', border: '1px solid #444', color: '#fff', borderRadius: 6, minHeight: 32, padding: '0 8px' }}
+                  />
+                </label>
+                <label style={{ display: 'grid', gap: 5, color: '#ddd', fontSize: 12 }}>
+                  Description
+                  <textarea
+                    value={interactionState.description || ''}
+                    onChange={e => updateInteraction({ state: { description: e.target.value } })}
+                    placeholder="Shown in the interaction panel"
+                    rows={3}
+                    style={{ background: '#111', border: '1px solid #444', color: '#fff', borderRadius: 6, padding: 8, resize: 'vertical', font: 'inherit' }}
+                  />
+                </label>
+              </div>
+            )}
+          </div>
 
           <div style={{ flex: 1 }} />
 

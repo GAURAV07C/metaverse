@@ -4,6 +4,8 @@ import type { AreaType } from './types';
 
 interface Props {
   area: AreaType;
+  allAreas?: AreaType[];
+  dimensions?: { w: number; h: number };
   isSelected: boolean;
   onSelect: () => void;
   onChange: (updated: AreaType) => void;
@@ -17,9 +19,9 @@ interface Props {
 
 const TILE = 32;
 
-export function StudioArea({ area, isSelected, onSelect, onChange, onDelete, onDragStart, onRotate, onDuplicate, onMultiply, zoom }: Props) {
+export function StudioArea({ area, allAreas = [], dimensions, isSelected, onSelect, onChange, onDelete, onDragStart, onRotate, onDuplicate, onMultiply, zoom }: Props) {
   const [isResizing, setIsResizing] = useState<string | null>(null);
-  const [showMultiply, setShowMultiply] = useState(false);
+  const [showMultiply, setShowMultiply] = useState<false | true | 'portal'>(false);
   const [multiplyConfig, setMultiplyConfig] = useState<{type: 'grid'|'circular', count: number, cols: number, gap: number, radius: number}>({ type: 'grid', count: 5, cols: 5, gap: 1, radius: 5 });
   const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0, sx: 0, sy: 0 });
 
@@ -100,6 +102,13 @@ export function StudioArea({ area, isSelected, onSelect, onChange, onDelete, onD
     if (pos === 'e' || pos === 'w') s.top = '50%';
     return s;
   };
+  const portalTargets = allAreas.filter(target => target.id !== area.id && ['room', 'private', 'spawn', 'portal'].includes(target.type || ''));
+  const mapDimensions = dimensions;
+  const portalTargetError = area.type === 'portal' && (
+    ((area.targetX === undefined) !== (area.targetY === undefined))
+    || (area.targetX !== undefined && mapDimensions && (area.targetX < 0 || area.targetX >= mapDimensions.w))
+    || (area.targetY !== undefined && mapDimensions && (area.targetY < 0 || area.targetY >= mapDimensions.h))
+  );
 
   return (
     <div
@@ -210,8 +219,8 @@ export function StudioArea({ area, isSelected, onSelect, onChange, onDelete, onD
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span>Type</span>
-                <select 
-                  value={area.type || 'public'} 
+                <select
+                  value={area.type === 'private' ? 'room' : area.type || 'public'}
                   onChange={e => onChange({ ...area, type: e.target.value as any })}
                   onPointerDown={e => e.stopPropagation()}
                   style={{
@@ -220,8 +229,11 @@ export function StudioArea({ area, isSelected, onSelect, onChange, onDelete, onD
                   }}
                 >
                   <option value="public">Public Area</option>
-                  <option value="private">Private Room</option>
-                  <option value="seat">Seat Spot</option>
+                  <option value="room">Audio Room</option>
+                  <option value="seat">Room Spot</option>
+                  <option value="spawn">Spawn Point</option>
+                  <option value="portal">Portal</option>
+                  <option value="spotlight">Spotlight</option>
                 </select>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -295,6 +307,17 @@ export function StudioArea({ area, isSelected, onSelect, onChange, onDelete, onD
             >
               <Layers size={14} />
             </button>
+
+            {area.type === 'portal' && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowMultiply(showMultiply === 'portal' ? false : 'portal'); }}
+                onPointerDown={e => e.stopPropagation()}
+                style={{ background: 'rgba(168,85,247,0.18)', border: '1px solid rgba(168,85,247,0.45)', color: '#e9d5ff', cursor: 'pointer', padding: '4px 8px', borderRadius: 6, fontSize: 12 }}
+                title="Configure portal target"
+              >
+                Target
+              </button>
+            )}
             
             <button 
               onClick={(e) => { e.stopPropagation(); onDelete(); }} 
@@ -304,8 +327,104 @@ export function StudioArea({ area, isSelected, onSelect, onChange, onDelete, onD
               <Trash size={14} />
             </button>
           </div>
+          {/* Portal Target Dropdown */}
+          {area.type === 'portal' && showMultiply === 'portal' && (
+            <div
+              style={{
+                position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: 12,
+                background: '#222', borderRadius: 8, padding: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.5)', zIndex: 70,
+                display: 'grid', gap: 10, width: 260, border: '1px solid rgba(168,85,247,0.45)'
+              }}
+              onPointerDown={e => e.stopPropagation()}
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#fff', fontSize: 13, fontWeight: 500 }}>
+                Portal Target
+                <span onClick={() => setShowMultiply(false)} style={{ cursor: 'pointer', color: '#888' }}>×</span>
+              </div>
+              <label style={{ display: 'grid', gap: 4, color: '#aaa', fontSize: 12 }}>
+                Quick target
+                <select
+                  value=""
+                  onChange={e => {
+                    const target = portalTargets.find(item => item.id === e.target.value);
+                    if (!target) return;
+                    const targetX = Math.max(target.x, Math.min(target.x + target.w - 1, Math.floor(target.x + target.w / 2)));
+                    const targetY = Math.max(target.y, Math.min(target.y + target.h - 1, Math.floor(target.y + target.h / 2)));
+                    onChange({
+                      ...area,
+                      targetUrl: '',
+                      targetRoomId: target.type === 'room' || target.type === 'private' ? target.id : area.targetRoomId,
+                      targetX,
+                      targetY,
+                    });
+                  }}
+                  style={{ background: '#111', color: '#fff', border: '1px solid #444', padding: '6px 8px', borderRadius: 4 }}
+                >
+                  <option value="">Choose from this map</option>
+                  {portalTargets.map(target => (
+                    <option key={target.id} value={target.id}>
+                      {target.name || target.type || 'Area'} ({target.x},{target.y})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ display: 'grid', gap: 4, color: '#aaa', fontSize: 12 }}>
+                Destination URL
+                <input
+                  value={area.targetUrl || ''}
+                  onChange={e => onChange({ ...area, targetUrl: e.target.value })}
+                  placeholder="/space/id?room=roomId or https://..."
+                  style={{ background: '#111', color: '#fff', border: '1px solid #444', padding: '6px 8px', borderRadius: 4 }}
+                />
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <label style={{ display: 'grid', gap: 4, color: '#aaa', fontSize: 12 }}>
+                  Target X
+                  <input
+                    type="number"
+                    value={area.targetX ?? ''}
+                    onChange={e => onChange({ ...area, targetX: e.target.value === '' ? undefined : parseInt(e.target.value, 10) || 0 })}
+                    style={{ background: '#111', color: '#fff', border: '1px solid #444', padding: '6px 8px', borderRadius: 4 }}
+                  />
+                </label>
+                <label style={{ display: 'grid', gap: 4, color: '#aaa', fontSize: 12 }}>
+                  Target Y
+                  <input
+                    type="number"
+                    value={area.targetY ?? ''}
+                    onChange={e => onChange({ ...area, targetY: e.target.value === '' ? undefined : parseInt(e.target.value, 10) || 0 })}
+                    style={{ background: '#111', color: '#fff', border: '1px solid #444', padding: '6px 8px', borderRadius: 4 }}
+                  />
+                </label>
+              </div>
+              <label style={{ display: 'grid', gap: 4, color: '#aaa', fontSize: 12 }}>
+                Destination Space ID
+                <input
+                  value={area.targetSpaceId || ''}
+                  onChange={e => onChange({ ...area, targetSpaceId: e.target.value })}
+                  placeholder="optional"
+                  style={{ background: '#111', color: '#fff', border: '1px solid #444', padding: '6px 8px', borderRadius: 4 }}
+                />
+              </label>
+              <label style={{ display: 'grid', gap: 4, color: '#aaa', fontSize: 12 }}>
+                Destination Room ID
+                <input
+                  value={area.targetRoomId || ''}
+                  onChange={e => onChange({ ...area, targetRoomId: e.target.value })}
+                  placeholder="optional"
+                  style={{ background: '#111', color: '#fff', border: '1px solid #444', padding: '6px 8px', borderRadius: 4 }}
+                />
+              </label>
+              {portalTargetError && (
+                <div style={{ color: '#fca5a5', background: 'rgba(127,29,29,0.35)', border: '1px solid rgba(248,113,113,0.35)', borderRadius: 6, padding: '7px 8px', fontSize: 12 }}>
+                  Target X/Y dono set hone chahiye aur map ke andar hone chahiye.
+                </div>
+              )}
+            </div>
+          )}
           {/* Multiply Dropdown */}
-          {showMultiply && (
+          {showMultiply === true && (
             <div 
               style={{
                 position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: 12,
