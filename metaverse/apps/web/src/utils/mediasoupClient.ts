@@ -124,6 +124,7 @@ export class MediasoupClient {
     } catch (err) {
       console.error('Mediasoup init error', err);
       this.initPromise = undefined;
+      throw err;
     }
   }
 

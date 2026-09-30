@@ -71,9 +71,9 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
     return <img src={avatarUrl} alt="" className="vid-placeholder-img" />;
   };
 
-  const connectedUsers = proximityUsers
+  const connectedUsers = useMemo(() => proximityUsers
     .map(uid => otherUsers.find(u => u.userId === uid))
-    .filter((user): user is OtherUser => Boolean(user));
+    .filter((user): user is OtherUser => Boolean(user)), [otherUsers, proximityUsers]);
   const hasGroup = connectedUsers.length > 0;
   const showMeTile = viewMode === 'grid' || camOn || Boolean(streams['me']) || hasGroup;
   const showVideoStrip = viewMode !== 'grid' && (showMeTile || connectedUsers.length > 0);

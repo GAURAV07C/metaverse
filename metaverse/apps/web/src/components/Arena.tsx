@@ -133,6 +133,7 @@ export function Arena() {
   const [micOn, setMicOn] = useState(false);
   const [camOn, setCamOn] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [mediaReady, setMediaReady] = useState(false);
 
   const [elements, setElements] = useState<SpaceElement[]>([]);
   const [privateZones, setPrivateZones] = useState<any[]>([]);
@@ -587,6 +588,7 @@ export function Arena() {
     const ms = new MediasoupClient(ws);
     msRef.current = ms;
     setConnected(false);
+    setMediaReady(false);
 
     ms.onNewConsumer = (consumer, userId, appData) => {
       const isScreenMedia = appData?.type === 'screen' || appData?.type === 'screen-audio';
@@ -657,7 +659,13 @@ export function Arena() {
              })));
           }
 
-          ms.init(); // Initialize mediasoup after joining
+          ms.init()
+            .then(() => setMediaReady(true))
+            .catch((error) => {
+              console.error('Mediasoup init failed', error);
+              setMediaReady(false);
+              pushToast({ title: 'Media is unavailable', detail: 'Audio, video, and screen share could not initialize.', kind: 'warning', category: 'system' });
+            });
           break;
         case 'user-joined':
           if (msg.payload.userId && msg.payload.userId !== myUserId) {
@@ -922,7 +930,7 @@ export function Arena() {
     });
 
     ws.connect();
-    return () => { unsub(); unsubConnection(); ws.disconnect(); setConnected(false); };
+    return () => { unsub(); unsubConnection(); ws.disconnect(); setConnected(false); setMediaReady(false); };
   }, [spaceId, token, hasJoined, myUserId, storedAvatarUrl, pushToast, playInviteRing, recordInviteHistory, recordModerationHistory]);
 
   // Save myPos to localStorage whenever it changes
@@ -1540,7 +1548,7 @@ export function Arena() {
   // ── Camera and Mic Controls ───────────
   useEffect(() => {
     async function toggleMic() {
-      if (!msRef.current) return;
+      if (!msRef.current || !mediaReady) return;
       if (micOn) {
         try {
           const { audioInputId } = readDevicePreferences();
@@ -1561,11 +1569,11 @@ export function Arena() {
       }
     }
     toggleMic();
-  }, [micOn, replaceLocalMediaTrack]);
+  }, [micOn, mediaReady, replaceLocalMediaTrack]);
 
   useEffect(() => {
     async function toggleCam() {
-      if (!msRef.current) return;
+      if (!msRef.current || !mediaReady) return;
       if (camOn) {
         try {
           const { videoInputId } = readDevicePreferences();
@@ -1586,10 +1594,13 @@ export function Arena() {
       }
     }
     toggleCam();
-  }, [camOn, replaceLocalMediaTrack]);
+  }, [camOn, mediaReady, replaceLocalMediaTrack]);
 
   const handleScreenShare = async () => {
-    if (!msRef.current) return;
+    if (!msRef.current || !mediaReady) {
+      pushToast({ title: 'Media is still connecting', detail: 'Try screen share again in a moment.', kind: 'warning', category: 'system' });
+      return;
+    }
     const stopScreenShare = async () => {
       if (stoppingScreenShareRef.current) return;
       stoppingScreenShareRef.current = true;
