@@ -419,8 +419,8 @@ officeRouter.put("/:spaceId/draft", async (req, res) => {
   if (!requireSpaceEditor(space, req.userId, res)) return;
   const draft = await client.spaceDraft.upsert({
     where: { spaceId: space.id },
-    update: { data: parsed.data.data as Prisma.InputJsonValue, updatedById: req.userId },
-    create: { spaceId: space.id, data: parsed.data.data as Prisma.InputJsonValue, updatedById: req.userId },
+    update: { data: parsed.data.data as any, updatedById: req.userId },
+    create: { spaceId: space.id, data: parsed.data.data as any, updatedById: req.userId },
   });
   res.json({ draft });
 });
@@ -462,8 +462,8 @@ officeRouter.post("/:spaceId/versions/:versionId/restore", async (req, res) => {
 
   const draft = await client.spaceDraft.upsert({
     where: { spaceId: space.id },
-    update: { data: version.data as Prisma.InputJsonValue, updatedById: req.userId },
-    create: { spaceId: space.id, data: version.data as Prisma.InputJsonValue, updatedById: req.userId },
+    update: { data: version.data as any, updatedById: req.userId },
+    create: { spaceId: space.id, data: version.data as any, updatedById: req.userId },
   });
 
   res.json({ draft, restoredVersion: version.version });
@@ -488,7 +488,7 @@ officeRouter.post("/:spaceId/publish", async (req, res) => {
   if (data.elements && Array.isArray(data.elements)) {
     // Fetch all existing element IDs in database
     const dbElements = await client.element.findMany({ select: { id: true } });
-    const validElementIds = new Set(dbElements.map(e => e.id));
+    const validElementIds = new Set(dbElements.map((e: any) => e.id));
     const fallbackElementId = dbElements[0]?.id;
 
     // Delete all existing spaceElements for this space
@@ -575,7 +575,7 @@ officeRouter.post("/:spaceId/publish", async (req, res) => {
     data: {
       spaceId: space.id,
       version: nextVersion,
-      data: data as Prisma.InputJsonValue,
+      data: data as any,
       createdById: req.userId,
     },
   });

@@ -100,25 +100,44 @@ router.post("/signin", async (req, res) => {
   }
 });
 
+interface elementTypes {
+  id: string;
+  imageUrl: string;
+  colorMaskUrl: string | null;
+  width: number;
+  height: number;
+  static: boolean;
+  name: string | null;
+  category: string | null;
+}
+
 router.get("/elements", async (req, res) => {
   const elements = await client.element.findMany();
 
   return res.json({
-    element: elements.map((e) => ({
+    element: elements.map((e: elementTypes) => ({
       id: e.id,
       imageUrl: e.imageUrl,
       colorMaskUrl: e.colorMaskUrl,
       width: e.width,
       height: e.height,
-      static: e.static, name: e.name, category: e.category,
+      static: e.static,
+      name: e.name,
+      category: e.category,
     })),
   });
 });
 
+interface avtarTypes {
+  id: string;
+  imageUrl: string | null;
+  name: string | null;
+}
+
 router.get("/avatars", async (req, res) => {
   const avatars = await client.avatar.findMany();
   return res.json({
-    avatars: avatars.map((e) => ({
+    avatars: avatars.map((e: avtarTypes) => ({
       id: e.id,
       imageUrl: e.imageUrl,
       name: e.name,
@@ -136,14 +155,14 @@ router.get("/maps", async (req, res) => {
     },
   });
   return res.json({
-    maps: maps.map((m) => ({
+    maps: maps.map((m: any) => ({
       id: m.id,
       name: m.name,
       type: (m as any).type || "map",
       dimensions: `${m.width}x${m.height}`,
       thumbnail: m.thumbnails,
       elementCount: m.mapElements.length,
-      elements: m.mapElements.map((me) => ({
+      elements: m.mapElements.map((me: any) => ({
         id: me.id,
         x: me.x,
         y: me.y,
@@ -155,12 +174,18 @@ router.get("/maps", async (req, res) => {
           static: me.element.static,
         },
       })),
-      areas: (m as any).areas?.map((a: any) => ({
-        id: a.id,
-        name: a.name,
-        x: a.x, y: a.y, w: a.w, h: a.h,
-        floor: a.floor, color: a.color, texture: a.texture
-      })) || [],
+      areas:
+        (m as any).areas?.map((a: any) => ({
+          id: a.id,
+          name: a.name,
+          x: a.x,
+          y: a.y,
+          w: a.w,
+          h: a.h,
+          floor: a.floor,
+          color: a.color,
+          texture: a.texture,
+        })) || [],
     })),
   });
 });

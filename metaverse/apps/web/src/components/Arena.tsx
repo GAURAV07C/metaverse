@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Map as MapIcon, MessageSquare, Search, Settings, LogOut, CircleDot, Hammer, MoreVertical, Users, Share2, Compass, Wifi, CalendarDays, Sparkles, Footprints, Crosshair, X, Bell, DoorOpen } from 'lucide-react';
+import { MessageSquare, Hammer, Users, Share2, Wifi, CalendarDays, Sparkles, Footprints, Crosshair, X, Bell, DoorOpen } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useUserStore } from '../store';
+import { useArenaStore } from '../stores/arenaStore';
 import { WsClient } from '../utils/ws';
 import { MediasoupClient } from '../utils/mediasoupClient';
 import { api } from '../utils/api';
@@ -11,105 +12,19 @@ import { VideoOverlay } from './arena/VideoOverlay';
 import { ElementsPanel, type SpaceElement, type AvailableElement, type RoomPrefab } from './arena/ElementsPanel';
 import { MapCanvas } from './arena/MapCanvas';
 import { ActionToolbar } from './arena/ActionToolbar';
-import { MiniMap } from './arena/MiniMap';
 import { InteractionLayer } from './arena/InteractionLayer';
 import { CanvasAvatarPreview } from './CanvasAvatarPreview';
 import { PrejoinScreen } from './arena/PrejoinScreen';
+import { SpaceRail } from './arena/SpaceRail';
+import { ArenaNotifications } from './arena/ArenaNotifications';
+import { ShortcutsModal } from './arena/ShortcutsModal';
+import { ArenaRightStack } from './arena/ArenaRightStack';
+import { useAvailableAssetsQuery, useInviteEventsQuery, useModerationAuditQuery, useNotificationPreferencesQuery, useSpaceQuery } from './arena/queries';
 import { findPath } from '../utils/pathfinding';
-
-export interface OtherUser {
-  userId: string;
-  username: string;
-  x: number;
-  y: number;
-  avatarUrl?: string;
-  status?: 'available' | 'busy' | 'focus' | 'away';
-}
-
-interface RoomInvite {
-  id: string;
-  inviteId?: string;
-  fromUserId?: string;
-  fromUsername: string;
-  roomId: string;
-  roomName: string;
-  expiresAt: number;
-}
-
-export interface InviteHistoryItem {
-  id: string;
-  direction: 'incoming' | 'outgoing';
-  status: 'received' | 'sent' | 'accepted' | 'declined' | 'expired';
-  fromUsername?: string;
-  toUsername?: string;
-  roomId: string;
-  roomName: string;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface ModerationHistoryItem {
-  id: string;
-  action: 'mute-audio' | 'stop-video' | 'stop-screen';
-  targetUserId?: string;
-  targetUsername: string;
-  status: 'sent' | 'applied' | 'failed';
-  createdAt: number;
-}
-
-type ChatScope = 'everyone' | 'nearby' | 'dm' | 'room' | 'invites';
-
-const DEVICE_PREF_KEY = 'metaverse_device_preferences';
-const NOTIFICATION_PREF_KEY = 'metaverse_notification_preferences';
-type NotificationCategory = 'joins' | 'chat' | 'roomInvites' | 'system';
-type NotificationPrefs = {
-  joins: boolean;
-  chat: boolean;
-  roomInvites: boolean;
-  sounds: boolean;
-  reconnecting: boolean;
-  respectFocus: boolean;
-};
-const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
-  joins: true,
-  chat: true,
-  roomInvites: true,
-  sounds: true,
-  reconnecting: true,
-  respectFocus: true,
-};
-const readDevicePreferences = () => {
-  try {
-    return JSON.parse(localStorage.getItem(DEVICE_PREF_KEY) || '{}') as { audioInputId?: string; videoInputId?: string; audioOutputId?: string };
-  } catch {
-    return {};
-  }
-};
-const readNotificationPreferences = (): NotificationPrefs => {
-  try {
-    return { ...DEFAULT_NOTIFICATION_PREFS, ...JSON.parse(localStorage.getItem(NOTIFICATION_PREF_KEY) || '{}') };
-  } catch {
-    return DEFAULT_NOTIFICATION_PREFS;
-  }
-};
-const readInviteHistory = (spaceId?: string): InviteHistoryItem[] => {
-  if (!spaceId) return [];
-  try {
-    const parsed = JSON.parse(localStorage.getItem(`metaverse_invite_history_${spaceId}`) || '[]');
-    return Array.isArray(parsed) ? parsed.slice(0, 30) : [];
-  } catch {
-    return [];
-  }
-};
-const readModerationHistory = (spaceId?: string): ModerationHistoryItem[] => {
-  if (!spaceId) return [];
-  try {
-    const parsed = JSON.parse(localStorage.getItem(`metaverse_moderation_history_${spaceId}`) || '[]');
-    return Array.isArray(parsed) ? parsed.slice(0, 40) : [];
-  } catch {
-    return [];
-  }
-};
+import type { ChatScope, InviteHistoryItem, ModerationHistoryItem, NotificationCategory, NotificationPrefs, OtherUser, RoomInvite } from './arena/types';
+export type { InviteHistoryItem, ModerationHistoryItem, OtherUser } from './arena/types';
+import { DEFAULT_NOTIFICATION_PREFS, NOTIFICATION_PREF_KEY, readDevicePreferences, readInviteHistory, readModerationHistory, readNotificationPreferences } from './arena/arenaStorage';
+import { getElementInteraction, normalizeAssetUrl } from './arena/arenaHelpers';
 
 export function Arena() {
   const { spaceId } = useParams<{ spaceId: string }>();
@@ -123,6 +38,21 @@ export function Arena() {
   const myUserId = useUserStore((s) => s.userId);
   const myStoredUsername = useUserStore((s) => s.username);
   const storedAvatarUrl = useUserStore((s) => s.avatarUrl);
+  const activeTab = useArenaStore((s) => s.activeTab);
+  const setActiveTab = useArenaStore((s) => s.setActiveTab);
+  const showUsers = useArenaStore((s) => s.showUsers);
+  const setShowUsers = useArenaStore((s) => s.setShowUsers);
+  const isSettingsOpen = useArenaStore((s) => s.isSettingsOpen);
+  const setIsSettingsOpen = useArenaStore((s) => s.setIsSettingsOpen);
+  const showOfficeMenu = useArenaStore((s) => s.showOfficeMenu);
+  const setShowOfficeMenu = useArenaStore((s) => s.setShowOfficeMenu);
+  const viewMode = useArenaStore((s) => s.viewMode);
+  const setViewMode = useArenaStore((s) => s.setViewMode);
+  const showShortcuts = useArenaStore((s) => s.showShortcuts);
+  const setShowShortcuts = useArenaStore((s) => s.setShowShortcuts);
+  const showPanel = useArenaStore((s) => s.showPanel);
+  const setShowPanel = useArenaStore((s) => s.setShowPanel);
+  const toggleArenaSidebar = useArenaStore((s) => s.toggleSidebar);
 
   const [myPos, setMyPos] = useState({ x: 5, y: 5 });
   const [otherUsers, setOtherUsers] = useState<OtherUser[]>([]);
@@ -134,6 +64,7 @@ export function Arena() {
   const [camOn, setCamOn] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [mediaReady, setMediaReady] = useState(false);
+  const [pendingInitialMedia, setPendingInitialMedia] = useState<{ mic: boolean; cam: boolean } | null>(null);
 
   const [elements, setElements] = useState<SpaceElement[]>([]);
   const [privateZones, setPrivateZones] = useState<any[]>([]);
@@ -150,7 +81,6 @@ export function Arena() {
   const [autoPath, setAutoPath] = useState<{x: number, y: number}[]>([]);
   const [zoom, setZoom] = useState(1);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
-  const [activeTab, setActiveTab] = useState<'users' | 'chat'>('users');
   const [messages, setMessages] = useState<{ username: string; message: string; time: string; scope?: string }[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatScope, setChatScope] = useState<ChatScope>('everyone');
@@ -161,15 +91,10 @@ export function Arena() {
   const [moderationHistory, setModerationHistory] = useState<ModerationHistoryItem[]>(() => readModerationHistory(spaceId));
   const [inviteTick, setInviteTick] = useState(0);
   const [reactions, setReactions] = useState<Record<string, { emoji: string; expiresAt: number }>>({});
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [showOfficeMenu, setShowOfficeMenu] = useState(false);
-  const [viewMode, setViewMode] = useState<'map' | 'grid'>('map');
-  const [showShortcuts, setShowShortcuts] = useState(false);
   const [followingUserId, setFollowingUserId] = useState<string | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [promptInteraction, setPromptInteraction] = useState<any>(null);
   const [activeInteraction, setActiveInteraction] = useState<any>(null);
-  const [showUsers, setShowUsers] = useState(true);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const stoppingScreenShareRef = useRef(false);
   const activeTabRef = useRef(activeTab);
@@ -177,6 +102,11 @@ export function Arena() {
   const notificationPrefsRef = useRef(notificationPrefs);
   const presenceStatusRef = useRef(presenceStatus);
   const wasConnectedRef = useRef(false);
+  const spaceQuery = useSpaceQuery(spaceId);
+  const availableAssetsQuery = useAvailableAssetsQuery();
+  const notificationPreferencesQuery = useNotificationPreferencesQuery(spaceId);
+  const inviteEventsQuery = useInviteEventsQuery(spaceId);
+  const moderationAuditQuery = useModerationAuditQuery(spaceId, canEditSpace);
 
   useEffect(() => {
     activeTabRef.current = activeTab;
@@ -189,47 +119,31 @@ export function Arena() {
   }, [spaceId]);
 
   useEffect(() => {
-    if (!spaceId) return;
-    let cancelled = false;
-    const loadServerHistory = async () => {
-      try {
-        const inviteRes = await api.get(`/office/${spaceId}/invite-events?take=30`);
-        if (!cancelled && Array.isArray(inviteRes.data?.events)) {
-          setInviteHistory(inviteRes.data.events.map((event: any) => ({
-            id: event.inviteId || event.id,
-            direction: event.direction === 'incoming' ? 'incoming' : 'outgoing',
-            status: event.status || 'sent',
-            fromUsername: event.fromUsername || undefined,
-            toUsername: event.toUsername || undefined,
-            roomId: event.roomId,
-            roomName: event.roomName,
-            createdAt: new Date(event.createdAt).getTime(),
-            updatedAt: new Date(event.createdAt).getTime(),
-          })));
-        }
-      } catch {}
+    if (!inviteEventsQuery.data) return;
+    setInviteHistory(inviteEventsQuery.data.map((event: any) => ({
+      id: event.inviteId || event.id,
+      direction: event.direction === 'incoming' ? 'incoming' : 'outgoing',
+      status: event.status || 'sent',
+      fromUsername: event.fromUsername || undefined,
+      toUsername: event.toUsername || undefined,
+      roomId: event.roomId,
+      roomName: event.roomName,
+      createdAt: new Date(event.createdAt).getTime(),
+      updatedAt: new Date(event.createdAt).getTime(),
+    })));
+  }, [inviteEventsQuery.data]);
 
-      try {
-        const auditRes = await api.get(`/office/${spaceId}/moderation-audit?take=40`);
-        if (!cancelled && Array.isArray(auditRes.data?.events)) {
-          setModerationHistory(auditRes.data.events.map((event: any) => ({
-            id: event.id,
-            action: event.action,
-            targetUserId: event.targetUserId || undefined,
-            targetUsername: event.targetUsername || 'Participant',
-            status: event.status === 'applied' ? 'applied' : event.status === 'failed' ? 'failed' : 'sent',
-            createdAt: new Date(event.createdAt).getTime(),
-          })));
-        }
-      } catch {
-        // Non-editors cannot read moderation audit; local history remains available.
-      }
-    };
-    loadServerHistory();
-    return () => {
-      cancelled = true;
-    };
-  }, [spaceId]);
+  useEffect(() => {
+    if (!moderationAuditQuery.data) return;
+    setModerationHistory(moderationAuditQuery.data.map((event: any) => ({
+      id: event.id,
+      action: event.action,
+      targetUserId: event.targetUserId || undefined,
+      targetUsername: event.targetUsername || 'Participant',
+      status: event.status === 'applied' ? 'applied' : event.status === 'failed' ? 'failed' : 'sent',
+      createdAt: new Date(event.createdAt).getTime(),
+    })));
+  }, [moderationAuditQuery.data]);
 
   useEffect(() => {
     if (!spaceId) return;
@@ -272,20 +186,11 @@ export function Arena() {
   }, []);
 
   useEffect(() => {
-    if (!spaceId) return;
-    let cancelled = false;
-    api.get(`/office/${spaceId}/notification-preferences`)
-      .then((res) => {
-        if (cancelled || !res.data?.preferences) return;
-        const next = { ...DEFAULT_NOTIFICATION_PREFS, ...res.data.preferences };
-        setNotificationPrefs(next);
-        localStorage.setItem(NOTIFICATION_PREF_KEY, JSON.stringify(next));
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [spaceId]);
+    if (!notificationPreferencesQuery.data) return;
+    const next = { ...DEFAULT_NOTIFICATION_PREFS, ...notificationPreferencesQuery.data };
+    setNotificationPrefs(next);
+    localStorage.setItem(NOTIFICATION_PREF_KEY, JSON.stringify(next));
+  }, [notificationPreferencesQuery.data]);
 
   // Invite / copy state
   const [copied, setCopied] = useState(false);
@@ -310,7 +215,6 @@ export function Arena() {
   };
 
   // Element panel state
-  const [showPanel, setShowPanel] = useState(false);
   const [availableElements, setAvailableElements] = useState<AvailableElement[]>([]);
   const [roomPrefabs, setRoomPrefabs] = useState<RoomPrefab[]>([]);
   const [addingElement, setAddingElement] = useState<string | null>(null);
@@ -321,46 +225,6 @@ export function Arena() {
   const [panelMsg, setPanelMsg] = useState('');
   const [hiddenElementIds, setHiddenElementIds] = useState<string[]>([]);
   const liveTileSize = 32;
-
-  const normalizeAssetUrl = (url?: string | null) => {
-    if (!url || url.startsWith('class:') || url.startsWith('http') || url.startsWith('/') || url.startsWith('data:')) return url ?? null;
-    return `/${url}`;
-  };
-
-  const getElementInteraction = (el: SpaceElement) => {
-    const configured = el.element.interactiveObjects?.[0];
-    const text = `${el.element.name ?? ''} ${el.element.category ?? ''} ${el.element.id ?? ''}`.toLowerCase();
-    const isLikelyInteractive =
-      Boolean(configured) ||
-      text.includes('whiteboard') ||
-      text.includes('screen') ||
-      text.includes('terminal') ||
-      text.includes('arcade') ||
-      text.includes('game') ||
-      text.includes('interactive') ||
-      text.includes('smart');
-
-    if (!isLikelyInteractive) return null;
-
-    const type =
-      configured?.type ||
-      (text.includes('whiteboard') ? 'WHITEBOARD' :
-        text.includes('screen') ? 'SCREENSHARE' :
-        text.includes('arcade') || text.includes('game') ? 'GAME' :
-        'INFO');
-
-    const state = configured?.state || {};
-    return {
-      id: configured?.id || el.id,
-      elementId: el.element.id,
-      name: el.element.name || 'Interactive object',
-      type,
-      state,
-      url: state?.url,
-      x: el.x,
-      y: el.y,
-    };
-  };
 
   const toggleHideElement = (id: string) => {
     setHiddenElementIds(prev =>
@@ -467,19 +331,34 @@ export function Arena() {
     const constraints: MediaStreamConstraints = kind === 'audio'
       ? { audio: { deviceId: deviceId ? { exact: deviceId } : undefined } }
       : { video: { deviceId: deviceId ? { exact: deviceId } : undefined } };
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    const stream = await Promise.race([
+      navigator.mediaDevices.getUserMedia(constraints),
+      new Promise<MediaStream>((_, reject) => window.setTimeout(() => reject(new Error(`${kind} permission timed out`)), 15000)),
+    ]);
     const track = kind === 'audio' ? stream.getAudioTracks()[0] : stream.getVideoTracks()[0];
     if (!track) throw new Error(`${kind} track unavailable`);
     const localStream = localStreamRef.current || new MediaStream();
     const existingTracks = kind === 'audio' ? localStream.getAudioTracks() : localStream.getVideoTracks();
     await msRef.current.replaceProducerTrack(type, track, myUserId || 'me', { type });
     existingTracks.forEach(existing => {
+      existing.onended = null;
       localStream.removeTrack(existing);
       existing.stop();
     });
     localStream.addTrack(track);
     localStreamRef.current = localStream;
     setStreams(prev => ({ ...prev, me: localStream }));
+    track.onended = () => {
+      localStream.removeTrack(track);
+      if (kind === 'audio') {
+        void msRef.current?.stopProduce('audio');
+        setMicOn(false);
+      } else {
+        void msRef.current?.stopProduce('camera');
+        setCamOn(false);
+      }
+      setStreams(prev => ({ ...prev, me: localStream }));
+    };
   }, [myUserId]);
 
   const handleDevicePreferenceChange = useCallback(async (key: 'audioInputId' | 'videoInputId' | 'audioOutputId', value: string) => {
@@ -535,47 +414,31 @@ export function Arena() {
   };
 
   // ── Fetch space data ───────────────────
-  const fetchSpace = useCallback(async () => {
-    if (!spaceId) return;
-    try {
-      const res = await api.get(`/space/${spaceId}`);
-      const dimStr: string = res.data.dimensions ?? '48x27';
-      const [w, h] = dimStr.split('x').map(Number);
-      setDimensions({ w: w || 48, h: h || 27 });
-      setSpaceName(res.data.name || 'Office');
-      setCanEditSpace(Boolean(res.data.canEdit ?? (myUserId && res.data.ownerId === myUserId)));
-      setCurrentUserRole(res.data.currentUserRole || (myUserId && res.data.ownerId === myUserId ? 'Owner' : 'Guest'));
-      setElements(res.data.elements ?? []);
-      setPrivateZones(res.data.privateZones ?? []);
-    } catch (e) { console.error(e); }
-  }, [spaceId, myUserId]);
+  const applySpaceData = useCallback((spaceData: any) => {
+    if (!spaceData) return;
+    const dimStr: string = spaceData.dimensions ?? '48x27';
+    const [w, h] = dimStr.split('x').map(Number);
+    setDimensions({ w: w || 48, h: h || 27 });
+    setSpaceName(spaceData.name || 'Office');
+    setCanEditSpace(Boolean(spaceData.canEdit ?? (myUserId && spaceData.ownerId === myUserId)));
+    setCurrentUserRole(spaceData.currentUserRole || (myUserId && spaceData.ownerId === myUserId ? 'Owner' : 'Guest'));
+    setElements(spaceData.elements ?? []);
+    setPrivateZones(spaceData.privateZones ?? []);
+  }, [myUserId]);
 
-  useEffect(() => { fetchSpace(); }, [fetchSpace]);
+  useEffect(() => { applySpaceData(spaceQuery.data); }, [applySpaceData, spaceQuery.data]);
+
+  const fetchSpace = useCallback(async () => {
+    const result = await spaceQuery.refetch();
+    applySpaceData(result.data);
+  }, [applySpaceData, spaceQuery.refetch]);
 
   // ── Fetch available elements & room templates ───────────
   const fetchAvailableElements = async () => {
-    try {
-      const [elemRes, mapRes] = await Promise.all([
-        api.get('/elements').catch(() => ({ data: { element: [] } })),
-        api.get('/maps').catch(() => ({ data: { maps: [] } }))
-      ]);
-      setAvailableElements(elemRes.data.element ?? []);
-      
-      const prefabs: RoomPrefab[] = (mapRes.data.maps || [])
-        .filter((m: any) => m.type === 'room')
-        .map((m: any) => ({
-          id: m.id,
-          name: m.name,
-          category: 'Admin Room',
-          description: `${m.elementCount} items`,
-          items: m.elements.map((e: any) => ({
-            elementId: e.element.id,
-            offsetX: e.x,
-            offsetY: e.y
-          }))
-        }));
-      setRoomPrefabs(prefabs);
-    } catch (e) { console.error(e); }
+    const result = await availableAssetsQuery.refetch();
+    if (!result.data) return;
+    setAvailableElements(result.data.elements ?? []);
+    setRoomPrefabs(result.data.roomPrefabs ?? []);
   };
 
   // ── WebSocket setup ─────────────────────
@@ -842,10 +705,10 @@ export function Arena() {
             const requester = msg.payload.fromUsername || 'Host';
             let accepted = true;
             if (action === 'mute-audio') {
-              setMicOn(false);
+              void stopMicrophone();
               pushToast({ title: `${requester} muted your mic`, detail: 'Host moderation turned your microphone off.', kind: 'warning', category: 'system' });
             } else if (action === 'stop-video') {
-              setCamOn(false);
+              void stopCamera();
               pushToast({ title: `${requester} stopped your camera`, detail: 'Host moderation turned your camera off.', kind: 'warning', category: 'system' });
             } else if (action === 'stop-screen') {
               if (screenStreamRef.current) {
@@ -1481,8 +1344,7 @@ export function Arena() {
   };
 
   const toggleSidebar = (tab: 'users' | 'chat') => {
-    setShowUsers(!showUsers || activeTab !== tab);
-    setActiveTab(tab);
+    toggleArenaSidebar(tab);
     if (tab === 'chat') setUnreadChatCount(0);
     closeBuild();
   };
@@ -1546,55 +1408,85 @@ export function Arena() {
   }, [connected, privateZones.length]);
 
   // ── Camera and Mic Controls ───────────
-  useEffect(() => {
-    async function toggleMic() {
-      if (!msRef.current || !mediaReady) return;
-      if (micOn) {
-        try {
-          const { audioInputId } = readDevicePreferences();
-          await replaceLocalMediaTrack('audio', audioInputId);
-        } catch (e) {
-          console.error('Mic access denied', e);
-          setMicOn(false);
-        }
-      } else {
-        await msRef.current.stopProduce('audio');
-        if (localStreamRef.current) {
-          localStreamRef.current.getAudioTracks().forEach(t => {
-            t.stop();
-            localStreamRef.current?.removeTrack(t);
-          });
-          setStreams(prev => ({ ...prev, me: localStreamRef.current! }));
-        }
-      }
+  const stopMicrophone = useCallback(async () => {
+    await msRef.current?.stopProduce('audio');
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach(t => {
+        t.onended = null;
+        t.stop();
+        localStreamRef.current?.removeTrack(t);
+      });
+      setStreams(prev => ({ ...prev, me: localStreamRef.current! }));
     }
-    toggleMic();
-  }, [micOn, mediaReady, replaceLocalMediaTrack]);
+    setMicOn(false);
+  }, []);
+
+  const startMicrophone = useCallback(async () => {
+    if (!msRef.current || !mediaReady) {
+      pushToast({ title: 'Media is still connecting', detail: 'Try microphone again in a moment.', kind: 'warning', category: 'system' });
+      return false;
+    }
+    try {
+      const { audioInputId } = readDevicePreferences();
+      await replaceLocalMediaTrack('audio', audioInputId);
+      setMicOn(true);
+      return true;
+    } catch (e) {
+      console.error('Mic access denied', e);
+      await stopMicrophone();
+      pushToast({ title: 'Microphone unavailable', detail: 'Allow microphone access and try again.', kind: 'warning', category: 'system' });
+      return false;
+    }
+  }, [mediaReady, pushToast, replaceLocalMediaTrack, stopMicrophone]);
+
+  const stopCamera = useCallback(async () => {
+    await msRef.current?.stopProduce('camera');
+    if (localStreamRef.current) {
+      localStreamRef.current.getVideoTracks().forEach(t => {
+        t.onended = null;
+        t.stop();
+        localStreamRef.current?.removeTrack(t);
+      });
+      setStreams(prev => ({ ...prev, me: localStreamRef.current! }));
+    }
+    setCamOn(false);
+  }, []);
+
+  const startCamera = useCallback(async () => {
+    if (!msRef.current || !mediaReady) {
+      pushToast({ title: 'Media is still connecting', detail: 'Try camera again in a moment.', kind: 'warning', category: 'system' });
+      return false;
+    }
+    try {
+      const { videoInputId } = readDevicePreferences();
+      await replaceLocalMediaTrack('video', videoInputId);
+      setCamOn(true);
+      return true;
+    } catch (e) {
+      console.error('Cam access denied', e);
+      await stopCamera();
+      pushToast({ title: 'Camera unavailable', detail: 'Allow camera access and try again.', kind: 'warning', category: 'system' });
+      return false;
+    }
+  }, [mediaReady, pushToast, replaceLocalMediaTrack, stopCamera]);
+
+  const handleMicChange = useCallback((value: boolean) => {
+    if (value) void startMicrophone();
+    else void stopMicrophone();
+  }, [startMicrophone, stopMicrophone]);
+
+  const handleCamChange = useCallback((value: boolean) => {
+    if (value) void startCamera();
+    else void stopCamera();
+  }, [startCamera, stopCamera]);
 
   useEffect(() => {
-    async function toggleCam() {
-      if (!msRef.current || !mediaReady) return;
-      if (camOn) {
-        try {
-          const { videoInputId } = readDevicePreferences();
-          await replaceLocalMediaTrack('video', videoInputId);
-        } catch (e) {
-          console.error('Cam access denied', e);
-          setCamOn(false);
-        }
-      } else {
-        await msRef.current.stopProduce('camera');
-        if (localStreamRef.current) {
-          localStreamRef.current.getVideoTracks().forEach(t => {
-            t.stop();
-            localStreamRef.current?.removeTrack(t);
-          });
-          setStreams(prev => ({ ...prev, me: localStreamRef.current! }));
-        }
-      }
-    }
-    toggleCam();
-  }, [camOn, mediaReady, replaceLocalMediaTrack]);
+    if (!mediaReady || !pendingInitialMedia) return;
+    const requested = pendingInitialMedia;
+    setPendingInitialMedia(null);
+    if (requested.mic) void startMicrophone();
+    if (requested.cam) void startCamera();
+  }, [mediaReady, pendingInitialMedia, startCamera, startMicrophone]);
 
   const handleScreenShare = async () => {
     if (!msRef.current || !mediaReady) {
@@ -1708,8 +1600,7 @@ export function Arena() {
       <PrejoinScreen
         spaceName={spaceName}
         onJoin={(startMic, startCam) => {
-          setMicOn(startMic);
-          setCamOn(startCam);
+          setPendingInitialMedia({ mic: startMic, cam: startCam });
           setHasJoined(true);
         }}
       />
@@ -1718,19 +1609,23 @@ export function Arena() {
 
   return (
     <div className={`arena ${showUsers ? 'with-sidebar' : ''}`}>
-        <nav className="space-rail" aria-label="Office navigation">
-          <button className="rail-brand" title={spaceName} aria-label="Office menu" onClick={() => setShowOfficeMenu(prev => !prev)}><CircleDot size={25} /></button>
-          <button className="rail-button" title="Search people" aria-label="Search people" onClick={() => { setActiveTab('users'); setShowUsers(true); requestAnimationFrame(() => document.querySelector<HTMLInputElement>('.people-search input')?.focus()); }}><Search size={23} /></button>
-          <span className="rail-divider" />
-          <button className={`rail-button ${showUsers && activeTab === 'users' ? 'selected' : ''}`} title="People and map" aria-label="People and map" aria-expanded={showUsers && activeTab === 'users'} onClick={() => toggleSidebar('users')}><MapIcon size={23} /></button>
-          <button className="rail-button" title={canEditSpace ? 'Edit the office' : 'Only the owner can edit this office'} aria-label="Edit the office" disabled={!canEditSpace} onClick={() => canEditSpace && navigate(`/studio/${spaceId}`)}><Hammer size={21} /></button>
-          <button className={`rail-button ${showUsers && activeTab === 'chat' ? 'selected' : ''}`} title="Chat" aria-label="Chat" aria-expanded={showUsers && activeTab === 'chat'} onClick={() => toggleSidebar('chat')}><MessageSquare size={21} />{unreadChatCount > 0 && <span className="rail-badge">{Math.min(unreadChatCount, 9)}</span>}</button>
-          <button className="rail-button" title="More" aria-label="More" onClick={() => setShowOfficeMenu(prev => !prev)}><MoreVertical size={21} /></button>
-          <div className="rail-bottom">
-            <button className="rail-button rail-leave" title="Leave space" aria-label="Leave space" onClick={() => navigate('/dashboard')}><LogOut size={21} /></button>
-            <button className="rail-button" title="Settings" aria-label="Settings" onClick={() => setIsSettingsOpen(true)}><Settings size={23} /></button>
-          </div>
-        </nav>
+        <SpaceRail
+          spaceName={spaceName}
+          showUsers={showUsers}
+          activeTab={activeTab}
+          canEditSpace={canEditSpace}
+          unreadChatCount={unreadChatCount}
+          onOpenOfficeMenu={() => setShowOfficeMenu(prev => !prev)}
+          onSearchPeople={() => {
+            setActiveTab('users');
+            setShowUsers(true);
+            requestAnimationFrame(() => document.querySelector<HTMLInputElement>('.people-search input')?.focus());
+          }}
+          onToggleSidebar={toggleSidebar}
+          onEditOffice={() => canEditSpace && navigate(`/studio/${spaceId}`)}
+          onLeaveSpace={() => navigate('/dashboard')}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+        />
 
 
         {showOfficeMenu && (
@@ -1836,129 +1731,32 @@ export function Arena() {
             </aside>
           )}
 
-          {roomInvites.length > 0 && (
-            <div className="room-invite-stack" aria-live="assertive" aria-label="Room invitations">
-              {roomInvites.map(invite => {
-                const remaining = Math.max(0, Math.ceil((invite.expiresAt - Date.now() + inviteTick * 0) / 1000));
-                return (
-                  <article key={invite.id} className="room-invite-card">
-                    <div className="room-invite-icon"><DoorOpen size={18} /></div>
-                    <div className="room-invite-copy">
-                      <strong>{invite.fromUsername} invited you</strong>
-                      <span>Join {invite.roomName} · expires in {remaining}s</span>
-                    </div>
-                    <div className="room-invite-actions">
-                      <button className="accept" onClick={() => acceptRoomInvite(invite)}>Accept</button>
-                      <button onClick={() => declineRoomInvite(invite)}>Decline</button>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          )}
+          <ArenaNotifications
+            roomInvites={roomInvites}
+            inviteTick={inviteTick}
+            toasts={toasts}
+            onAcceptInvite={acceptRoomInvite}
+            onDeclineInvite={declineRoomInvite}
+            onDismissToast={(toastId) => setToasts(prev => prev.filter(item => item.id !== toastId))}
+          />
 
-          {toasts.length > 0 && (
-            <div className="arena-toast-stack" aria-live="polite" aria-label="Space notifications">
-              {toasts.map(toast => (
-                <article key={toast.id} className={`arena-toast ${toast.kind || 'info'}`}>
-                  <Bell size={16} />
-                  <div>
-                    <strong>{toast.title}</strong>
-                    {toast.detail && <span>{toast.detail}</span>}
-                  </div>
-                  {toast.actionLabel && toast.onAction && <button className="toast-action" onClick={() => { toast.onAction?.(); setToasts(prev => prev.filter(item => item.id !== toast.id)); }}>{toast.actionLabel}</button>}
-                  <button onClick={() => setToasts(prev => prev.filter(item => item.id !== toast.id))} aria-label="Dismiss notification" title="Dismiss"><X size={14} /></button>
-                </article>
-              ))}
-            </div>
-          )}
+          <ShortcutsModal open={showShortcuts} onClose={() => setShowShortcuts(false)} />
 
-          {showShortcuts && (
-            <div className="shortcuts-backdrop" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
-              <section className="shortcuts-modal">
-                <header>
-                  <div>
-                    <strong>Keyboard shortcuts</strong>
-                    <span>Move faster around the office.</span>
-                  </div>
-                  <button onClick={() => setShowShortcuts(false)} aria-label="Close shortcuts" title="Close shortcuts"><X size={18} /></button>
-                </header>
-                <div className="shortcuts-grid">
-                  <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>Move avatar</span></div>
-                  <div><kbd>Arrow keys</kbd><span>Move avatar</span></div>
-                  <div><kbd>Click map</kbd><span>Walk to tile</span></div>
-                  <div><kbd>Drag map</kbd><span>Pan camera</span></div>
-                  <div><kbd>Mouse wheel</kbd><span>Zoom map</span></div>
-                  <div><kbd>X</kbd><span>Interact / use portal</span></div>
-                  <div><kbd>?</kbd><span>Open shortcuts</span></div>
-                  <div><kbd>Esc</kbd><span>Close panels</span></div>
-                </div>
-              </section>
-            </div>
-          )}
-
-          <aside className="arena-right-stack" aria-label="Map widgets">
-            <div className="arena-minimap">
-              <header><Compass size={15} />Mini map</header>
-              <div className="minimap-surface">
-                <MiniMap
-                  dimensions={dimensions}
-                  myPos={myPos}
-                  otherUsers={otherUsers}
-                  elements={elements}
-                  privateZones={privateZones}
-                />
-              </div>
-              <button onClick={handleLocateUser}>Center me</button>
-            </div>
-            {currentRoom && (
-              <div className="arena-help-card room-actions-card">
-                <b>{currentRoom.name || 'Room'}</b>
-                <button onClick={() => setViewMode('grid')}>Meeting mode</button>
-                <button className="danger" onClick={leaveRoom}>Leave room</button>
-              </div>
-            )}
-            {currentSpotlight && (
-              <div className="arena-help-card room-actions-card spotlight-card">
-                <b>{currentSpotlight.name || 'Spotlight'}</b>
-                <span>Your voice is highlighted in this area.</span>
-              </div>
-            )}
-            <div className="arena-help-card">
-              <b>Move</b>
-              <span>WASD / arrow keys or click any walkable tile.</span>
-            </div>
-            {currentRoom && roomSpots.length > 0 && (
-              <div className="arena-help-card">
-                <b>Choose spot</b>
-                <div style={{ display: 'grid', gap: 6, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
-                  {roomSpots.map((spot: any, index: number) => {
-                    const occupied = isSpotOccupied(spot);
-                    return (
-                      <button
-                        key={spot.id || `${spot.startX}:${spot.startY}`}
-                        disabled={occupied}
-                        onClick={() => chooseSpot(spot)}
-                        title={occupied ? 'Occupied' : 'Move to this room spot'}
-                        style={{
-                          minHeight: 28,
-                          borderRadius: 6,
-                          border: occupied ? '1px solid rgba(148, 163, 184, 0.45)' : '1px solid rgba(34, 197, 94, 0.65)',
-                          background: occupied ? 'rgba(15, 23, 42, 0.6)' : 'rgba(34, 197, 94, 0.15)',
-                          color: occupied ? '#94a3b8' : '#dcfce7',
-                          fontSize: 12,
-                          fontWeight: 700,
-                          cursor: occupied ? 'not-allowed' : 'pointer'
-                        }}
-                      >
-                        {index + 1}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </aside>
+          <ArenaRightStack
+            dimensions={dimensions}
+            myPos={myPos}
+            otherUsers={otherUsers}
+            elements={elements}
+            privateZones={privateZones}
+            currentRoom={currentRoom}
+            currentSpotlight={currentSpotlight}
+            roomSpots={roomSpots}
+            onLocateUser={handleLocateUser}
+            onOpenMeetingMode={() => setViewMode('grid')}
+            onLeaveRoom={leaveRoom}
+            isSpotOccupied={isSpotOccupied}
+            onChooseSpot={chooseSpot}
+          />
 
           <VideoOverlay
             proximityUsers={proximityUsers}
@@ -1975,7 +1773,7 @@ export function Arena() {
             onViewModeChange={setViewMode}
             canHost={canEditSpace}
             isScreenSharing={isScreenSharing}
-            onMuteSelf={() => setMicOn(false)}
+            onMuteSelf={() => handleMicChange(false)}
             onStopScreenShare={isScreenSharing ? handleScreenShare : undefined}
             onModerationAction={requestModerationAction}
             onModerationAll={requestModerationAll}
@@ -2028,9 +1826,9 @@ export function Arena() {
             myStoredUsername={myStoredUsername}
             onLeaveSpace={() => navigate('/dashboard')}
             micOn={micOn}
-            setMicOn={setMicOn}
+            setMicOn={handleMicChange}
             camOn={camOn}
-            setCamOn={setCamOn}
+            setCamOn={handleCamChange}
             isScreenSharing={isScreenSharing}
             handleScreenShare={handleScreenShare}
             canBuild={canEditSpace}
@@ -2079,9 +1877,9 @@ export function Arena() {
           myStoredUsername={myStoredUsername}
           myAvatarUrl={myAvatarUrl || undefined}
           micOn={micOn}
-          setMicOn={setMicOn}
+          setMicOn={handleMicChange}
           camOn={camOn}
-          setCamOn={setCamOn}
+          setCamOn={handleCamChange}
           onDevicePreferenceChange={handleDevicePreferenceChange}
           notificationPreferences={notificationPrefs}
           onNotificationPreferenceChange={handleNotificationPreferenceChange}

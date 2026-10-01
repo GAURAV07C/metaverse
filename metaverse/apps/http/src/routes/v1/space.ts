@@ -78,7 +78,7 @@ spaceRouter.post("/", userMiddleware, async (req, res) => {
       return;
     }
 
-    const space = await client.$transaction(async (tx) => {
+    const space = await client.$transaction(async (tx: any) => {
       const space = await tx.space.create({
         data: {
           name: parsedData.data.name,
@@ -89,7 +89,7 @@ spaceRouter.post("/", userMiddleware, async (req, res) => {
         },
       });
       await tx.spaceElements.createMany({
-        data: map.mapElements.map((e) => ({
+        data: map.mapElements.map((e: any) => ({
           spaceId: space.id,
           elementId: e.elementId,
           x: Number(e.x ?? 0),
@@ -98,7 +98,7 @@ spaceRouter.post("/", userMiddleware, async (req, res) => {
       });
       if (map.areas && map.areas.length > 0) {
         await tx.privateZone.createMany({
-          data: map.areas.map((a) => ({
+          data: map.areas.map((a: any) => ({
             spaceId: space.id,
             name: a.name,
             startX: a.x,
@@ -197,7 +197,7 @@ spaceRouter.put("/:spaceId", userMiddleware, async (req, res) => {
       },
     });
 
-    const elementOutOfBounds = placements.some((placement) =>
+    const elementOutOfBounds = placements.some((placement: any) =>
       placement.x + placement.element.width > size.width ||
       placement.y + placement.element.height > size.height
     );
@@ -247,7 +247,7 @@ spaceRouter.delete("/:spaceId", userMiddleware, async (req, res) => {
   }
 
   try {
-    await client.$transaction(async (tx) => {
+    await client.$transaction(async (tx: any) => {
       await tx.spaceElements.deleteMany({ where: { spaceId: req.params.spaceId as string } });
       await tx.privateZone.deleteMany({ where: { spaceId: req.params.spaceId as string } });
       await tx.meeting.deleteMany({ where: { spaceId: req.params.spaceId as string } });
@@ -280,7 +280,7 @@ spaceRouter.get("/all", userMiddleware, async (req, res) => {
     })
 
     res.json({
-        spaces: spaces.map(s => ({
+        spaces: spaces.map((s: any) => ({
             id: s.id,
             name: s.name,
             thumbnail: s.thumbnail,
