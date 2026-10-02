@@ -32,7 +32,7 @@ export type WsIncomingMessage =
   | { type: 'producer-closed'; payload: { producerId: string; userId?: string; appData?: any } }
   | { type: 'webrtc-consumed'; payload: { id: string; producerId: string; kind: string; rtpParameters: any } }
   | { type: 'join-error'; payload: { reason: string; message: string } }
-  | { type: 'webrtc-error'; payload: { message: string } };
+  | { type: 'webrtc-error'; payload: { message: string; requestId?: string } };
 
 export class WsClient {
   private ws: WebSocket | null = null;

@@ -45,7 +45,7 @@ export class MediasoupClient {
           this.resolveRequest('webrtc-consumed', msg.payload);
           break;
         case 'webrtc-error':
-          this.rejectPendingRequests(new Error(msg.payload.message));
+          this.rejectPendingRequests(new Error(msg.payload.message), msg.payload.requestId);
           break;
         case 'new-producer':
           // Another user started producing, we should consume it
@@ -72,7 +72,15 @@ export class MediasoupClient {
     }
   }
 
-  private rejectPendingRequests(error: Error) {
+  private rejectPendingRequests(error: Error, requestId?: string) {
+    if (requestId) {
+      const request = this.pendingRequests.get(requestId);
+      if (request) {
+        request.reject(error);
+        this.pendingRequests.delete(requestId);
+      }
+      return;
+    }
     this.pendingRequests.forEach((request) => request.reject(error));
     this.pendingRequests.clear();
   }
@@ -131,6 +139,9 @@ export class MediasoupClient {
   private async initSendTransport() {
     const params = await this.request('webrtc-create-transport');
     this.sendTransport = this.device.createSendTransport(params);
+    this.sendTransport.on('connectionstatechange', (state: string) => {
+      console.log('Mediasoup send transport state', state);
+    });
 
     this.sendTransport.on('connect', async ({ dtlsParameters }: { dtlsParameters: types.DtlsParameters }, callback: () => void, errback: (error: Error) => void) => {
       try {
@@ -166,6 +177,9 @@ export class MediasoupClient {
   private async initRecvTransport() {
     const params = await this.request('webrtc-create-transport');
     this.recvTransport = this.device.createRecvTransport(params);
+    this.recvTransport.on('connectionstatechange', (state: string) => {
+      console.log('Mediasoup recv transport state', state);
+    });
 
     this.recvTransport.on('connect', async ({ dtlsParameters }: { dtlsParameters: types.DtlsParameters }, callback: () => void, errback: (error: Error) => void) => {
       try {
@@ -184,6 +198,7 @@ export class MediasoupClient {
     if (!this.sendTransport) throw new Error('Send transport not initialized');
     const type = typeof appData?.type === 'string' ? appData.type : track.kind;
     const producer = await this.sendTransport.produce({ track, appData: { userId, ...appData } });
+    console.log('Mediasoup local producer created', { id: producer.id, kind: track.kind, type });
     this.producers.set(type, producer);
     this.producerIdsByType.set(type, producer.id);
     return producer;
@@ -250,6 +265,7 @@ export class MediasoupClient {
     });
 
     this.consumers.set(consumer.id, consumer);
+    console.log('Mediasoup remote consumer created', { id: consumer.id, producerId, kind: consumer.kind, userId, appData });
 
     if (this.onNewConsumer) {
       this.onNewConsumer(consumer, userId, this.producerMeta.get(producerId) || appData);

@@ -8,7 +8,7 @@ export class WebRTCHandler {
   }
 
   static async handleGetRouterRtpCapabilities(user: User, parsedData?: any) {
-    await this.handle(user, async () => {
+    await this.handle(user, parsedData, async () => {
       if (!user.spaceId) return;
       const router = await MediasoupManager.getInstance().getRouter(user.spaceId);
       user.send({
@@ -19,7 +19,7 @@ export class WebRTCHandler {
   }
 
   static async handleCreateTransport(user: User, parsedData?: any) {
-    await this.handle(user, async () => {
+    await this.handle(user, parsedData, async () => {
       if (!user.spaceId) return;
       const transport = await MediasoupManager.getInstance().createWebRtcTransport(user.spaceId);
       user.send({
@@ -36,7 +36,7 @@ export class WebRTCHandler {
   }
 
   static async handleConnectTransport(user: User, parsedData: any) {
-    await this.handle(user, async () => {
+    await this.handle(user, parsedData, async () => {
       const { transportId, dtlsParameters } = parsedData.payload;
       await MediasoupManager.getInstance().connectTransport(transportId, dtlsParameters);
       user.send({ type: "webrtc-transport-connected", payload: { requestId: this.getRequestId(parsedData) } });
@@ -44,7 +44,7 @@ export class WebRTCHandler {
   }
 
   static async handleProduce(user: User, parsedData: any) {
-    await this.handle(user, async () => {
+    await this.handle(user, parsedData, async () => {
       if (!user.spaceId) return;
       const { transportId, kind, rtpParameters, appData } = parsedData.payload;
       const producer = await MediasoupManager.getInstance().createProducer(transportId, kind, rtpParameters, {
@@ -69,7 +69,7 @@ export class WebRTCHandler {
   }
 
   static async handleStopProducer(user: User, parsedData: any) {
-    await this.handle(user, async () => {
+    await this.handle(user, parsedData, async () => {
       if (!user.spaceId) return;
       const producerId = typeof parsedData?.payload?.producerId === "string" ? parsedData.payload.producerId : "";
       if (!producerId) return;
@@ -91,7 +91,7 @@ export class WebRTCHandler {
   }
 
   static async handleConsume(user: User, parsedData: any) {
-    await this.handle(user, async () => {
+    await this.handle(user, parsedData, async () => {
       const { transportId, producerId, rtpCapabilities } = parsedData.payload;
       if (!user.spaceId) return;
       const consumer = await MediasoupManager.getInstance().createConsumer(transportId, producerId, rtpCapabilities, user.spaceId);
@@ -108,7 +108,7 @@ export class WebRTCHandler {
     });
   }
 
-  private static async handle(user: User, action: () => Promise<void>) {
+  private static async handle(user: User, parsedData: any, action: () => Promise<void>) {
     try {
       await action();
     } catch (err) {
@@ -116,7 +116,7 @@ export class WebRTCHandler {
       console.warn(`WebRTC request failed: ${message}`);
       user.send({
         type: "webrtc-error",
-        payload: { message },
+        payload: { message, requestId: this.getRequestId(parsedData) },
       });
     }
   }
