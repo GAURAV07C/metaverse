@@ -1,15 +1,30 @@
 import client from "@repo/db/client";
 import type { User } from "./User";
 import { OutgoingMessage } from "./types";
+import { RealtimeBus } from "./RealtimeBus";
+
+type PresencePeer = {
+  id: string;
+  userId?: string;
+  username?: string;
+  avatarUrl?: string;
+  status?: "available" | "busy" | "focus" | "away";
+  x: number;
+  y: number;
+};
 
 export class RoomManager {
   rooms: Map<string, User[]> = new Map();
   zones: Map<string, any[]> = new Map();
   spaceBounds: Map<string, { width: number; height: number; blocked: Set<string> }> = new Map();
+  remotePeers: Map<string, Map<string, PresencePeer>> = new Map();
   static instance: RoomManager;
 
   private constructor() {
     this.rooms = new Map();
+    RealtimeBus.getInstance().onEvent((event) => {
+      if (event.kind === "broadcast") this.handleRemoteBroadcast(event.spaceId, event.senderConnectionId, event.message);
+    });
   }
 
   static getInstance() {
@@ -31,23 +46,30 @@ export class RoomManager {
       this.rooms.delete(spaceId);
       this.zones.delete(spaceId);
       this.spaceBounds.delete(spaceId);
+      this.remotePeers.delete(spaceId);
+      RealtimeBus.getInstance().releaseSpaceOwner(spaceId);
     }
   }
 
-  public addUser(spaceId: string, user: User) {
+  public async addUser(spaceId: string, user: User) {
+    const owner = await RealtimeBus.getInstance().claimSpaceOwner(spaceId);
+    if (!owner.ok) {
+      return { ok: false, reason: "sfu-owned-by-other-instance", ownerInstanceId: owner.ownerInstanceId, redirectUrl: owner.ownerPublicUrl };
+    }
+    RealtimeBus.getInstance().subscribeSpace(spaceId);
     const current = this.rooms.get(spaceId) ?? [];
-    if (current.some((u) => u.id === user.id)) return;
+    if (current.some((u) => u.id === user.id)) return { ok: true };
     if (!this.rooms.has(spaceId)) {
       this.rooms.set(spaceId, [user]);
-      return;
+      return { ok: true };
     }
     this.rooms.set(spaceId, [...(this.rooms.get(spaceId) ?? []), user]);
+    return { ok: true };
   }
 
   public broadcast(message: OutgoingMessage, user: User, roomId: string) {
-    if (!this.rooms.has(roomId)) {
-      return;
-    }
+    RealtimeBus.getInstance().publishBroadcast(roomId, message, { id: user.id, userId: user.userId });
+    if (!this.rooms.has(roomId)) return;
     this.rooms.get(roomId)?.forEach((u) => {
       if (u.id !== user.id) {
         u.send(message);
@@ -60,6 +82,59 @@ export class RoomManager {
     this.rooms.get(roomId)?.forEach((u) => {
       if (predicate(u)) u.send(message);
     });
+  }
+
+  private handleRemoteBroadcast(spaceId: string, senderConnectionId: string | undefined, message: OutgoingMessage) {
+    this.trackRemotePresence(spaceId, senderConnectionId, message);
+    this.rooms.get(spaceId)?.forEach((user) => {
+      if (senderConnectionId && user.id === senderConnectionId) return;
+      user.send(message);
+    });
+    this.recheckLocalProximity(spaceId);
+  }
+
+  private trackRemotePresence(spaceId: string, senderConnectionId: string | undefined, message: OutgoingMessage) {
+    if (!senderConnectionId) return;
+    if (!this.remotePeers.has(spaceId)) this.remotePeers.set(spaceId, new Map());
+    const peers = this.remotePeers.get(spaceId)!;
+
+    if (message?.type === "user-left") {
+      peers.delete(senderConnectionId);
+      return;
+    }
+
+    const payload = message?.payload || {};
+    if (message?.type === "user-joined") {
+      peers.set(senderConnectionId, {
+        id: senderConnectionId,
+        userId: payload.userId,
+        username: payload.username,
+        avatarUrl: payload.avatarUrl,
+        status: payload.status || "available",
+        x: payload.x,
+        y: payload.y,
+      });
+      return;
+    }
+
+    if (message?.type === "movement") {
+      const existing = peers.get(senderConnectionId);
+      peers.set(senderConnectionId, {
+        id: senderConnectionId,
+        userId: payload.userId || existing?.userId,
+        username: existing?.username,
+        avatarUrl: existing?.avatarUrl,
+        status: existing?.status || "available",
+        x: payload.x,
+        y: payload.y,
+      });
+      return;
+    }
+
+    if (message?.type === "status-update") {
+      const existing = peers.get(senderConnectionId);
+      if (existing) peers.set(senderConnectionId, { ...existing, status: payload.status || existing.status });
+    }
   }
 
   public async loadSpaceZones(spaceId: string) {
@@ -163,6 +238,39 @@ export class RoomManager {
     );
   }
 
+  private getPresencePeers(spaceId: string): Array<PresencePeer | User> {
+    const localPeers = this.rooms.get(spaceId) || [];
+    const remotePeers = Array.from(this.remotePeers.get(spaceId)?.values() || []);
+    return [...localPeers, ...remotePeers];
+  }
+
+  private arePeersInAudioRange(spaceId: string, user: PresencePeer, otherUser: PresencePeer) {
+    const PROXIMITY_THRESHOLD = 5;
+    const zonesInRoom = this.zones.get(spaceId) || [];
+    const isAudioRoom = (z: any) => z.type === 'room' || z.type === 'private';
+    const getZone = (u: PresencePeer, typeFilter?: string) => {
+      return zonesInRoom.find(z => (typeFilter ? z.type === typeFilter : isAudioRoom(z)) && u.x >= z.startX && u.x < z.endX && u.y >= z.startY && u.y < z.endY);
+    };
+
+    const userZone = getZone(user);
+    const otherUserZone = getZone(otherUser);
+    const userSpotlightZone = getZone(user, 'spotlight');
+    const otherUserSpotlightZone = getZone(otherUser, 'spotlight');
+
+    if (userZone || otherUserZone) {
+      return Boolean(userZone && otherUserZone && userZone.id === otherUserZone.id);
+    }
+
+    if ((userSpotlightZone || otherUserSpotlightZone) && (userZone?.id === otherUserZone?.id)) {
+      return true;
+    }
+
+    const distance = Math.sqrt(
+      Math.pow(user.x - otherUser.x, 2) + Math.pow(user.y - otherUser.y, 2)
+    );
+    return distance <= PROXIMITY_THRESHOLD;
+  }
+
   public canEnterDynamic(user: User, x: number, y: number): { ok: boolean; reason?: string } {
     if (!user.spaceId) return { ok: false, reason: 'not-in-space' };
     const users = this.rooms.get(user.spaceId) || [];
@@ -202,70 +310,45 @@ export class RoomManager {
   }
 
   public checkProximity(user: User, spaceId: string) {
-    const PROXIMITY_THRESHOLD = 5; // Distance in grid units
-    const usersInRoom = this.rooms.get(spaceId) || [];
-    const zonesInRoom = this.zones.get(spaceId) || [];
-
-    const isAudioRoom = (z: any) => z.type === 'room' || z.type === 'private';
-    const getZone = (u: User, typeFilter?: string) => {
-      return zonesInRoom.find(z => (typeFilter ? z.type === typeFilter : isAudioRoom(z)) && u.x >= z.startX && u.x < z.endX && u.y >= z.startY && u.y < z.endY);
-    };
-    
-    const userZone = getZone(user);
-    const userSpotlightZone = getZone(user, 'spotlight');
-
-    usersInRoom.forEach((otherUser) => {
+    const peers = this.getPresencePeers(spaceId);
+    peers.forEach((otherUser) => {
       if (user.id === otherUser.id) return;
-
-      const otherUserZone = getZone(otherUser);
-      const otherUserSpotlightZone = getZone(otherUser, 'spotlight');
-      let inRange = false;
-
-      if (userZone || otherUserZone) {
-        // If either is in a zone, they must be in the SAME zone to be in proximity
-        inRange = Boolean(userZone && otherUserZone && userZone.id === otherUserZone.id);
-      } else {
-        // Normal distance check
-        const distance = Math.sqrt(
-          Math.pow(user.x - otherUser.x, 2) + Math.pow(user.y - otherUser.y, 2)
-        );
-        inRange = distance <= PROXIMITY_THRESHOLD;
-      }
-
-      // Spotlight override: If either is in a spotlight AND they share the same audio context (both in room X, or both public)
-      if ((userSpotlightZone || otherUserSpotlightZone) && (userZone?.id === otherUserZone?.id)) {
-          inRange = true;
-      }
-
+      const inRange = this.arePeersInAudioRange(spaceId, user, otherUser);
       const alreadyInProximity = user.inProximityWith.has(otherUser.id);
 
       if (inRange && !alreadyInProximity) {
-        // Enter proximity
         user.inProximityWith.add(otherUser.id);
-        otherUser.inProximityWith.add(user.id);
 
         user.send({
           type: "proximity-entered",
           payload: { userId: otherUser.userId },
         });
-        otherUser.send({
-          type: "proximity-entered",
-          payload: { userId: user.userId },
-        });
+        if (otherUser instanceof Object && "send" in otherUser && typeof (otherUser as any).send === "function") {
+          (otherUser as User).inProximityWith.add(user.id);
+          (otherUser as User).send({
+            type: "proximity-entered",
+            payload: { userId: user.userId },
+          });
+        }
       } else if (!inRange && alreadyInProximity) {
-        // Leave proximity
         user.inProximityWith.delete(otherUser.id);
-        otherUser.inProximityWith.delete(user.id);
 
         user.send({
           type: "proximity-left",
           payload: { userId: otherUser.userId },
         });
-        otherUser.send({
-          type: "proximity-left",
-          payload: { userId: user.userId },
-        });
+        if (otherUser instanceof Object && "send" in otherUser && typeof (otherUser as any).send === "function") {
+          (otherUser as User).inProximityWith.delete(user.id);
+          (otherUser as User).send({
+            type: "proximity-left",
+            payload: { userId: user.userId },
+          });
+        }
       }
     });
+  }
+
+  private recheckLocalProximity(spaceId: string) {
+    this.rooms.get(spaceId)?.forEach((user) => this.checkProximity(user, spaceId));
   }
 }

@@ -15,7 +15,8 @@ MediasoupManager.getInstance().init().then(() => {
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
 const server = http.createServer((req, res) => {
-  if (req.url === "/health") {
+  const url = new URL(req.url || "/", "http://localhost");
+  if (url.pathname === "/health") {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ status: "ok", service: "metaverse-ws", uptime: process.uptime() }));
     return;
@@ -28,8 +29,10 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server });
 
 wss.on("connection", function connection(ws, req) {
-  console.log("[WS] New connection established", { path: req.url, origin: req.headers.origin });
-  let user = new User(ws);
+  const url = new URL(req.url || "/", "http://localhost");
+  const requestedSpaceId = url.searchParams.get("spaceId") || undefined;
+  console.log("[WS] New connection established", { path: url.pathname, spaceId: requestedSpaceId, origin: req.headers.origin });
+  let user = new User(ws, requestedSpaceId);
   ws.on("error", (err) => console.error("[WS] Error:", err));
 
   ws.on("close", () => {

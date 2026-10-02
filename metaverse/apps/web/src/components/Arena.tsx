@@ -1073,6 +1073,10 @@ export function Arena() {
   const selectedUserRoom = selectedUser
     ? privateZones.find(z => isAudioRoomZone(z) && isTileInZone(selectedUser.x, selectedUser.y, z))
     : null;
+  const mediaGroupUserIds = Array.from(new Set([
+    ...proximityUsers,
+    ...(currentRoom ? otherUsers.filter(user => isTileInZone(user.x, user.y, currentRoom)).map(user => user.userId) : []),
+  ]));
   const currentPortal = privateZones.find(z =>
     z.type === 'portal' &&
     myPos.x >= z.startX - 1 &&
@@ -1768,7 +1772,7 @@ export function Arena() {
           />
 
           <VideoOverlay
-            proximityUsers={proximityUsers}
+            proximityUsers={mediaGroupUserIds}
             otherUsers={otherUsers}
             streams={streams}
             screenStreams={screenStreams}
@@ -1809,7 +1813,7 @@ export function Arena() {
             myPos={myPos}
             cameraTarget={followedUser ? { x: followedUser.x, y: followedUser.y } : myPos}
             otherUsers={otherUsers}
-            proximityUsers={proximityUsers}
+            proximityUsers={mediaGroupUserIds}
             elements={elements}
             hiddenElementIds={hiddenElementIds}
             privateZones={privateZones}

@@ -66,18 +66,20 @@ export class User {
   public y: number;
   public inProximityWith: Set<string> = new Set();
   private ws: WebSocket;
+  private requestedSpaceId?: string;
 
-  constructor(ws: WebSocket) {
+  constructor(ws: WebSocket, requestedSpaceId?: string) {
     this.id = getRandomString(10);
     this.x = 0;
     this.y = 0;
     this.ws = ws;
+    this.requestedSpaceId = requestedSpaceId;
     this.initHandlers();
   }
 
-  private closeWithReason(code: number, reason: string) {
-    console.warn(`[WS] Closing connection: ${reason}`, { userId: this.userId, spaceId: this.spaceId });
-    this.send({ type: "join-error", payload: { reason, message: this.joinErrorMessage(reason) } });
+  private closeWithReason(code: number, reason: string, extra?: Record<string, unknown>) {
+    console.warn(`[WS] Closing connection: ${reason}`, { userId: this.userId, spaceId: this.spaceId, ...extra });
+    this.send({ type: "join-error", payload: { reason, message: this.joinErrorMessage(reason), ...(extra || {}) } });
     this.ws.close(code, reason);
   }
 
@@ -89,6 +91,10 @@ export class User {
         return "The realtime server could not find this space.";
       case "join-failed":
         return "The realtime server failed while joining the space.";
+      case "sfu-owned-by-other-instance":
+        return "This space is already hosted by another realtime media server. Enable sticky routing for this space.";
+      case "space-route-mismatch":
+        return "Realtime route spaceId did not match the join request.";
       default:
         return "The realtime server rejected the join request.";
     }
@@ -108,6 +114,10 @@ export class User {
       switch (parsedData?.type) {
         case "join": {
           const spaceId = typeof parsedData?.payload?.spaceId === "string" ? parsedData.payload.spaceId : "";
+          if (this.requestedSpaceId && this.requestedSpaceId !== spaceId) {
+            this.closeWithReason(1008, "space-route-mismatch");
+            return;
+          }
           const token = typeof parsedData?.payload?.token === "string" ? parsedData.payload.token : "";
           if (!token) {
             this.closeWithReason(1008, "missing-token");
@@ -149,8 +159,15 @@ export class User {
               return;
             }
 
+            const addResult = await RoomManager.getInstance().addUser(spaceId, this);
+            if (!addResult.ok) {
+              this.closeWithReason(1013, addResult.reason || "sfu-owned-by-other-instance", {
+                redirectUrl: addResult.redirectUrl,
+                ownerInstanceId: addResult.ownerInstanceId,
+              });
+              return;
+            }
             this.spaceId = spaceId;
-            RoomManager.getInstance().addUser(spaceId, this);
             await RoomManager.getInstance().loadSpaceZones(spaceId);
             await RoomManager.getInstance().loadSpaceBounds(spaceId);
 

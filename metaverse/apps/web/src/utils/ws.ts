@@ -9,6 +9,12 @@ const getDefaultWsUrl = () => {
 const configuredWsUrl = ((import.meta as any).env?.VITE_APP_WS_URL as string | undefined)?.trim();
 export const WS_URL = configuredWsUrl || getDefaultWsUrl();
 
+const buildSpaceWsUrl = (baseUrl: string, spaceId: string) => {
+  const url = new URL(baseUrl);
+  url.searchParams.set('spaceId', spaceId);
+  return url.toString();
+};
+
 export type WsIncomingMessage =
   | { type: 'space-joined'; payload: { spawn: { x: number; y: number }; userId: string; username?: string; avatarUrl?: string; users: { id: string; userId?: string; username?: string; avatarUrl?: string; status?: 'available' | 'busy' | 'focus' | 'away'; x: number; y: number }[]; chatHistory?: any[] } }
   | { type: 'user-joined'; payload: { userId: string; username?: string; avatarUrl?: string; status?: 'available' | 'busy' | 'focus' | 'away'; x: number; y: number } }
@@ -31,7 +37,7 @@ export type WsIncomingMessage =
   | { type: 'new-producer'; payload: { producerId: string; userId: string; appData: any } }
   | { type: 'producer-closed'; payload: { producerId: string; userId?: string; appData?: any } }
   | { type: 'webrtc-consumed'; payload: { id: string; producerId: string; kind: string; rtpParameters: any } }
-  | { type: 'join-error'; payload: { reason: string; message: string } }
+  | { type: 'join-error'; payload: { reason: string; message: string; redirectUrl?: string; ownerInstanceId?: string } }
   | { type: 'webrtc-error'; payload: { message: string; requestId?: string } };
 
 export class WsClient {
@@ -43,6 +49,7 @@ export class WsClient {
   private shouldReconnect = true;
   private reconnectTimer: number | null = null;
   private reconnectAttempts = 0;
+  private redirectUrl: string | null = null;
 
   constructor(spaceId: string, token: string) {
     this.spaceId = spaceId;
@@ -57,7 +64,8 @@ export class WsClient {
       this.reconnectTimer = null;
     }
 
-    this.ws = new WebSocket(WS_URL);
+    const url = buildSpaceWsUrl(this.redirectUrl || WS_URL, this.spaceId);
+    this.ws = new WebSocket(url);
 
     this.ws.onopen = () => {
       this.reconnectAttempts = 0;
@@ -69,17 +77,20 @@ export class WsClient {
       try {
         const msg = JSON.parse(event.data) as WsIncomingMessage;
         if (msg.type === 'join-error') {
-          console.error('WS join failed', { url: WS_URL, reason: msg.payload.reason, message: msg.payload.message });
+          console.error('WS join failed', { url, reason: msg.payload.reason, message: msg.payload.message });
+          if (msg.payload.reason === 'sfu-owned-by-other-instance' && msg.payload.redirectUrl) {
+            this.redirectUrl = msg.payload.redirectUrl;
+          }
         }
         this.listeners.forEach((cb) => cb(msg));
       } catch {}
     };
 
     this.ws.onerror = (err) => {
-      if (this.shouldReconnect) console.error('WS error', { url: WS_URL, error: err });
+      if (this.shouldReconnect) console.error('WS error', { url, error: err });
     };
     this.ws.onclose = (event) => {
-      console.log('WS disconnected', { url: WS_URL, code: event.code, reason: event.reason });
+      console.log('WS disconnected', { url, code: event.code, reason: event.reason });
       this.ws = null;
       this.connectionListeners.forEach((cb) => cb(false));
       if (!this.shouldReconnect) return;
