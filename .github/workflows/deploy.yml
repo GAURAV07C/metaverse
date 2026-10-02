@@ -1,0 +1,52 @@
+name: Deploy Metaverse
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -e
+
+            echo "==> Entering project"
+            cd ~/metaverse
+
+            echo "==> Updating source"
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "==> Entering application"
+            cd ~/metaverse/metaverse
+
+            echo "==> Installing dependencies"
+            yarn install --frozen-lockfile
+
+            echo "==> Building application"
+            yarn build
+
+            echo "==> Deploying frontend"
+            sudo rm -rf /var/www/metaver/*
+            sudo cp -r apps/web/dist/* /var/www/metaver/
+
+            echo "==> Restarting HTTP backend"
+            pm2 restart metaver-http --update-env
+
+            echo "==> Restarting WebSocket backend"
+            pm2 restart metaver-ws --update-env
+
+            echo "==> Saving PM2 process list"
+            pm2 save
+
+            echo "==> Deployment completed"
