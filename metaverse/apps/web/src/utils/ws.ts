@@ -1,4 +1,13 @@
-export const WS_URL = (import.meta as any).env?.VITE_APP_WS_URL ?? 'ws://localhost:3001';
+const getDefaultWsUrl = () => {
+  if (typeof window === 'undefined') return 'ws://localhost:3001';
+  const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+  if (isLocalHost) return 'ws://localhost:3001';
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}`;
+};
+
+const configuredWsUrl = ((import.meta as any).env?.VITE_APP_WS_URL as string | undefined)?.trim();
+export const WS_URL = configuredWsUrl || getDefaultWsUrl();
 
 export type WsIncomingMessage =
   | { type: 'space-joined'; payload: { spawn: { x: number; y: number }; userId: string; username?: string; avatarUrl?: string; users: { id: string; userId?: string; username?: string; avatarUrl?: string; status?: 'available' | 'busy' | 'focus' | 'away'; x: number; y: number }[]; chatHistory?: any[] } }
@@ -22,6 +31,7 @@ export type WsIncomingMessage =
   | { type: 'new-producer'; payload: { producerId: string; userId: string; appData: any } }
   | { type: 'producer-closed'; payload: { producerId: string; userId?: string; appData?: any } }
   | { type: 'webrtc-consumed'; payload: { id: string; producerId: string; kind: string; rtpParameters: any } }
+  | { type: 'join-error'; payload: { reason: string; message: string } }
   | { type: 'webrtc-error'; payload: { message: string } };
 
 export class WsClient {
@@ -58,15 +68,18 @@ export class WsClient {
     this.ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data) as WsIncomingMessage;
+        if (msg.type === 'join-error') {
+          console.error('WS join failed', { url: WS_URL, reason: msg.payload.reason, message: msg.payload.message });
+        }
         this.listeners.forEach((cb) => cb(msg));
       } catch {}
     };
 
     this.ws.onerror = (err) => {
-      if (this.shouldReconnect) console.error('WS error', err);
+      if (this.shouldReconnect) console.error('WS error', { url: WS_URL, error: err });
     };
-    this.ws.onclose = () => {
-      console.log('WS disconnected');
+    this.ws.onclose = (event) => {
+      console.log('WS disconnected', { url: WS_URL, code: event.code, reason: event.reason });
       this.ws = null;
       this.connectionListeners.forEach((cb) => cb(false));
       if (!this.shouldReconnect) return;

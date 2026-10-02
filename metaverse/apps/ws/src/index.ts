@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import http from "http";
 import { WebSocketServer } from "ws";
 import { User } from "./User";
 import { MediasoupManager } from "./MediasoupManager";
@@ -13,10 +14,21 @@ MediasoupManager.getInstance().init().then(() => {
 });
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
-const wss = new WebSocketServer({ port: PORT });
+const server = http.createServer((req, res) => {
+  if (req.url === "/health") {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ status: "ok", service: "metaverse-ws", uptime: process.uptime() }));
+    return;
+  }
 
-wss.on("connection", function connection(ws) {
-  console.log("[WS] New connection established");
+  res.writeHead(404, { "content-type": "application/json" });
+  res.end(JSON.stringify({ message: "Route not found" }));
+});
+
+const wss = new WebSocketServer({ server });
+
+wss.on("connection", function connection(ws, req) {
+  console.log("[WS] New connection established", { path: req.url, origin: req.headers.origin });
   let user = new User(ws);
   ws.on("error", (err) => console.error("[WS] Error:", err));
 
@@ -24,4 +36,8 @@ wss.on("connection", function connection(ws) {
     console.log("[WS] Connection closed for user:", user?.userId || "unknown");
     user?.destroy();
   });
+});
+
+server.listen(PORT, () => {
+  console.log(`WS server running on port ${PORT}`);
 });

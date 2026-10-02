@@ -530,6 +530,15 @@ export function Arena() {
               pushToast({ title: 'Media is unavailable', detail: 'Audio, video, and screen share could not initialize.', kind: 'warning', category: 'system' });
             });
           break;
+        case 'join-error':
+          setConnected(false);
+          pushToast({
+            title: 'Realtime join failed',
+            detail: msg.payload?.message || 'The realtime server rejected this session.',
+            kind: 'warning',
+            category: 'system',
+          });
+          break;
         case 'user-joined':
           if (msg.payload.userId && msg.payload.userId !== myUserId) {
             const joinedName = msg.payload.username || 'User';

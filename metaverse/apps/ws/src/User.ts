@@ -75,6 +75,25 @@ export class User {
     this.initHandlers();
   }
 
+  private closeWithReason(code: number, reason: string) {
+    console.warn(`[WS] Closing connection: ${reason}`, { userId: this.userId, spaceId: this.spaceId });
+    this.send({ type: "join-error", payload: { reason, message: this.joinErrorMessage(reason) } });
+    this.ws.close(code, reason);
+  }
+
+  private joinErrorMessage(reason: string) {
+    switch (reason) {
+      case "invalid-token":
+        return "Your session token was rejected by the realtime server.";
+      case "space-not-found":
+        return "The realtime server could not find this space.";
+      case "join-failed":
+        return "The realtime server failed while joining the space.";
+      default:
+        return "The realtime server rejected the join request.";
+    }
+  }
+
   initHandlers() {
     this.ws.on("message", async (data) => {
       // Tests sometimes send malformed/partial payloads; never throw and never
@@ -91,7 +110,7 @@ export class User {
           const spaceId = typeof parsedData?.payload?.spaceId === "string" ? parsedData.payload.spaceId : "";
           const token = typeof parsedData?.payload?.token === "string" ? parsedData.payload.token : "";
           if (!token) {
-            this.ws.close();
+            this.closeWithReason(1008, "missing-token");
             return;
           }
 
@@ -99,13 +118,14 @@ export class User {
           try {
             const payload = jwt.verify(token, JWT_PASSWORD) as JwtPayload;
             userId = typeof payload.userId === "string" ? payload.userId : undefined;
-          } catch {
-            this.ws.close();
+          } catch (error) {
+            console.warn("[WS] Invalid join token", error instanceof Error ? error.message : error);
+            this.closeWithReason(1008, "invalid-token");
             return;
           }
 
           if (!userId) {
-            this.ws.close();
+            this.closeWithReason(1008, "missing-user-id");
             return;
           }
 
@@ -125,7 +145,7 @@ export class User {
             });
 
             if (!space) {
-              this.ws.close();
+              this.closeWithReason(1008, "space-not-found");
               return;
             }
 
@@ -233,7 +253,7 @@ export class User {
           } catch (error) {
             console.error("Failed to join space", error instanceof Error ? error.message : error);
             this.send({ type: "webrtc-error", payload: { message: "Unable to join space. Please try again." } });
-            this.ws.close();
+            this.closeWithReason(1011, "join-failed");
           }
 
           break;
