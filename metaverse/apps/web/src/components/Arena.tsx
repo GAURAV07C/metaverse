@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useUserStore } from '../store';
 import { useArenaStore } from '../stores/arenaStore';
-import { WsClient } from '../utils/ws';
-import { MediasoupClient } from '../utils/mediasoupClient';
+import type { WsClient } from '../utils/ws';
+import type { MediasoupClient } from '../utils/mediasoupClient';
 import { api } from '../utils/api';
 import { Sidebar } from './arena/Sidebar';
 import { SettingsModal } from './arena/SettingsModal';
@@ -21,12 +21,17 @@ import { ArenaTopBar } from './arena/ArenaTopBar';
 import { ConnectionBanner } from './arena/ConnectionBanner';
 import { OfficeMenuPopover } from './arena/OfficeMenuPopover';
 import { SelectedUserCard } from './arena/SelectedUserCard';
+import { isAudioRoomZone, useArenaRooms } from './arena/useArenaRooms';
+import { useInviteLinks } from './arena/useInviteLinks';
+import { useArenaToasts } from './arena/useArenaToasts';
+import { useArenaMedia } from './arena/useArenaMedia';
+import { useArenaSocket } from './arena/useArenaSocket';
 import { useAvailableAssetsQuery, useInviteEventsQuery, useModerationAuditQuery, useNotificationPreferencesQuery, useSpaceQuery } from './arena/queries';
 import { findPath } from '../utils/pathfinding';
-import type { ChatScope, InviteHistoryItem, ModerationHistoryItem, NotificationCategory, NotificationPrefs, OtherUser, RoomInvite } from './arena/types';
+import type { ChatScope, InviteHistoryItem, ModerationHistoryItem, NotificationPrefs, OtherUser, RoomInvite } from './arena/types';
 export type { InviteHistoryItem, ModerationHistoryItem, OtherUser } from './arena/types';
-import { DEFAULT_NOTIFICATION_PREFS, NOTIFICATION_PREF_KEY, readDevicePreferences, readInviteHistory, readModerationHistory, readNotificationPreferences } from './arena/arenaStorage';
-import { getElementInteraction, normalizeAssetUrl } from './arena/arenaHelpers';
+import { DEFAULT_NOTIFICATION_PREFS, NOTIFICATION_PREF_KEY, readInviteHistory, readModerationHistory, readNotificationPreferences } from './arena/arenaStorage';
+import { getElementInteraction } from './arena/arenaHelpers';
 
 export function Arena() {
   const { spaceId } = useParams<{ spaceId: string }>();
@@ -35,7 +40,6 @@ export function Arena() {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WsClient | null>(null);
   const msRef = useRef<MediasoupClient | null>(null);
-  const localStreamRef = useRef<MediaStream | null>(null);
   const token = useUserStore((s) => s.token);
   const myUserId = useUserStore((s) => s.userId);
   const myStoredUsername = useUserStore((s) => s.username);
@@ -59,14 +63,7 @@ export function Arena() {
   const [myPos, setMyPos] = useState({ x: 5, y: 5 });
   const [otherUsers, setOtherUsers] = useState<OtherUser[]>([]);
   const [proximityUsers, setProximityUsers] = useState<string[]>([]);
-  const [streams, setStreams] = useState<Record<string, MediaStream>>({});
-  const [screenStreams, setScreenStreams] = useState<Record<string, MediaStream>>({});
-
-  const [micOn, setMicOn] = useState(false);
-  const [camOn, setCamOn] = useState(false);
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [mediaReady, setMediaReady] = useState(false);
-  const [pendingInitialMedia, setPendingInitialMedia] = useState<{ mic: boolean; cam: boolean } | null>(null);
 
   const [elements, setElements] = useState<SpaceElement[]>([]);
   const [privateZones, setPrivateZones] = useState<any[]>([]);
@@ -87,7 +84,6 @@ export function Arena() {
   const [chatInput, setChatInput] = useState('');
   const [chatScope, setChatScope] = useState<ChatScope>('everyone');
   const [unreadChatCount, setUnreadChatCount] = useState(0);
-  const [toasts, setToasts] = useState<{ id: string; title: string; detail?: string; kind?: 'info' | 'success' | 'warning'; actionLabel?: string; onAction?: () => void }[]>([]);
   const [roomInvites, setRoomInvites] = useState<RoomInvite[]>([]);
   const [inviteHistory, setInviteHistory] = useState<InviteHistoryItem[]>(() => readInviteHistory(spaceId));
   const [moderationHistory, setModerationHistory] = useState<ModerationHistoryItem[]>(() => readModerationHistory(spaceId));
@@ -97,8 +93,6 @@ export function Arena() {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [promptInteraction, setPromptInteraction] = useState<any>(null);
   const [activeInteraction, setActiveInteraction] = useState<any>(null);
-  const screenStreamRef = useRef<MediaStream | null>(null);
-  const stoppingScreenShareRef = useRef(false);
   const activeTabRef = useRef(activeTab);
   const showUsersRef = useRef(showUsers);
   const notificationPrefsRef = useRef(notificationPrefs);
@@ -194,27 +188,8 @@ export function Arena() {
     localStorage.setItem(NOTIFICATION_PREF_KEY, JSON.stringify(next));
   }, [notificationPreferencesQuery.data]);
 
-  // Invite / copy state
-  const [copied, setCopied] = useState(false);
-  const [copiedRoomId, setCopiedRoomId] = useState<string | null>(null);
+  const { copied, copiedRoomId, buildRoomUrl, handleCopyInvite, handleCopyRoomLink } = useInviteLinks();
   const autoJoinedRoomRef = useRef<string | null>(null);
-  const handleCopyInvite = () => {
-    navigator.clipboard.writeText(window.location.href).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }).catch(() => setCopied(false));
-  };
-  const buildRoomUrl = (roomId: string) => {
-    const url = new URL(window.location.href);
-    url.searchParams.set('room', roomId);
-    return url.toString();
-  };
-  const handleCopyRoomLink = (roomId: string) => {
-    navigator.clipboard.writeText(buildRoomUrl(roomId)).then(() => {
-      setCopiedRoomId(roomId);
-      setTimeout(() => setCopiedRoomId(null), 2000);
-    }).catch(() => setCopiedRoomId(null));
-  };
 
   // Element panel state
   const [availableElements, setAvailableElements] = useState<AvailableElement[]>([]);
@@ -246,21 +221,31 @@ export function Arena() {
 
   const followedUser = followingUserId ? otherUsers.find(u => u.userId === followingUserId) : null;
   const selectedUser = selectedUserId ? otherUsers.find(u => u.userId === selectedUserId) : null;
-
-  const pushToast = useCallback((toast: Omit<{ id: string; title: string; detail?: string; kind?: 'info' | 'success' | 'warning'; actionLabel?: string; onAction?: () => void; category?: NotificationCategory }, 'id'>) => {
-    const prefs = notificationPrefsRef.current;
-    const status = presenceStatusRef.current;
-    if (toast.category === 'joins' && !prefs.joins) return;
-    if (toast.category === 'chat' && !prefs.chat) return;
-    if (toast.category === 'roomInvites' && !prefs.roomInvites) return;
-    if (toast.category === 'system' && toast.title.toLowerCase().includes('reconnecting') && !prefs.reconnecting) return;
-    if (prefs.respectFocus && (status === 'focus' || status === 'busy') && toast.kind !== 'warning' && toast.category !== 'system') return;
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    setToasts(prev => [...prev.slice(-3), { ...toast, id }]);
-    window.setTimeout(() => {
-      setToasts(prev => prev.filter(item => item.id !== id));
-    }, 4200);
-  }, []);
+  const { toasts, pushToast, dismissToast } = useArenaToasts(notificationPrefsRef, presenceStatusRef);
+  const {
+    streams,
+    setStreams,
+    screenStreams,
+    setScreenStreams,
+    micOn,
+    camOn,
+    isScreenSharing,
+    setPendingInitialMedia,
+    handleMicChange,
+    handleCamChange,
+    handleScreenShare,
+    handleDevicePreferenceChange,
+    stopMicrophone,
+    stopCamera,
+    stopScreenShare,
+    cleanupMedia,
+  } = useArenaMedia({
+    msRef,
+    mediaReady,
+    setMediaReady,
+    myUserId,
+    pushToast,
+  });
 
   const playInviteRing = useCallback(() => {
     const prefs = notificationPrefsRef.current;
@@ -326,52 +311,6 @@ export function Arena() {
       category: 'system',
     });
   }, [connected, notificationPrefs.reconnecting, pushToast]);
-
-  const replaceLocalMediaTrack = useCallback(async (kind: 'audio' | 'video', deviceId?: string) => {
-    if (!msRef.current) return;
-    const type = kind === 'audio' ? 'audio' : 'camera';
-    const constraints: MediaStreamConstraints = kind === 'audio'
-      ? { audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true } }
-      : { video: { deviceId: deviceId ? { exact: deviceId } : undefined, width: { ideal: 640, max: 960 }, height: { ideal: 360, max: 540 }, frameRate: { ideal: 20, max: 24 } } };
-    const stream = await Promise.race([
-      navigator.mediaDevices.getUserMedia(constraints),
-      new Promise<MediaStream>((_, reject) => window.setTimeout(() => reject(new Error(`${kind} permission timed out`)), 15000)),
-    ]);
-    const track = kind === 'audio' ? stream.getAudioTracks()[0] : stream.getVideoTracks()[0];
-    if (!track) throw new Error(`${kind} track unavailable`);
-    const localStream = localStreamRef.current || new MediaStream();
-    const existingTracks = kind === 'audio' ? localStream.getAudioTracks() : localStream.getVideoTracks();
-    await msRef.current.replaceProducerTrack(type, track, myUserId || 'me', { type });
-    existingTracks.forEach(existing => {
-      existing.onended = null;
-      localStream.removeTrack(existing);
-      existing.stop();
-    });
-    localStream.addTrack(track);
-    localStreamRef.current = localStream;
-    setStreams(prev => ({ ...prev, me: localStream }));
-    track.onended = () => {
-      localStream.removeTrack(track);
-      if (kind === 'audio') {
-        void msRef.current?.stopProduce('audio');
-        setMicOn(false);
-      } else {
-        void msRef.current?.stopProduce('camera');
-        setCamOn(false);
-      }
-      setStreams(prev => ({ ...prev, me: localStream }));
-    };
-  }, [myUserId]);
-
-  const handleDevicePreferenceChange = useCallback(async (key: 'audioInputId' | 'videoInputId' | 'audioOutputId', value: string) => {
-    if (key === 'audioInputId' && micOn) {
-      await replaceLocalMediaTrack('audio', value || undefined);
-      return;
-    }
-    if (key === 'videoInputId' && camOn) {
-      await replaceLocalMediaTrack('video', value || undefined);
-    }
-  }, [camOn, micOn, replaceLocalMediaTrack]);
 
   const handleNotificationPreferenceChange = useCallback(async (key: keyof NotificationPrefs, value: boolean) => {
     const next = { ...notificationPrefsRef.current, [key]: value };
@@ -443,369 +382,38 @@ export function Arena() {
     setRoomPrefabs(result.data.roomPrefabs ?? []);
   };
 
-  // ── WebSocket setup ─────────────────────
-  useEffect(() => {
-    if (!spaceId || !token || !hasJoined) return;
-
-    const ws = new WsClient(spaceId, token);
-    wsRef.current = ws;
-
-    const ms = new MediasoupClient(ws);
-    msRef.current = ms;
-    setConnected(false);
-    setMediaReady(false);
-
-    ms.onNewConsumer = (consumer, userId, appData) => {
-      const isScreenMedia = appData?.type === 'screen' || appData?.type === 'screen-audio';
-      const setter = isScreenMedia ? setScreenStreams : setStreams;
-      setter(prev => {
-        const existing = prev[userId] || new MediaStream();
-        existing.addTrack(consumer.track);
-        return { ...prev, [userId]: existing };
-      });
-    };
-
-    const unsubConnection = ws.onConnectionChange((isSocketOpen) => {
-      if (!isSocketOpen) setConnected(false);
-    });
-
-    const unsub = ws.onMessage((msg: any) => {
-      switch (msg.type) {
-        case 'space-joined':
-          setConnected(true);
-          
-          let targetX = msg.payload.spawn.x;
-          let targetY = msg.payload.spawn.y;
-          const savedPosStr = localStorage.getItem(`metaverse_pos_${spaceId}`);
-          const urlParams = new URL(window.location.href).searchParams;
-          const rawPortalX = urlParams.get('x');
-          const rawPortalY = urlParams.get('y');
-          const portalX = rawPortalX === null ? NaN : Number(rawPortalX);
-          const portalY = rawPortalY === null ? NaN : Number(rawPortalY);
-          
-          if (Number.isInteger(portalX) && Number.isInteger(portalY)) {
-            targetX = portalX;
-            targetY = portalY;
-            ws.send({ type: 'teleport', payload: { x: targetX, y: targetY } });
-          } else if (savedPosStr) {
-            try {
-              const parsed = JSON.parse(savedPosStr);
-              if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
-                targetX = parsed.x;
-                targetY = parsed.y;
-                // Tell the server we are actually at our saved location, not the default spawn
-                ws.send({ type: 'teleport', payload: { x: targetX, y: targetY } });
-              }
-            } catch(e) {
-              console.error(e);
-            }
-          }
-          
-          setMyPos({ x: targetX, y: targetY });
-          const filteredJoined: OtherUser[] = (msg.payload.users ?? [])
-            .filter((u: any) => (u.userId || u.id) !== msg.payload.userId)
-            .map((u: any) => ({
-              userId: u.userId || u.id || '',
-              username: u.username || 'User',
-              x: u.x,
-              y: u.y,
-              avatarUrl: normalizeAssetUrl(u.avatarUrl) || undefined,
-              status: u.status || 'available',
-            }));
-          setOtherUsers(filteredJoined);
-          setMyAvatarUrl(normalizeAssetUrl(msg.payload.avatarUrl) || normalizeAssetUrl(storedAvatarUrl));
-
-          if (msg.payload.chatHistory) {
-             setMessages(msg.payload.chatHistory.map((c: any) => ({
-               username: c.username || 'Unknown',
-               message: c.message,
-               time: new Date(c.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-               scope: c.scope || 'everyone',
-             })));
-          }
-
-          ms.init()
-            .then(() => setMediaReady(true))
-            .catch((error) => {
-              console.error('Mediasoup init failed', error);
-              setMediaReady(false);
-              pushToast({ title: 'Media is unavailable', detail: 'Audio, video, and screen share could not initialize.', kind: 'warning', category: 'system' });
-            });
-          break;
-        case 'join-error':
-          setConnected(false);
-          pushToast({
-            title: 'Realtime join failed',
-            detail: msg.payload?.message || 'The realtime server rejected this session.',
-            kind: 'warning',
-            category: 'system',
-          });
-          break;
-        case 'user-joined':
-          if (msg.payload.userId && msg.payload.userId !== myUserId) {
-            const joinedName = msg.payload.username || 'User';
-            setOtherUsers((prev) => {
-              if (prev.some((u) => u.userId === msg.payload.userId)) return prev;
-              return [...prev, {
-                userId: msg.payload.userId || '',
-                username: joinedName,
-                x: msg.payload.x,
-                y: msg.payload.y,
-                avatarUrl: normalizeAssetUrl(msg.payload.avatarUrl) || undefined,
-                status: msg.payload.status || 'available',
-              }];
-            });
-            pushToast({ title: `${joinedName} joined`, detail: 'They are now in this office.', kind: 'success', category: 'joins' });
-          }
-          break;
-        case 'user-left':
-          setOtherUsers((prev) => {
-            const leavingUser = prev.find((u) => u.userId === msg.payload.userId);
-            if (leavingUser) {
-              pushToast({ title: `${leavingUser.username} left`, detail: 'They disconnected from the office.', category: 'joins' });
-            }
-            return prev.filter((u) => u.userId !== msg.payload.userId);
-          });
-          setSelectedUserId(prev => prev === msg.payload.userId ? null : prev);
-          setProximityUsers(prev => prev.filter(id => id !== msg.payload.userId));
-          setStreams(prev => {
-            const next = { ...prev };
-            delete next[msg.payload.userId];
-            return next;
-          });
-          setScreenStreams(prev => {
-            const next = { ...prev };
-            delete next[msg.payload.userId];
-            return next;
-          });
-          break;
-        case 'proximity-entered':
-          setProximityUsers(prev => {
-            if (prev.includes(msg.payload.userId)) return prev;
-            return [...prev, msg.payload.userId];
-          });
-          break;
-        case 'proximity-left':
-          setProximityUsers(prev => prev.filter(id => id !== msg.payload.userId));
-          msRef.current?.closeConsumersByUserId(msg.payload.userId);
-          setStreams(prev => {
-            const next = { ...prev };
-            delete next[msg.payload.userId];
-            return next;
-          });
-          setScreenStreams(prev => {
-            const next = { ...prev };
-            delete next[msg.payload.userId];
-            return next;
-          });
-          break;
-        case 'chat-receive':
-          if (msg.payload.isRing) {
-            playInviteRing();
-            pushToast({ title: 'Incoming Ring', detail: `${msg.payload.username || 'Someone'} is ringing you!`, kind: 'info', category: 'system' });
-            break;
-          }
-          if (!(showUsersRef.current && activeTabRef.current === 'chat')) {
-            setUnreadChatCount(count => count + 1);
-          }
-          pushToast({
-            title: msg.payload.scope === 'dm' ? `DM from ${msg.payload.username}` : `${msg.payload.username} sent a message`,
-            detail: msg.payload.message,
-            kind: msg.payload.scope === 'dm' ? 'warning' : 'info',
-            category: 'chat',
-          });
-          setMessages((prev) => [
-            ...prev,
-            {
-              username: msg.payload.username,
-              message: msg.payload.message,
-              scope: msg.payload.scope,
-              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            },
-          ]);
-          break;
-        case 'room-invite-receive':
-          {
-            const inviteId = `${msg.payload.roomId}-${msg.payload.fromUserId || msg.payload.fromUsername || 'user'}-${Date.now()}`;
-            const invite: RoomInvite = {
-              id: inviteId,
-              inviteId: msg.payload.inviteId,
-              fromUserId: msg.payload.fromUserId,
-              fromUsername: msg.payload.fromUsername || 'Someone',
-              roomId: msg.payload.roomId,
-              roomName: msg.payload.roomName || 'their room',
-              expiresAt: Date.now() + 30000,
-            };
-            recordInviteHistory({
-              id: msg.payload.inviteId || inviteId,
-              direction: 'incoming',
-              status: 'received',
-              fromUsername: invite.fromUsername,
-              roomId: invite.roomId,
-              roomName: invite.roomName,
-              createdAt: Date.now(),
-            });
-            setRoomInvites(prev => [invite, ...prev.filter(item => item.roomId !== invite.roomId || item.fromUserId !== invite.fromUserId)].slice(0, 3));
-            window.setTimeout(() => {
-              setRoomInvites(prev => {
-                const existing = prev.find(item => item.id === inviteId);
-                if (existing) {
-                  recordInviteHistory({
-                    id: existing.inviteId || existing.id,
-                    direction: 'incoming',
-                    status: 'expired',
-                    fromUsername: existing.fromUsername,
-                    roomId: existing.roomId,
-                    roomName: existing.roomName,
-                    createdAt: Date.now(),
-                  });
-                }
-                return prev.filter(item => item.id !== inviteId);
-              });
-            }, 30000);
-            playInviteRing();
-            pushToast({
-              title: `${invite.fromUsername} invited you`,
-              detail: `Accept from the invite card to join ${invite.roomName}.`,
-              kind: 'warning',
-              category: 'roomInvites',
-            });
-          }
-          if (!(showUsersRef.current && activeTabRef.current === 'chat')) {
-            setUnreadChatCount(count => count + 1);
-          }
-          setMessages((prev) => [
-            ...prev,
-            {
-              username: msg.payload.fromUsername || 'Invite',
-              message: `invited you to ${msg.payload.roomName || 'a room'}`,
-              scope: 'dm',
-              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            },
-          ]);
-          break;
-        case 'room-invite-response':
-          recordInviteHistory({
-            id: msg.payload.inviteId || `${msg.payload.roomId || 'room'}-${msg.payload.fromUserId || msg.payload.fromUsername || 'user'}-${Date.now()}`,
-            direction: 'outgoing',
-            status: msg.payload.response === 'accepted' ? 'accepted' : 'declined',
-            toUsername: msg.payload.fromUsername || 'Someone',
-            roomId: msg.payload.roomId || 'room',
-            roomName: msg.payload.roomName || 'Room',
-            createdAt: Date.now(),
-          });
-          pushToast({
-            title: `${msg.payload.fromUsername || 'Someone'} ${msg.payload.response} your invite`,
-            detail: `${msg.payload.roomName || 'Room'} invite ${msg.payload.response}.`,
-            kind: msg.payload.response === 'accepted' ? 'success' : 'info',
-            category: 'roomInvites',
-          });
-          setMessages((prev) => [
-            ...prev,
-            {
-              username: msg.payload.fromUsername || 'Invite',
-              message: `${msg.payload.response} your invite to ${msg.payload.roomName || 'a room'}`,
-              scope: 'dm',
-              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            },
-          ]);
-          break;
-        case 'moderation-request':
-          {
-            const action = msg.payload.action;
-            const requester = msg.payload.fromUsername || 'Host';
-            let accepted = true;
-            if (action === 'mute-audio') {
-              void stopMicrophone();
-              pushToast({ title: `${requester} muted your mic`, detail: 'Host moderation turned your microphone off.', kind: 'warning', category: 'system' });
-            } else if (action === 'stop-video') {
-              void stopCamera();
-              pushToast({ title: `${requester} stopped your camera`, detail: 'Host moderation turned your camera off.', kind: 'warning', category: 'system' });
-            } else if (action === 'stop-screen') {
-              if (screenStreamRef.current) {
-                msRef.current?.stopProduce('screen');
-                msRef.current?.stopProduce('screen-audio');
-                screenStreamRef.current.getTracks().forEach(track => track.stop());
-                screenStreamRef.current = null;
-                setScreenStreams(prev => {
-                  const next = { ...prev };
-                  delete next.me;
-                  return next;
-                });
-                setIsScreenSharing(false);
-              } else {
-                accepted = false;
-              }
-              pushToast({ title: `${requester} stopped your screen share`, detail: accepted ? 'Host moderation stopped your presentation.' : 'No active screen share was running.', kind: 'warning', category: 'system' });
-            }
-            wsRef.current?.sendModerationResponse(action, accepted, msg.payload.fromUserId);
-          }
-          break;
-        case 'moderation-response':
-          recordModerationHistory({
-            id: `${msg.payload.action}-${msg.payload.targetUserId || msg.payload.targetUsername}-${msg.payload.timestamp}`,
-            action: msg.payload.action,
-            targetUserId: msg.payload.targetUserId,
-            targetUsername: msg.payload.targetUsername || 'Participant',
-            status: msg.payload.accepted ? 'applied' : 'failed',
-          });
-          pushToast({
-            title: `${msg.payload.targetUsername || 'Participant'} ${msg.payload.accepted ? 'applied' : 'could not apply'} host action`,
-            detail: msg.payload.action.replace('-', ' '),
-            kind: msg.payload.accepted ? 'success' : 'warning',
-            category: 'system',
-          });
-          break;
-        case 'reaction-receive':
-          setReactions(prev => ({
-            ...prev,
-            [msg.payload.userId]: {
-              emoji: msg.payload.emoji,
-              expiresAt: Date.now() + 2400,
-            },
-          }));
-          window.setTimeout(() => {
-            setReactions(prev => {
-              const existing = prev[msg.payload.userId];
-              if (!existing || existing.expiresAt > Date.now()) return prev;
-              const next = { ...prev };
-              delete next[msg.payload.userId];
-              return next;
-            });
-          }, 2600);
-          break;
-        case 'status-update':
-          setOtherUsers((prev) =>
-            prev.map((u) =>
-              u.userId === msg.payload.userId
-                ? { ...u, status: msg.payload.status }
-                : u
-            )
-          );
-          break;
-        case 'movement':
-          setOtherUsers((prev) =>
-            prev.map((u) =>
-              u.userId === msg.payload.userId
-                ? { ...u, x: msg.payload.x, y: msg.payload.y }
-                : u
-            )
-          );
-          break;
-        case 'movement-rejected':
-          setMyPos({ x: msg.payload.x, y: msg.payload.y });
-          if (msg.payload.reason === 'room-full') {
-            pushToast({ title: 'Room is full', detail: 'All spots in that room are already taken.', kind: 'warning', category: 'system' });
-          } else if (msg.payload.reason === 'spot-occupied') {
-            pushToast({ title: 'Spot is occupied', detail: 'Choose another available spot in this room.', kind: 'warning', category: 'system' });
-          }
-          break;
-      }
-    });
-
-    ws.connect();
-    return () => { unsub(); unsubConnection(); ws.disconnect(); setConnected(false); setMediaReady(false); };
-  }, [spaceId, token, hasJoined, myUserId, storedAvatarUrl, pushToast, playInviteRing, recordInviteHistory, recordModerationHistory]);
+  useArenaSocket({
+    spaceId,
+    token,
+    hasJoined,
+    myUserId,
+    storedAvatarUrl,
+    wsRef,
+    msRef,
+    activeTabRef,
+    showUsersRef,
+    setConnected,
+    setMediaReady,
+    setMyPos,
+    setOtherUsers,
+    setMyAvatarUrl,
+    setMessages,
+    setSelectedUserId,
+    setProximityUsers,
+    setUnreadChatCount,
+    setRoomInvites,
+    setReactions,
+    setStreams,
+    setScreenStreams,
+    pushToast,
+    playInviteRing,
+    recordInviteHistory,
+    recordModerationHistory,
+    cleanupMedia,
+    stopMicrophone,
+    stopCamera,
+    stopScreenShare,
+  });
 
   // Save myPos to localStorage whenever it changes
   useEffect(() => {
@@ -998,108 +606,29 @@ export function Arena() {
     } finally { setPanelLoading(false); }
   };
 
-  const isAudioRoomZone = (zone: any) => zone.type === 'room' || zone.type === 'private';
-  const currentRoom = privateZones.find(z =>
-    isAudioRoomZone(z) &&
-    myPos.x >= z.startX &&
-    myPos.x < z.endX &&
-    myPos.y >= z.startY &&
-    myPos.y < z.endY
-  );
-  const roomSpots = currentRoom
-    ? privateZones.filter(z =>
-        z.type === 'seat' &&
-        z.startX >= currentRoom.startX &&
-        z.endX <= currentRoom.endX &&
-        z.startY >= currentRoom.startY &&
-        z.endY <= currentRoom.endY
-      )
-    : [];
-  const getRoomSpots = (room: any) => privateZones.filter(z =>
-    z.type === 'seat' &&
-    z.startX >= room.startX &&
-    z.endX <= room.endX &&
-    z.startY >= room.startY &&
-    z.endY <= room.endY
-  );
-  const isTileInZone = (x: number, y: number, zone: any) =>
-    x >= zone.startX && x < zone.endX && y >= zone.startY && y < zone.endY;
-  const isZoneOccupied = (zone: any) =>
-    isTileInZone(myPos.x, myPos.y, zone) ||
-    otherUsers.some(u => isTileInZone(u.x, u.y, zone));
-  const isWalkableTile = (x: number, y: number) => {
-    if (x < 0 || y < 0 || x >= dimensions.w || y >= dimensions.h) return false;
-    return !elements.some((el) => {
-      const text = `${el.element.id} ${el.element.name ?? ''} ${el.element.category ?? ''}`.toLowerCase();
-      const isFloor = el.element.category === 'Rooms' || text.includes('floor');
-      const isSeat = text.includes('seating') || text.includes('chair') || text.includes('sofa') || text.includes('couch') || text.includes('bench') || text.includes('stool') || text.includes('seat');
-      if (!el.element.static || isFloor || isSeat) return false;
-      return x >= el.x && x < el.x + el.element.width && y >= el.y && y < el.y + el.element.height;
-    });
-  };
-  const findWalkableTileInZone = (zone: any) => {
-    for (let y = zone.startY; y < zone.endY; y += 1) {
-      for (let x = zone.startX; x < zone.endX; x += 1) {
-        if (isWalkableTile(x, y) && !otherUsers.some(u => u.x === x && u.y === y) && !(myPos.x === x && myPos.y === y)) {
-          return { x, y };
-        }
-      }
-    }
-    return null;
-  };
-  const activeRooms = privateZones
-    .filter(isAudioRoomZone)
-    .map((room) => {
-      const otherCount = otherUsers.filter(u =>
-        u.x >= room.startX &&
-        u.x < room.endX &&
-        u.y >= room.startY &&
-        u.y < room.endY
-      ).length;
-      const iAmInside = myPos.x >= room.startX && myPos.x < room.endX && myPos.y >= room.startY && myPos.y < room.endY;
-      return { room, count: otherCount + (iAmInside ? 1 : 0) };
-    })
-    .filter(item => item.count > 0);
-  const allRooms = privateZones
-    .filter(isAudioRoomZone)
-    .map((room) => {
-      const spots = getRoomSpots(room);
-      const count = otherUsers.filter(u => isTileInZone(u.x, u.y, room)).length + (isTileInZone(myPos.x, myPos.y, room) ? 1 : 0);
-      return {
-        room,
-        count,
-        spots: spots.length,
-        vacant: spots.filter(spot => !isZoneOccupied(spot)).length,
-      };
-    });
-  const selectedUserRoom = selectedUser
-    ? privateZones.find(z => isAudioRoomZone(z) && isTileInZone(selectedUser.x, selectedUser.y, z))
-    : null;
-  const mediaGroupUserIds = Array.from(new Set([
-    ...proximityUsers,
-    ...(currentRoom ? otherUsers.filter(user => isTileInZone(user.x, user.y, currentRoom)).map(user => user.userId) : []),
-  ]));
-  const currentPortal = privateZones.find(z =>
-    z.type === 'portal' &&
-    myPos.x >= z.startX - 1 &&
-    myPos.x <= z.endX &&
-    myPos.y >= z.startY - 1 &&
-    myPos.y <= z.endY
-  );
-  const currentSpotlight = privateZones.find(z =>
-    z.type === 'spotlight' &&
-    myPos.x >= z.startX &&
-    myPos.x < z.endX &&
-    myPos.y >= z.startY &&
-    myPos.y < z.endY
-  );
-  const currentMapZone = currentRoom || currentPortal || currentSpotlight || privateZones.find(z =>
-    z.type === 'public' &&
-    myPos.x >= z.startX &&
-    myPos.x < z.endX &&
-    myPos.y >= z.startY &&
-    myPos.y < z.endY
-  );
+  const {
+    currentRoom,
+    roomSpots,
+    activeRooms,
+    allRooms,
+    selectedUserRoom,
+    mediaGroupUserIds,
+    currentPortal,
+    currentSpotlight,
+    currentMapZone,
+    getRoomSpots,
+    isTileInZone,
+    isSpotOccupied,
+    findWalkableTileInZone,
+  } = useArenaRooms({
+    privateZones,
+    elements,
+    otherUsers,
+    myPos,
+    dimensions,
+    selectedUser,
+    proximityUsers,
+  });
   const moveToTile = (x: number, y: number) => {
     setAutoPath([]);
     setPanOffset({ x: 0, y: 0 });
@@ -1153,9 +682,6 @@ export function Arena() {
     const x = availableTarget?.x ?? Math.max(target.startX, Math.min(target.endX - 1, Math.floor((target.startX + target.endX) / 2)));
     const y = availableTarget?.y ?? Math.max(target.startY, Math.min(target.endY - 1, Math.floor((target.startY + target.endY) / 2)));
     teleportToTile(x, y);
-  };
-  const isSpotOccupied = (spot: any) => {
-    return isZoneOccupied(spot);
   };
   const chooseSpot = (spot: any) => {
     if (isSpotOccupied(spot)) return;
@@ -1422,144 +948,6 @@ export function Arena() {
     joinRoom(roomId);
   }, [connected, privateZones.length]);
 
-  // ── Camera and Mic Controls ───────────
-  const stopMicrophone = useCallback(async () => {
-    await msRef.current?.stopProduce('audio');
-    if (localStreamRef.current) {
-      localStreamRef.current.getAudioTracks().forEach(t => {
-        t.onended = null;
-        t.stop();
-        localStreamRef.current?.removeTrack(t);
-      });
-      setStreams(prev => ({ ...prev, me: localStreamRef.current! }));
-    }
-    setMicOn(false);
-  }, []);
-
-  const startMicrophone = useCallback(async () => {
-    if (!msRef.current || !mediaReady) {
-      pushToast({ title: 'Media is still connecting', detail: 'Try microphone again in a moment.', kind: 'warning', category: 'system' });
-      return false;
-    }
-    try {
-      const { audioInputId } = readDevicePreferences();
-      await replaceLocalMediaTrack('audio', audioInputId);
-      setMicOn(true);
-      return true;
-    } catch (e) {
-      console.error('Mic access denied', e);
-      await stopMicrophone();
-      pushToast({ title: 'Microphone unavailable', detail: 'Allow microphone access and try again.', kind: 'warning', category: 'system' });
-      return false;
-    }
-  }, [mediaReady, pushToast, replaceLocalMediaTrack, stopMicrophone]);
-
-  const stopCamera = useCallback(async () => {
-    await msRef.current?.stopProduce('camera');
-    if (localStreamRef.current) {
-      localStreamRef.current.getVideoTracks().forEach(t => {
-        t.onended = null;
-        t.stop();
-        localStreamRef.current?.removeTrack(t);
-      });
-      setStreams(prev => ({ ...prev, me: localStreamRef.current! }));
-    }
-    setCamOn(false);
-  }, []);
-
-  const startCamera = useCallback(async () => {
-    if (!msRef.current || !mediaReady) {
-      pushToast({ title: 'Media is still connecting', detail: 'Try camera again in a moment.', kind: 'warning', category: 'system' });
-      return false;
-    }
-    try {
-      const { videoInputId } = readDevicePreferences();
-      await replaceLocalMediaTrack('video', videoInputId);
-      setCamOn(true);
-      return true;
-    } catch (e) {
-      console.error('Cam access denied', e);
-      await stopCamera();
-      pushToast({ title: 'Camera unavailable', detail: 'Allow camera access and try again.', kind: 'warning', category: 'system' });
-      return false;
-    }
-  }, [mediaReady, pushToast, replaceLocalMediaTrack, stopCamera]);
-
-  const handleMicChange = useCallback((value: boolean) => {
-    if (value) void startMicrophone();
-    else void stopMicrophone();
-  }, [startMicrophone, stopMicrophone]);
-
-  const handleCamChange = useCallback((value: boolean) => {
-    if (value) void startCamera();
-    else void stopCamera();
-  }, [startCamera, stopCamera]);
-
-  useEffect(() => {
-    if (!mediaReady || !pendingInitialMedia) return;
-    const requested = pendingInitialMedia;
-    setPendingInitialMedia(null);
-    if (requested.mic) void startMicrophone();
-    if (requested.cam) void startCamera();
-  }, [mediaReady, pendingInitialMedia, startCamera, startMicrophone]);
-
-  const handleScreenShare = async () => {
-    if (!msRef.current || !mediaReady) {
-      pushToast({ title: 'Media is still connecting', detail: 'Try screen share again in a moment.', kind: 'warning', category: 'system' });
-      return;
-    }
-    const stopScreenShare = async () => {
-      if (stoppingScreenShareRef.current) return;
-      stoppingScreenShareRef.current = true;
-      await msRef.current?.stopProduce('screen');
-      await msRef.current?.stopProduce('screen-audio');
-      screenStreamRef.current?.getTracks().forEach(track => track.stop());
-      screenStreamRef.current = null;
-      setScreenStreams(prev => {
-        const next = { ...prev };
-        delete next.me;
-        return next;
-      });
-      setIsScreenSharing(false);
-      window.setTimeout(() => {
-        stoppingScreenShareRef.current = false;
-      }, 0);
-    };
-
-    if (isScreenSharing) {
-      await stopScreenShare();
-      return;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-      const videoTrack = stream.getVideoTracks()[0];
-      const audioTrack = stream.getAudioTracks()[0];
-      if (!videoTrack) return;
-      await msRef.current.produce(videoTrack, myUserId || 'me', { type: 'screen' });
-      if (audioTrack) {
-        try {
-          await msRef.current.produce(audioTrack, myUserId || 'me', { type: 'screen-audio', source: 'screen' });
-        } catch (audioError) {
-          console.warn('Screen audio share failed; continuing with screen video only', audioError);
-          audioTrack.stop();
-          stream.removeTrack(audioTrack);
-        }
-      }
-      stream.getTracks().forEach(track => {
-        track.onended = async () => {
-          await stopScreenShare();
-        };
-      });
-      screenStreamRef.current = stream;
-      setScreenStreams(prev => ({ ...prev, me: stream }));
-      setIsScreenSharing(true);
-    } catch (e) {
-      console.error('Screen share failed', e);
-      setIsScreenSharing(false);
-    }
-  };
-
   const handleLocateUser = () => {
     stopFollowing();
     setPanOffset({ x: 0, y: 0 });
@@ -1739,7 +1127,7 @@ export function Arena() {
             toasts={toasts}
             onAcceptInvite={acceptRoomInvite}
             onDeclineInvite={declineRoomInvite}
-            onDismissToast={(toastId) => setToasts(prev => prev.filter(item => item.id !== toastId))}
+            onDismissToast={dismissToast}
           />
 
           <ShortcutsModal open={showShortcuts} onClose={() => setShowShortcuts(false)} />
