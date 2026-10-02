@@ -1,10 +1,12 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { ZoomIn, ZoomOut, Footprints } from 'lucide-react';
 import type { Prefab } from './types';
 import type { SpaceElement } from '../arena/ElementsPanel';
 import { StudioElement } from './StudioElement';
 import { StudioArea } from './StudioArea';
 import type { AreaType } from './types';
+import { RoomConfigModal } from './RoomConfigModal';
+import { StudioEditLockBanner } from './StudioEditLockBanner';
+import { StudioZoomControls } from './StudioZoomControls';
 
 interface Props {
   tool: string;
@@ -1007,94 +1009,24 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
         })}
       </div>
 
-      {/* Zoom controls */}
-      <div style={{
-        position: 'absolute', bottom: 80, right: 24, display: 'flex', flexDirection: 'column',
-        background: '#fff', borderRadius: 8, border: '1px solid #e5e5e5', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', zIndex: 10, overflow: 'hidden',
-      }}>
-        <button onClick={() => setZoom(z => Math.min(3, z + 0.2))} style={{ border: 'none', background: 'transparent', padding: '8px 10px', cursor: 'pointer', color: '#374151', borderBottom: '1px solid #f3f4f6' }}>
-          <ZoomIn size={16} />
-        </button>
-        <button onClick={() => setZoom(1)} style={{ border: 'none', background: 'transparent', padding: '4px 10px', cursor: 'pointer', color: '#6b7280', fontSize: 10, fontWeight: 700, borderBottom: '1px solid #f3f4f6' }}>
-          {Math.round(zoom * 100)}%
-        </button>
-        <button onClick={() => setZoom(z => Math.max(0.2, z - 0.2))} style={{ border: 'none', background: 'transparent', padding: '8px 10px', cursor: 'pointer', color: '#374151', borderBottom: '1px solid #f3f4f6' }}>
-          <ZoomOut size={16} />
-        </button>
-        <button onClick={() => setShowWalkability(v => !v)} title="Toggle Impassable Overlay" style={{ border: 'none', background: showWalkability ? '#eff6ff' : 'transparent', padding: '8px 10px', cursor: 'pointer', color: showWalkability ? '#3b82f6' : '#374151' }}>
-          <Footprints size={16} />
-        </button>
-      </div>
+      <StudioZoomControls
+        zoom={zoom}
+        showWalkability={showWalkability}
+        onZoomIn={() => setZoom(z => Math.min(3, z + 0.2))}
+        onZoomReset={() => setZoom(1)}
+        onZoomOut={() => setZoom(z => Math.max(0.2, z - 0.2))}
+        onToggleWalkability={() => setShowWalkability(value => !value)}
+      />
 
-      {/* Bottom bar */}
-      <div style={{
-        position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)',
-        background: '#1f2937', color: '#fff', padding: '10px 20px', borderRadius: 999,
-        display: 'flex', alignItems: 'center', gap: 12, fontSize: 13,
-        boxShadow: '0 8px 24px rgba(0,0,0,0.2)', zIndex: 10, whiteSpace: 'nowrap',
-      }}>
-        <span style={{ color: '#fbbf24' }}>⚠</span>
-        <span>No one else can edit or decorate the office until you exit Studio.</span>
-        <button onClick={onExit} style={{ background: '#6366f1', color: '#fff', border: 'none', padding: '5px 14px', borderRadius: 999, fontWeight: 600, cursor: 'pointer', fontSize: 12 }}>Got it</button>
-      </div>
-      {/* Room Configuration Modal */}
-      {pendingRoom && (
-        <div style={{
-          position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 100,
-          display: 'flex', alignItems: 'center', justifyContent: 'center'
-        }}>
-          <div style={{
-            background: '#fff', borderRadius: 12, padding: 24, width: 400,
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
-          }}>
-            <h2 style={{ margin: '0 0 16px', fontSize: 18, color: '#111' }}>Configure {pendingRoom.prefab.title}</h2>
-            
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Capacity (People)</label>
-              <input 
-                type="number" min={1} max={20}
-                value={roomConfig.people}
-                onChange={e => setRoomConfig(prev => ({ ...prev, people: parseInt(e.target.value) || 1 }))}
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 14 }}
-              />
-            </div>
+      <StudioEditLockBanner onExit={onExit} />
 
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Floor Color</label>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {['#ffffff', '#f3f4f6', '#d1d5db', '#fef3c7', '#fde68a', '#ffedd5', '#fed7aa', '#ccfbf1', '#a7f3d0'].map(c => (
-                  <button key={c} onClick={() => setRoomConfig(prev => ({ ...prev, floor: c }))} style={{ width: 24, height: 24, borderRadius: 12, background: c, border: roomConfig.floor === c ? '2px solid #6366f1' : '1px solid #e5e5e5', cursor: 'pointer' }} />
-                ))}
-              </div>
-            </div>
-
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Tint Color</label>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {['', '#ffffff', '#e0f2fe', '#d1d5db', '#fbcfe8', '#bfdbfe', '#86efac', '#fef08a', '#fed7aa', '#fca5a5'].map(c => (
-                  <button key={c || 'none'} onClick={() => setRoomConfig(prev => ({ ...prev, tint: c }))} style={{ width: 24, height: 24, borderRadius: 12, background: c || '#f9fafb', border: roomConfig.tint === c ? '2px solid #6366f1' : '1px solid #e5e5e5', cursor: 'pointer', position: 'relative' }}>
-                    {!c && <span style={{ position: 'absolute', top: 2, left: 6, fontSize: 14, color: '#888' }}>×</span>}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Wall Color</label>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {['#64748b', '#334155', '#78350f', '#92400e', '#b45309', '#1e3a8a', '#1e40af', '#3730a3', '#4c1d95'].map(c => (
-                  <button key={c} onClick={() => setRoomConfig(prev => ({ ...prev, wall: c }))} style={{ width: 24, height: 24, borderRadius: 12, background: c, border: roomConfig.wall === c ? '2px solid #6366f1' : '1px solid transparent', cursor: 'pointer' }} />
-                ))}
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-              <button onClick={() => setPendingRoom(null)} style={{ flex: 1, padding: '10px', background: '#f3f4f6', border: 'none', borderRadius: 6, color: '#374151', fontWeight: 500, cursor: 'pointer' }}>Cancel</button>
-              <button onClick={handleGenerateRoom} style={{ flex: 1, padding: '10px', background: '#6366f1', border: 'none', borderRadius: 6, color: '#fff', fontWeight: 500, cursor: 'pointer' }}>Generate Room</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <RoomConfigModal
+        pendingRoom={pendingRoom}
+        roomConfig={roomConfig}
+        onConfigChange={setRoomConfig}
+        onCancel={() => setPendingRoom(null)}
+        onGenerate={handleGenerateRoom}
+      />
     </main>
   );
 }

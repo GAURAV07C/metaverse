@@ -1,118 +1,25 @@
 import { Router } from "express";
 import crypto from "node:crypto";
-import type { Prisma } from "@prisma/client";
 import client from "@repo/db/client";
 import { userMiddleware } from "../../middleware/user.js";
 import { DeskAssignmentSchema, OfficeSettingsSchema, SpaceDraftSchema } from "../../types/index.js";
+import {
+  canEditSpace,
+  cleanSpaceRole,
+  getSpaceForUser,
+  requireSpaceEditor,
+  requireSpaceManager,
+} from "../../services/officeAccess.js";
+import {
+  cleanNotificationPreferences,
+  defaultNotificationPreferences,
+  publicNotificationPreferences,
+  publicSettings,
+} from "../../services/officePreferences.js";
+import { PublishValidationError, publishOfficeDraft } from "../../services/officePublishService.js";
 
 export const officeRouter = Router();
 officeRouter.use(userMiddleware);
-
-const SPACE_MEMBER_ROLES = ["Admin", "Builder", "Member", "Guest"] as const;
-const EDITOR_ROLES = new Set(["Owner", "Admin", "Builder"]);
-const MANAGER_ROLES = new Set(["Owner", "Admin"]);
-
-function cleanSpaceRole(role: any) {
-  return SPACE_MEMBER_ROLES.includes(role) ? role : "Member";
-}
-
-async function getSpaceForUser(spaceId: string, userId: string) {
-  return client.space.findUnique({
-    where: { id: spaceId },
-    select: {
-      id: true,
-      name: true,
-      width: true,
-      height: true,
-      creatorId: true,
-      members: { where: { userId }, select: { role: true } },
-    },
-  });
-}
-
-function getSpaceRole(space: { creatorId: string; members?: { role: string }[] }, userId: string) {
-  if (space.creatorId === userId) return "Owner";
-  return cleanSpaceRole(space.members?.[0]?.role || "Guest");
-}
-
-function canEditSpace(space: { creatorId: string; members?: { role: string }[] }, userId: string) {
-  return EDITOR_ROLES.has(getSpaceRole(space, userId));
-}
-
-function canManageMembers(space: { creatorId: string; members?: { role: string }[] }, userId: string) {
-  return MANAGER_ROLES.has(getSpaceRole(space, userId));
-}
-
-function requireSpaceEditor(space: { creatorId: string; members?: { role: string }[] }, userId: string, res: any) {
-  if (canEditSpace(space, userId)) return true;
-  res.status(403).json({ message: "Only owners, admins, and builders can edit this office" });
-  return false;
-}
-
-function requireSpaceManager(space: { creatorId: string; members?: { role: string }[] }, userId: string, res: any) {
-  if (canManageMembers(space, userId)) return true;
-  res.status(403).json({ message: "Only owners and admins can manage members" });
-  return false;
-}
-
-function publicSettings(settings: any) {
-  if (!settings) return null;
-  const { id, spaceId, createdAt, updatedAt, ...rest } = settings;
-  return { id, spaceId, ...rest, createdAt, updatedAt };
-}
-
-const defaultNotificationPreferences = {
-  joins: true,
-  chat: true,
-  roomInvites: true,
-  sounds: true,
-  reconnecting: true,
-  respectFocus: true,
-};
-
-function cleanNotificationPreferences(body: any) {
-  return Object.fromEntries(
-    Object.keys(defaultNotificationPreferences)
-      .filter((key) => typeof body?.[key] === "boolean")
-      .map((key) => [key, body[key]])
-  );
-}
-
-function publicNotificationPreferences(preferences: any) {
-  if (!preferences) return defaultNotificationPreferences;
-  const { id, spaceId, userId, createdAt, updatedAt, ...rest } = preferences;
-  return { ...defaultNotificationPreferences, ...rest };
-}
-
-function validatePortalTargets(data: any, width: number, height: number) {
-  const areas = Array.isArray(data?.areas) ? data.areas : [];
-  const roomIds = new Set(
-    areas
-      .filter((area: any) => area?.id && (area.type === "room" || area.type === "private"))
-      .map((area: any) => area.id)
-  );
-  for (const area of areas) {
-    if (area?.type !== "portal") continue;
-    const label = area.name || "Portal";
-    const hasX = area.targetX !== undefined && area.targetX !== null && area.targetX !== "";
-    const hasY = area.targetY !== undefined && area.targetY !== null && area.targetY !== "";
-    if (hasX !== hasY) return `${label}: target X and Y both are required`;
-    if (hasX && hasY) {
-      if (!Number.isInteger(area.targetX) || !Number.isInteger(area.targetY)) return `${label}: target coordinates must be integers`;
-      if (!area.targetSpaceId && (area.targetX < 0 || area.targetX >= width || area.targetY < 0 || area.targetY >= height)) {
-        return `${label}: target coordinates must stay inside the map`;
-      }
-    }
-    if (typeof area.targetUrl === "string" && area.targetUrl.trim()) {
-      const url = area.targetUrl.trim();
-      if (!url.startsWith("/") && !/^https?:\/\//i.test(url)) return `${label}: target URL must start with / or http(s)`;
-    }
-    if (area.targetRoomId && !area.targetSpaceId && !roomIds.has(area.targetRoomId)) {
-      return `${label}: target room does not exist in this map`;
-    }
-  }
-  return "";
-}
 
 officeRouter.get("/:spaceId/settings", async (req, res) => {
   const space = await getSpaceForUser(req.params.spaceId, req.userId);
@@ -479,107 +386,13 @@ officeRouter.post("/:spaceId/publish", async (req, res) => {
     return res.status(400).json({ message: "Nothing to publish" });
   }
 
-  const data = draft.data as any;
-  const portalTargetError = validatePortalTargets(data, space.width, space.height || space.width);
-  if (portalTargetError) {
-    return res.status(400).json({ message: portalTargetError });
-  }
-
-  if (data.elements && Array.isArray(data.elements)) {
-    // Fetch all existing element IDs in database
-    const dbElements = await client.element.findMany({ select: { id: true } });
-    const validElementIds = new Set(dbElements.map((e: any) => e.id));
-    const fallbackElementId = dbElements[0]?.id;
-
-    // Delete all existing spaceElements for this space
-    await client.spaceElements.deleteMany({ where: { spaceId: space.id } });
-
-    // Insert all draft elements safely
-    const elementsToInsert = data.elements
-      .filter((e: any) => e.element)
-      .map((e: any) => {
-        const targetElementId = validElementIds.has(e.element.id) ? e.element.id : fallbackElementId;
-        if (!targetElementId) return null;
-
-        return {
-          spaceId: space.id,
-          elementId: targetElementId,
-          x: e.x,
-          y: e.y,
-          customData: {
-            width: e.element.width,
-            height: e.element.height,
-            color: e.element.color,
-            floor: e.element.floor,
-            wall: e.element.wall,
-            name: e.element.name,
-            category: e.element.category,
-            imageUrl: e.element.imageUrl,
-            colorMaskUrl: e.element.colorMaskUrl,
-            interactiveObjects: Array.isArray(e.element.interactiveObjects) ? e.element.interactiveObjects : undefined
-          }
-        };
-      })
-      .filter((e: any): e is NonNullable<typeof e> => e !== null);
-
-    if (elementsToInsert.length > 0) {
-      await client.spaceElements.createMany({
-        data: elementsToInsert
-      });
+  try {
+    const updatedDraft = await publishOfficeDraft(space, draft, req.userId);
+    res.json({ message: "Office draft published", draft: updatedDraft });
+  } catch (error) {
+    if (error instanceof PublishValidationError) {
+      return res.status(400).json({ message: error.message });
     }
+    throw error;
   }
-
-  // Also sync areas to PrivateZone
-  if (data.areas && Array.isArray(data.areas)) {
-    await client.privateZone.deleteMany({ where: { spaceId: space.id } });
-    
-    let defaultSpawnConsumed = false;
-    const areasToInsert = data.areas.map((a: any) => {
-      const isDefaultSpawn = a.type === 'spawn' && Boolean(a.isDefaultSpawn) && !defaultSpawnConsumed;
-      if (isDefaultSpawn) defaultSpawnConsumed = true;
-      return ({
-      id: typeof a.id === 'string' && a.id ? a.id : undefined,
-      spaceId: space.id,
-      name: a.name || 'Area',
-      type: a.type === 'private' ? 'room' : (a.type || 'public'),
-      startX: a.x,
-      startY: a.y,
-      endX: a.x + a.w,
-      endY: a.y + a.h,
-      floor: a.floor,
-      color: a.color,
-      texture: a.texture,
-      isDefaultSpawn,
-      targetUrl: a.type === 'portal' && typeof a.targetUrl === 'string' && a.targetUrl.trim() ? a.targetUrl.trim() : undefined,
-      targetSpaceId: a.type === 'portal' && typeof a.targetSpaceId === 'string' && a.targetSpaceId.trim() ? a.targetSpaceId.trim() : undefined,
-      targetRoomId: a.type === 'portal' && typeof a.targetRoomId === 'string' && a.targetRoomId.trim() ? a.targetRoomId.trim() : undefined,
-      targetX: a.type === 'portal' && Number.isInteger(a.targetX) ? a.targetX : undefined,
-      targetY: a.type === 'portal' && Number.isInteger(a.targetY) ? a.targetY : undefined,
-    });
-    });
-
-    if (areasToInsert.length > 0) {
-      await client.privateZone.createMany({
-        data: areasToInsert
-      });
-    }
-  }
-
-  const latestVersion = await (client as any).spaceMapVersion.findFirst({
-    where: { spaceId: space.id },
-    orderBy: { version: "desc" },
-    select: { version: true },
-  });
-  const nextVersion = (latestVersion?.version || 0) + 1;
-  await (client as any).spaceMapVersion.create({
-    data: {
-      spaceId: space.id,
-      version: nextVersion,
-      data: data as any,
-      createdById: req.userId,
-    },
-  });
-
-  const updatedDraft = await client.spaceDraft.update({ where: { spaceId: space.id }, data: { publishedAt: new Date() } }).catch(() => null);
-  res.json({ message: "Office draft published", draft: updatedDraft });
 });

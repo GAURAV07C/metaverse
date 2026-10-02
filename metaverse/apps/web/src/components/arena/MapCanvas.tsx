@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { PlusCircle, MinusCircle, Navigation, Map as MapIcon } from 'lucide-react';
 import type { OtherUser } from '../Arena';
 import type { SpaceElement } from './ElementsPanel';
 import { findPath } from '../../utils/pathfinding';
 import { drawDynamicAvatar } from '../../utils/drawAvatar';
+import { MapControls } from './MapControls';
 
 const TILE = 32;
 const ZOOM_MIN = 0.35;
@@ -827,20 +827,12 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
         />
       </div>
 
-      <div className="map-controls">
-        <button className="map-ctrl-btn" onClick={() => setZoom(z => Math.min(z * 1.25, ZOOM_MAX))} title="Zoom In">
-          <PlusCircle size={20} />
-        </button>
-        <button className="map-ctrl-btn" onClick={() => setZoom(z => Math.max(z / 1.25, ZOOM_MIN))} title="Zoom Out (Diagram View)">
-          <MinusCircle size={20} />
-        </button>
-        <button className="map-ctrl-btn" onClick={() => setZoom(ZOOM_MIN)} title="Layout Overview (Gather View)">
-          <MapIcon size={20} />
-        </button>
-        <button className="map-ctrl-btn" onClick={handleLocateUser} title="Locate Me">
-          <Navigation size={20} />
-        </button>
-      </div>
+      <MapControls
+        onZoomIn={() => setZoom(z => Math.min(z * 1.25, ZOOM_MAX))}
+        onZoomOut={() => setZoom(z => Math.max(z / 1.25, ZOOM_MIN))}
+        onOverview={() => setZoom(ZOOM_MIN)}
+        onLocateUser={handleLocateUser}
+      />
     </>
   );
 };

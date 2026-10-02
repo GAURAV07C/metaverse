@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { MessageSquare, Hammer, Users, Share2, Wifi, CalendarDays, Sparkles, Footprints, Crosshair, X, Bell, DoorOpen } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useUserStore } from '../store';
 import { useArenaStore } from '../stores/arenaStore';
@@ -13,12 +12,15 @@ import { ElementsPanel, type SpaceElement, type AvailableElement, type RoomPrefa
 import { MapCanvas } from './arena/MapCanvas';
 import { ActionToolbar } from './arena/ActionToolbar';
 import { InteractionLayer } from './arena/InteractionLayer';
-import { CanvasAvatarPreview } from './CanvasAvatarPreview';
 import { PrejoinScreen } from './arena/PrejoinScreen';
 import { SpaceRail } from './arena/SpaceRail';
 import { ArenaNotifications } from './arena/ArenaNotifications';
 import { ShortcutsModal } from './arena/ShortcutsModal';
 import { ArenaRightStack } from './arena/ArenaRightStack';
+import { ArenaTopBar } from './arena/ArenaTopBar';
+import { ConnectionBanner } from './arena/ConnectionBanner';
+import { OfficeMenuPopover } from './arena/OfficeMenuPopover';
+import { SelectedUserCard } from './arena/SelectedUserCard';
 import { useAvailableAssetsQuery, useInviteEventsQuery, useModerationAuditQuery, useNotificationPreferencesQuery, useSpaceQuery } from './arena/queries';
 import { findPath } from '../utils/pathfinding';
 import type { ChatScope, InviteHistoryItem, ModerationHistoryItem, NotificationCategory, NotificationPrefs, OtherUser, RoomInvite } from './arena/types';
@@ -1642,17 +1644,18 @@ export function Arena() {
 
 
         {showOfficeMenu && (
-          <div className="office-menu-popover">
-            <strong>{spaceName}</strong>
-            <span className="office-menu-role">{currentUserRole}</span>
-            <button onClick={handleCopyInvite}>Invite to office</button>
-            <button onClick={() => { setIsSettingsOpen(true); setShowOfficeMenu(false); }}>Settings</button>
-            <button disabled={!canEditSpace} onClick={() => { if (!canEditSpace) return; toggleBuild(); setShowOfficeMenu(false); }}>Decorate desk</button>
-            <button onClick={() => navigate(`/desk-manager/${spaceId}`)}>Desk manager</button>
-            <button disabled={!canEditSpace} onClick={() => canEditSpace && navigate(`/studio/${spaceId}`)}>Edit the office</button>
-            <button onClick={() => navigate('/dashboard')}>Go to lobby</button>
-            <button className="danger" onClick={() => navigate('/dashboard')}>Leave office</button>
-          </div>
+          <OfficeMenuPopover
+            spaceName={spaceName}
+            currentUserRole={currentUserRole}
+            canEditSpace={canEditSpace}
+            onCopyInvite={handleCopyInvite}
+            onOpenSettings={() => { setIsSettingsOpen(true); setShowOfficeMenu(false); }}
+            onDecorateDesk={() => { if (!canEditSpace) return; toggleBuild(); setShowOfficeMenu(false); }}
+            onOpenDeskManager={() => navigate(`/desk-manager/${spaceId}`)}
+            onEditOffice={() => canEditSpace && navigate(`/studio/${spaceId}`)}
+            onGoToLobby={() => navigate('/dashboard')}
+            onLeaveOffice={() => navigate('/dashboard')}
+          />
         )}
 
         {/* ── Left Sidebar Drawer + Dock ── */}
@@ -1691,58 +1694,44 @@ export function Arena() {
 
         {/* ── Main Viewport Canvas Area ── */}
         <main className="arena-main" aria-label="Space map">
-          <section className="arena-top-left" aria-label="Space header">
-            <button className="space-title-pill" onClick={() => setShowOfficeMenu(prev => !prev)} title="Open space menu">
-              <span className="space-title-logo"><Sparkles size={16} /></span>
-              <span><b>{spaceName}</b><small>{connected ? 'Live office' : 'Connecting...'}</small></span>
-            </button>
-            <button className="arena-mini-action" onClick={handleCopyInvite} title="Invite people"><Share2 size={16} />{copied ? 'Copied' : 'Invite'}</button>
-            {canEditSpace && <button className="arena-mini-action" onClick={() => navigate(`/studio/${spaceId}`)} title="Open Studio"><Hammer size={16} />Edit map</button>}
-          </section>
+          <ArenaTopBar
+            spaceName={spaceName}
+            connected={connected}
+            copied={copied}
+            canEditSpace={canEditSpace}
+            otherUsers={otherUsers}
+            followedUser={followedUser}
+            currentMapZone={currentMapZone}
+            onOpenOfficeMenu={() => setShowOfficeMenu(prev => !prev)}
+            onCopyInvite={handleCopyInvite}
+            onEditMap={() => navigate(`/studio/${spaceId}`)}
+            onOpenUsers={() => toggleSidebar('users')}
+            onStopFollowing={() => setFollowingUserId(null)}
+            onOpenMeetingMode={() => setViewMode('grid')}
+          />
 
-          <section className="arena-top-right" aria-label="Presence and events">
-            <button className="arena-status-chip" onClick={() => toggleSidebar('users')}><Users size={16} />{otherUsers.length + 1} online</button>
-            {followedUser && (
-              <button className="arena-status-chip follow-chip" onClick={() => setFollowingUserId(null)} title={`Stop following ${followedUser.username}`}>
-                <Footprints size={16} />Following {followedUser.username}
-              </button>
-            )}
-            {currentMapZone && (
-              <button className="arena-status-chip zone-chip" title={`Current zone: ${currentMapZone.name || currentMapZone.type}`}>
-                <Sparkles size={16} />{currentMapZone.name || currentMapZone.type}
-              </button>
-            )}
-            <button className="arena-status-chip" onClick={() => setViewMode('grid')}><CalendarDays size={16} />Meeting mode</button>
-            <button className={`arena-status-chip ${connected ? 'online' : ''}`}><Wifi size={16} />{connected ? 'Connected' : 'Reconnecting'}</button>
-          </section>
+          <ConnectionBanner
+            connected={connected}
+            isBrowserOnline={isBrowserOnline}
+            enabled={notificationPrefs.reconnecting}
+          />
 
-          {notificationPrefs.reconnecting && (!connected || !isBrowserOnline) && (
-            <div className={`arena-connection-banner ${!isBrowserOnline ? 'offline' : ''}`} role="status" aria-live="polite">
-              <Wifi size={17} />
-              <div>
-                <strong>{isBrowserOnline ? 'Reconnecting to office' : 'You are offline'}</strong>
-                <span>{isBrowserOnline ? 'Movement, chat, and room media will resume automatically.' : 'Check your internet connection. Map view stays available locally.'}</span>
-              </div>
-            </div>
-          )}
-
-          {selectedUser && (
-            <aside className="map-user-card" aria-label={`${selectedUser.username} profile`}>
-              <button className="map-user-close" onClick={() => setSelectedUserId(null)} title="Close profile" aria-label="Close profile"><X size={15} /></button>
-              <div className="map-user-avatar">{selectedUser.avatarUrl?.startsWith('class:') ? <CanvasAvatarPreview imageUrl={selectedUser.avatarUrl} name={selectedUser.username} size={42} /> : selectedUser.avatarUrl ? <img src={selectedUser.avatarUrl} alt="" /> : selectedUser.username.charAt(0).toUpperCase()}<span className={`presence-dot ${selectedUser.status || 'available'}`} /></div>
-              <div className="map-user-info">
-                <strong>{selectedUser.username}</strong>
-                <span>{selectedUser.status || 'available'} · {selectedUserRoom ? `In ${selectedUserRoom.name || 'room'}` : `(${selectedUser.x}, ${selectedUser.y})`}</span>
-              </div>
-              <div className="map-user-actions">
-                <button onClick={() => messageUser(selectedUser.username)}><MessageSquare size={15} />Message</button>
-                <button onClick={() => handleFollowOtherUser(selectedUser.userId)}><Footprints size={15} />{followingUserId === selectedUser.userId ? 'Unfollow' : 'Follow'}</button>
-                <button onClick={() => handleLocateOtherUser(selectedUser.x, selectedUser.y)}><Crosshair size={15} />Locate</button>
-                <button disabled={!currentRoom} onClick={() => inviteUserToCurrentRoom(selectedUser)}><DoorOpen size={15} />Invite room</button>
-                <button onClick={() => { wsRef.current?.sendChat('', { scope: 'dm', targetUserId: selectedUser.userId, isRing: true }); pushToast({ title: `Ringing ${selectedUser.username}...`, kind: 'info', category: 'system' }); setSelectedUserId(null); }}><Bell size={15} />Ring</button>
-              </div>
-            </aside>
-          )}
+          <SelectedUserCard
+            user={selectedUser || null}
+            roomName={selectedUserRoom?.name || null}
+            currentRoomAvailable={Boolean(currentRoom)}
+            followingUserId={followingUserId}
+            onClose={() => setSelectedUserId(null)}
+            onMessage={messageUser}
+            onFollow={handleFollowOtherUser}
+            onLocate={handleLocateOtherUser}
+            onInviteRoom={inviteUserToCurrentRoom}
+            onRing={(user) => {
+              wsRef.current?.sendChat('', { scope: 'dm', targetUserId: user.userId, isRing: true });
+              pushToast({ title: `Ringing ${user.username}...`, kind: 'info', category: 'system' });
+              setSelectedUserId(null);
+            }}
+          />
 
           <ArenaNotifications
             roomInvites={roomInvites}

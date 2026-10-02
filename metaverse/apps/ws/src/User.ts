@@ -1,59 +1,13 @@
 import { WebSocket } from "ws";
 import { RoomManager } from "./RoomManager";
 import { OutgoingMessage } from "./types";
-import client from "@repo/db/client";
-import jwt, { JwtPayload } from "jsonwebtoken";
-import { JWT_PASSWORD } from "./config";
 import { MediasoupManager } from "./MediasoupManager";
 import { MovementHandler } from "./handlers/MovementHandler";
 import { ChatHandler } from "./handlers/ChatHandler";
 import { WebRTCHandler } from "./handlers/WebRTCHandler";
-
-
-function getRandomString(length: number) {
-  const characters =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let result = "";
-  for (let i = 0; i < length; i++) {
-    result += characters.charAt(Math.floor(Math.random() * characters.length));
-  }
-  return result;
-}
-
-async function writeRoomInviteEvent(data: {
-  spaceId: string;
-  inviteId?: string;
-  direction: string;
-  status: string;
-  fromUserId?: string;
-  fromUsername?: string;
-  toUserId?: string;
-  toUsername?: string;
-  roomId: string;
-  roomName: string;
-}) {
-  try {
-    await (client as any).roomInviteEvent.create({ data });
-  } catch (error) {
-    console.warn("Failed to persist room invite event", error instanceof Error ? error.message : error);
-  }
-}
-
-async function writeModerationAuditEvent(data: {
-  spaceId: string;
-  action: string;
-  status: string;
-  actorUserId?: string;
-  actorUsername?: string;
-  targetUserId?: string;
-  targetUsername?: string;
-}) {
-  try {
-    await (client as any).moderationAuditEvent.create({ data });
-  } catch (error) {
-    console.warn("Failed to persist moderation audit event", error instanceof Error ? error.message : error);
-  }
-}
+import { JoinHandler } from "./handlers/JoinHandler";
+import { CollaborationHandler } from "./handlers/CollaborationHandler";
+import { getRandomString } from "./utils/ids";
 
 export class User {
   public id: string;
@@ -65,8 +19,9 @@ export class User {
   public x: number;
   public y: number;
   public inProximityWith: Set<string> = new Set();
+  public readonly requestedSpaceId?: string;
+
   private ws: WebSocket;
-  private requestedSpaceId?: string;
 
   constructor(ws: WebSocket, requestedSpaceId?: string) {
     this.id = getRandomString(10);
@@ -77,9 +32,20 @@ export class User {
     this.initHandlers();
   }
 
-  private closeWithReason(code: number, reason: string, extra?: Record<string, unknown>) {
-    console.warn(`[WS] Closing connection: ${reason}`, { userId: this.userId, spaceId: this.spaceId, ...extra });
-    this.send({ type: "join-error", payload: { reason, message: this.joinErrorMessage(reason), ...(extra || {}) } });
+  public rejectJoin(code: number, reason: string, extra?: Record<string, unknown>) {
+    console.warn(`[WS] Closing connection: ${reason}`, {
+      userId: this.userId,
+      spaceId: this.spaceId,
+      ...extra,
+    });
+    this.send({
+      type: "join-error",
+      payload: {
+        reason,
+        message: this.joinErrorMessage(reason),
+        ...(extra || {}),
+      },
+    });
     this.ws.close(code, reason);
   }
 
@@ -102,180 +68,13 @@ export class User {
 
   initHandlers() {
     this.ws.on("message", async (data) => {
-      // Tests sometimes send malformed/partial payloads; never throw and never
-      // let invalid state updates desync other assertions.
-      let parsedData: any;
-      try {
-        parsedData = JSON.parse(data.toString());
-      } catch {
-        return;
-      }
+      const parsedData = this.parseMessage(data);
+      if (!parsedData) return;
 
-      switch (parsedData?.type) {
-        case "join": {
-          const spaceId = typeof parsedData?.payload?.spaceId === "string" ? parsedData.payload.spaceId : "";
-          if (this.requestedSpaceId && this.requestedSpaceId !== spaceId) {
-            this.closeWithReason(1008, "space-route-mismatch");
-            return;
-          }
-          const token = typeof parsedData?.payload?.token === "string" ? parsedData.payload.token : "";
-          if (!token) {
-            this.closeWithReason(1008, "missing-token");
-            return;
-          }
-
-          let userId: string | undefined;
-          try {
-            const payload = jwt.verify(token, JWT_PASSWORD) as JwtPayload;
-            userId = typeof payload.userId === "string" ? payload.userId : undefined;
-          } catch (error) {
-            console.warn("[WS] Invalid join token", error instanceof Error ? error.message : error);
-            this.closeWithReason(1008, "invalid-token");
-            return;
-          }
-
-          if (!userId) {
-            this.closeWithReason(1008, "missing-user-id");
-            return;
-          }
-
-          this.userId = userId;
-
-          try {
-            // Fetch username and avatar from DB for display
-            const dbUser = await client.user.findUnique({
-              where: { id: userId },
-              select: { username: true, avatar: { select: { imageUrl: true } } },
-            });
-            this.username = dbUser?.username ?? 'Unknown';
-            this.avatarUrl = dbUser?.avatar?.imageUrl ?? undefined;
-
-            const space = await client.space.findFirst({
-              where: { id: spaceId },
-            });
-
-            if (!space) {
-              this.closeWithReason(1008, "space-not-found");
-              return;
-            }
-
-            const addResult = await RoomManager.getInstance().addUser(spaceId, this);
-            if (!addResult.ok) {
-              this.closeWithReason(1013, addResult.reason || "sfu-owned-by-other-instance", {
-                redirectUrl: addResult.redirectUrl,
-                ownerInstanceId: addResult.ownerInstanceId,
-              });
-              return;
-            }
-            this.spaceId = spaceId;
-            await RoomManager.getInstance().loadSpaceZones(spaceId);
-            await RoomManager.getInstance().loadSpaceBounds(spaceId);
-
-            let spawn = { x: 0, y: 0 };
-
-            const zones = RoomManager.getInstance().zones.get(spaceId) || [];
-
-            const spawnZone = zones.find((z: any) => z.type === "spawn" && z.isDefaultSpawn) || zones.find((z: any) => z.type === "spawn");
-            if (spawnZone || zones.length > 0) {
-              const z = spawnZone || zones[0];
-              spawn = {
-                x: Math.floor((z.startX + z.endX) / 2),
-                y: Math.floor((z.startY + z.endY) / 2)
-              };
-            } else {
-              // Fallback to searching for a random unblocked spot in the space
-              for (let i = 0; i < 200; i += 1) {
-                const candidate = {
-                  x: Math.floor(Math.random() * space.width),
-                  y: Math.floor(Math.random() * (space.height ?? 1)),
-                };
-                if (await RoomManager.getInstance().canOccupy(spaceId, candidate.x, candidate.y)) {
-                  spawn = candidate;
-                  break;
-                }
-              }
-            }
-            this.x = spawn.x;
-            this.y = spawn.y;
-
-            let chatHistory: any[] = [];
-            if ((client as any).chatMessage) {
-              try {
-                const recentChats = await (client as any).chatMessage.findMany({
-                  where: { spaceId },
-                  orderBy: { createdAt: "desc" },
-                  take: 50,
-                });
-                chatHistory = recentChats.reverse().map((c: any) => ({
-                  userId: c.userId,
-                  username: c.username,
-                  message: c.message,
-                  scope: c.scope,
-                  targetUserId: c.targetUserId,
-                  isRing: c.isRing,
-                  timestamp: c.createdAt.toISOString()
-                }));
-              } catch (err) {
-                console.error("Failed to fetch chat history:", err);
-              }
-            } else {
-              console.warn("ChatMessage model not available in Prisma client. Restart dev server to generate.");
-            }
-
-            this.send({
-              type: "space-joined",
-              payload: {
-                chatHistory,
-                spawn: { x: this.x, y: this.y },
-                userId: this.userId,
-                username: this.username,
-                avatarUrl: this.avatarUrl,
-                users:
-                  RoomManager.getInstance()
-                    .rooms.get(spaceId)
-                    ?.filter((x) => x.id !== this.id)
-                    ?.map((u) => ({ id: u.id, userId: u.userId, username: u.username, avatarUrl: u.avatarUrl, status: u.status, x: u.x, y: u.y })) ?? [],
-              },
-            });
-
-            for (const producer of MediasoupManager.getInstance().getProducersForSpace(spaceId, this.userId)) {
-              if (!producer.userId) continue;
-              this.send({
-                type: "new-producer",
-                payload: {
-                  producerId: producer.producerId,
-                  userId: producer.userId,
-                  appData: producer.appData,
-                },
-              });
-            }
-
-            RoomManager.getInstance().broadcast(
-              {
-                type: "user-joined",
-                payload: {
-                  userId: this.userId,
-                  username: this.username,
-                  avatarUrl: this.avatarUrl,
-                  status: this.status,
-                  x: this.x,
-                  y: this.y,
-                },
-              },
-              this,
-              this.spaceId!,
-            );
-
-            RoomManager.getInstance().checkProximity(this, this.spaceId!);
-          } catch (error) {
-            console.error("Failed to join space", error instanceof Error ? error.message : error);
-            this.send({ type: "webrtc-error", payload: { message: "Unable to join space. Please try again." } });
-            this.closeWithReason(1011, "join-failed");
-          }
-
+      switch (parsedData.type) {
+        case "join":
+          await JoinHandler.handleJoin(this, parsedData);
           break;
-        }
-
         case "move":
           await MovementHandler.handleMove(this, parsedData);
           break;
@@ -285,187 +84,24 @@ export class User {
         case "chat-message":
           ChatHandler.handleMessage(this, parsedData);
           break;
-        case "room-invite-send": {
-          if (!this.spaceId || !this.userId) return;
-          const targetUserId = typeof parsedData?.payload?.targetUserId === "string" ? parsedData.payload.targetUserId : "";
-          const roomId = typeof parsedData?.payload?.roomId === "string" ? parsedData.payload.roomId : "";
-          const roomName = typeof parsedData?.payload?.roomName === "string" ? parsedData.payload.roomName.slice(0, 80) : undefined;
-          const roomUrl = typeof parsedData?.payload?.roomUrl === "string" ? parsedData.payload.roomUrl.slice(0, 500) : undefined;
-          if (!targetUserId || !roomId || targetUserId === this.userId) return;
-          const target = RoomManager.getInstance()
-            .rooms.get(this.spaceId)
-            ?.find((u) => u.userId === targetUserId);
-          if (!target) return;
-          const inviteId = `${this.userId}:${targetUserId}:${roomId}:${Date.now()}`;
-          await writeRoomInviteEvent({
-            spaceId: this.spaceId,
-            inviteId,
-            direction: "outgoing",
-            status: "sent",
-            fromUserId: this.userId,
-            fromUsername: this.username,
-            toUserId: targetUserId,
-            toUsername: target.username,
-            roomId,
-            roomName: roomName || "Room",
-          });
-          target.send({
-            type: "room-invite-receive",
-            payload: {
-              inviteId,
-              fromUserId: this.userId,
-              fromUsername: this.username,
-              roomId,
-              roomName,
-              roomUrl,
-              timestamp: new Date().toISOString(),
-            },
-          });
+        case "room-invite-send":
+          await CollaborationHandler.handleRoomInviteSend(this, parsedData);
           break;
-        }
-        case "room-invite-respond": {
-          if (!this.spaceId || !this.userId) return;
-          const targetUserId = typeof parsedData?.payload?.targetUserId === "string" ? parsedData.payload.targetUserId : "";
-          const roomId = typeof parsedData?.payload?.roomId === "string" ? parsedData.payload.roomId : "";
-          const inviteId = typeof parsedData?.payload?.inviteId === "string" ? parsedData.payload.inviteId.slice(0, 160) : undefined;
-          const roomName = typeof parsedData?.payload?.roomName === "string" ? parsedData.payload.roomName.slice(0, 80) : undefined;
-          const response = parsedData?.payload?.response === "accepted" || parsedData?.payload?.response === "declined"
-            ? parsedData.payload.response
-            : "";
-          if (!targetUserId || !roomId || !response) return;
-          const target = RoomManager.getInstance()
-            .rooms.get(this.spaceId)
-            ?.find((u) => u.userId === targetUserId);
-          if (!target) return;
-          await writeRoomInviteEvent({
-            spaceId: this.spaceId,
-            inviteId,
-            direction: "incoming",
-            status: response,
-            fromUserId: this.userId,
-            fromUsername: this.username,
-            toUserId: targetUserId,
-            toUsername: target.username,
-            roomId,
-            roomName: roomName || "Room",
-          });
-          target.send({
-            type: "room-invite-response",
-            payload: {
-              inviteId,
-              fromUserId: this.userId,
-              fromUsername: this.username,
-              roomId,
-              roomName,
-              response,
-              timestamp: new Date().toISOString(),
-            },
-          });
+        case "room-invite-respond":
+          await CollaborationHandler.handleRoomInviteRespond(this, parsedData);
           break;
-        }
-        case "moderation-request": {
-          if (!this.spaceId || !this.userId) return;
-          const targetUserId = typeof parsedData?.payload?.targetUserId === "string" ? parsedData.payload.targetUserId : "";
-          const action = typeof parsedData?.payload?.action === "string" ? parsedData.payload.action : "";
-          const allowed = ["mute-audio", "stop-video", "stop-screen"];
-          if (!targetUserId || !allowed.includes(action)) return;
-          const targetUser = RoomManager.getInstance().rooms.get(this.spaceId)
-            ?.find((u) => u.userId === targetUserId);
-          await writeModerationAuditEvent({
-            spaceId: this.spaceId,
-            action,
-            status: "sent",
-            actorUserId: this.userId,
-            actorUsername: this.username,
-            targetUserId,
-            targetUsername: targetUser?.username,
-          });
-          RoomManager.getInstance().sendToUsers(
-            {
-              type: "moderation-request",
-              payload: {
-                action,
-                fromUserId: this.userId,
-                fromUsername: this.username,
-                timestamp: new Date().toISOString(),
-              },
-            },
-            this.spaceId,
-            (target) => target.userId === targetUserId,
-          );
+        case "moderation-request":
+          await CollaborationHandler.handleModerationRequest(this, parsedData);
           break;
-        }
-        case "moderation-response": {
-          if (!this.spaceId || !this.userId) return;
-          const action = typeof parsedData?.payload?.action === "string" ? parsedData.payload.action : "";
-          const accepted = Boolean(parsedData?.payload?.accepted);
-          const allowed = ["mute-audio", "stop-video", "stop-screen"];
-          if (!allowed.includes(action)) return;
-          const requesterId = typeof parsedData?.payload?.requesterId === "string" ? parsedData.payload.requesterId : undefined;
-          await writeModerationAuditEvent({
-            spaceId: this.spaceId,
-            action,
-            status: accepted ? "applied" : "failed",
-            actorUserId: requesterId,
-            targetUserId: this.userId,
-            targetUsername: this.username,
-          });
-          RoomManager.getInstance().sendToUsers(
-            {
-              type: "moderation-response",
-              payload: {
-                action,
-                targetUserId: this.userId,
-                targetUsername: this.username,
-                accepted,
-                timestamp: new Date().toISOString(),
-              },
-            },
-            this.spaceId,
-            (target) => requesterId ? target.userId === requesterId : target.userId !== this.userId,
-          );
+        case "moderation-response":
+          await CollaborationHandler.handleModerationResponse(this, parsedData);
           break;
-        }
-        case "reaction-send": {
-          if (!this.spaceId || !this.userId) return;
-          const emoji = typeof parsedData?.payload?.emoji === "string" ? parsedData.payload.emoji.trim() : "";
-          if (!emoji || emoji.length > 8) return;
-          RoomManager.getInstance().broadcast(
-            {
-              type: "reaction-receive",
-              payload: {
-                userId: this.userId,
-                username: this.username,
-                emoji,
-                timestamp: new Date().toISOString(),
-              },
-            },
-            this,
-            this.spaceId,
-          );
+        case "reaction-send":
+          CollaborationHandler.handleReactionSend(this, parsedData);
           break;
-        }
-        case "status-set": {
-          if (!this.spaceId || !this.userId) return;
-          const rawStatus = typeof parsedData?.payload?.status === "string" ? parsedData.payload.status : "";
-          const allowed = ["available", "busy", "focus", "away"] as const;
-          if (!allowed.includes(rawStatus as any)) return;
-          this.status = rawStatus as typeof allowed[number];
-          RoomManager.getInstance().broadcast(
-            {
-              type: "status-update",
-              payload: {
-                userId: this.userId,
-                username: this.username,
-                status: this.status,
-                timestamp: new Date().toISOString(),
-              },
-            },
-            this,
-            this.spaceId,
-          );
+        case "status-set":
+          CollaborationHandler.handleStatusSet(this, parsedData);
           break;
-        }
         case "webrtc-get-router-rtp-capabilities":
           await WebRTCHandler.handleGetRouterRtpCapabilities(this, parsedData);
           break;
@@ -490,6 +126,7 @@ export class User {
 
   destroy() {
     if (!this.spaceId) return;
+
     const closedProducerIds = MediasoupManager.getInstance().closeUserProducers(this.spaceId, this.userId);
     closedProducerIds.forEach((producerId) => {
       RoomManager.getInstance().broadcast(
@@ -504,6 +141,7 @@ export class User {
         this.spaceId!,
       );
     });
+
     RoomManager.getInstance().broadcast(
       {
         type: "user-left",
@@ -512,14 +150,22 @@ export class User {
         },
       },
       this,
-      this.spaceId!,
+      this.spaceId,
     );
-    RoomManager.getInstance().removeUser(this, this.spaceId!);
+    RoomManager.getInstance().removeUser(this, this.spaceId);
   }
 
   send(payload: OutgoingMessage) {
     if (this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(payload));
+    }
+  }
+
+  private parseMessage(data: WebSocket.RawData) {
+    try {
+      return JSON.parse(data.toString());
+    } catch {
+      return undefined;
     }
   }
 }

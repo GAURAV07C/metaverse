@@ -2,35 +2,11 @@ import { Router } from "express";
 import { AddElementSchema,  CreateSpaceSchema, deleteElement, UpdateSpaceSchema } from "../../types/index.js";
 import client from "@repo/db/client";
 import { userMiddleware } from "../../middleware/user.js";
+import { canEditSpace } from "../../services/officeAccess.js";
+import { createBlankSpace, createSpaceFromMap } from "../../services/spaceCreationService.js";
+import { parseDimensions } from "../../services/spaceDimensions.js";
+import { presentSpaceDetail, presentSpaceListItem } from "../../services/spacePresenter.js";
 export const spaceRouter = Router();
-
-function parseDimensions(dimensions: string) {
-  const [rawWidth, rawHeight] = dimensions.split("x");
-  const width = Number(rawWidth);
-  const height = Number(rawHeight);
-
-  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 8 || height < 8 || width > 500 || height > 500) {
-    return null;
-  }
-
-  return { width, height };
-}
-
-const SPACE_MEMBER_ROLES = ["Admin", "Builder", "Member", "Guest"] as const;
-const EDITOR_ROLES = new Set(["Owner", "Admin", "Builder"]);
-
-function cleanSpaceRole(role: any) {
-  return SPACE_MEMBER_ROLES.includes(role) ? role : "Member";
-}
-
-function getSpaceRole(space: { creatorId: string; members?: { role: string }[] }, userId: string) {
-  if (space.creatorId === userId) return "Owner";
-  return cleanSpaceRole(space.members?.[0]?.role || "Guest");
-}
-
-function canEditSpace(space: { creatorId: string; members?: { role: string }[] }, userId: string) {
-  return EDITOR_ROLES.has(getSpaceRole(space, userId));
-}
 
 spaceRouter.post("/", userMiddleware, async (req, res) => {
   const parsedData = CreateSpaceSchema.safeParse(req.body);
@@ -48,74 +24,29 @@ spaceRouter.post("/", userMiddleware, async (req, res) => {
       return;
     }
 
-    const space = await client.space.create({
-      data: {
-        name: parsedData.data.name,
-        width: size.width,
-        height: size.height,
-        creatorId: req.userId!,
-      },
+    const space = await createBlankSpace({
+      name: parsedData.data.name,
+      width: size.width,
+      height: size.height,
+      creatorId: req.userId!,
     });
 
     res.json({ spaceId: space.id });
     return;
-  } else {
-    const map = await client.map.findUnique({
-      where: {
-        id: parsedData.data.mapId,
-      },
-      select: {
-        mapElements: true,
-        areas: true,
-        width: true,
-        height: true,
-        thumbnails: true,
-      },
-    });
-
-    if (!map) {
-      res.status(400).json({ message: "Map not found" });
-      return;
-    }
-
-    const space = await client.$transaction(async (tx: any) => {
-      const space = await tx.space.create({
-        data: {
-          name: parsedData.data.name,
-          width: map.width,
-          height: map.height,
-          thumbnail: map.thumbnails,
-          creatorId: req.userId!,
-        },
-      });
-      await tx.spaceElements.createMany({
-        data: map.mapElements.map((e: any) => ({
-          spaceId: space.id,
-          elementId: e.elementId,
-          x: Number(e.x ?? 0),
-          y: Number(e.y ?? 0),
-        })),
-      });
-      if (map.areas && map.areas.length > 0) {
-        await tx.privateZone.createMany({
-          data: map.areas.map((a: any) => ({
-            spaceId: space.id,
-            name: a.name,
-            startX: a.x,
-            startY: a.y,
-            endX: a.x + a.w,
-            endY: a.y + a.h,
-            floor: a.floor,
-            color: a.color,
-            texture: a.texture,
-          })),
-        });
-      }
-      return space;
-    });
-
-    res.json({ spaceId: space.id });
   }
+
+  const space = await createSpaceFromMap({
+    name: parsedData.data.name,
+    mapId: parsedData.data.mapId,
+    creatorId: req.userId!,
+  });
+
+  if (!space) {
+    res.status(400).json({ message: "Map not found" });
+    return;
+  }
+
+  res.json({ spaceId: space.id });
 });
 
 spaceRouter.delete("/element", userMiddleware, async (req, res) => {
@@ -280,14 +211,7 @@ spaceRouter.get("/all", userMiddleware, async (req, res) => {
     })
 
     res.json({
-        spaces: spaces.map((s: any) => ({
-            id: s.id,
-            name: s.name,
-            thumbnail: s.thumbnail,
-            dimensions: `${s.width}x${s.height}`,
-            currentUserRole: getSpaceRole(s, req.userId!),
-            canEdit: canEditSpace(s, req.userId!),
-        }))
+        spaces: spaces.map((space: any) => presentSpaceListItem(space, req.userId!))
     })
 
 });
@@ -383,57 +307,5 @@ spaceRouter.get("/:spaceId", userMiddleware, async (req, res) => {
         return ;
     }
 
-    const draftData = space.studioDraft?.data as any;
-    const draftAreas: any[] = Array.isArray(draftData?.areas) ? draftData.areas : [];
-    const draftAreaById = new Map<string, any>(draftAreas.filter((area: any) => area?.id).map((area: any) => [area.id, area]));
-    const draftAreaByBounds = new Map<string, any>(draftAreas.map((area: any) => [
-        `${area.type === 'private' ? 'room' : (area.type || 'public')}:${area.x}:${area.y}:${area.x + area.w}:${area.y + area.h}`,
-        area
-    ]));
-    const privateZones = space.privateZones.map((zone: any) => {
-        const draftArea = draftAreaById.get(zone.id) || draftAreaByBounds.get(`${zone.type}:${zone.startX}:${zone.startY}:${zone.endX}:${zone.endY}`);
-        if (!draftArea) return zone;
-        return {
-            ...zone,
-            targetUrl: zone.targetUrl || draftArea.targetUrl || null,
-            targetSpaceId: zone.targetSpaceId || draftArea.targetSpaceId || null,
-            targetRoomId: zone.targetRoomId || draftArea.targetRoomId || null,
-            targetX: Number.isInteger(zone.targetX) ? zone.targetX : (Number.isInteger(draftArea.targetX) ? draftArea.targetX : null),
-            targetY: Number.isInteger(zone.targetY) ? zone.targetY : (Number.isInteger(draftArea.targetY) ? draftArea.targetY : null),
-            isDefaultSpawn: Boolean(zone.isDefaultSpawn || draftArea.isDefaultSpawn),
-        };
-    });
-
-    res.json({
-        id: space.id,
-        name: space.name,
-        thumbnail: space.thumbnail,
-        dimensions: `${space.width}x${space.height}`,
-        ownerId: space.creatorId,
-        currentUserRole: getSpaceRole(space, req.userId!),
-        canEdit: canEditSpace(space, req.userId!),
-        elements: space.elements.map((e: any) => {
-            const customData = typeof e.customData === 'string' ? JSON.parse(e.customData) : (e.customData || {});
-            return {
-                id: e.id,
-                element: {
-                    id: e.element.id,
-                    imageUrl: customData.imageUrl ?? e.element.imageUrl,
-                    colorMaskUrl: customData.colorMaskUrl ?? e.element.colorMaskUrl,
-                    width: customData.width ?? e.element.width,
-                    height: customData.height ?? e.element.height,
-                    static: e.element.static,
-                    name: customData.name ?? e.element.name,
-                    category: customData.category ?? e.element.category,
-                    floor: customData.floor ?? null,
-                    wall: customData.wall ?? null,
-                    color: customData.color ?? null,
-                    interactiveObjects: customData.interactiveObjects ?? e.element.interactiveObjects,
-                },
-                x: e.x,
-                y: e.y,
-            };
-        }),
-        privateZones,
-    });
+    res.json(presentSpaceDetail(space, req.userId!));
 });

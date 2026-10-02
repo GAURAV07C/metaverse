@@ -111,9 +111,9 @@ export function JoinSpace() {
 
   return <div className="join-page">
     <aside className="join-left-panel">
-      <div className="join-logo-badge">Gather</div>
+      <div className="join-logo-badge">Office</div>
       <div className="step-dots"><span className="active" /><span /><span /><span /><span /></div>
-      <p>Build a Gather-style office with rooms, desks, invite links and Studio editing.</p>
+      <p>Join a shared office with rooms, desks, invite links and live collaboration.</p>
     </aside>
     <main className="join-main-area">
       <div className="join-card">
@@ -128,7 +128,7 @@ export function JoinSpace() {
           </div>
           <div className="join-right-col">
             <div className="ready-badge"><Sparkles size={24} /></div>
-            <h1>Ready to join?</h1>
+            <h1>Device check</h1>
             <p>Check your camera and microphone before entering {spaceName}.</p>
             <div className="join-device-selectors">
               <label htmlFor="join-audio-input">Microphone
