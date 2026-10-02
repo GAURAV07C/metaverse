@@ -329,8 +329,8 @@ export function Arena() {
     if (!msRef.current) return;
     const type = kind === 'audio' ? 'audio' : 'camera';
     const constraints: MediaStreamConstraints = kind === 'audio'
-      ? { audio: { deviceId: deviceId ? { exact: deviceId } : undefined } }
-      : { video: { deviceId: deviceId ? { exact: deviceId } : undefined } };
+      ? { audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true } }
+      : { video: { deviceId: deviceId ? { exact: deviceId } : undefined, width: { ideal: 640, max: 960 }, height: { ideal: 360, max: 540 }, frameRate: { ideal: 20, max: 24 } } };
     const stream = await Promise.race([
       navigator.mediaDevices.getUserMedia(constraints),
       new Promise<MediaStream>((_, reject) => window.setTimeout(() => reject(new Error(`${kind} permission timed out`)), 15000)),

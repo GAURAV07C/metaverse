@@ -197,7 +197,21 @@ export class MediasoupClient {
   public async produce(track: MediaStreamTrack, userId: string, appData?: Record<string, unknown>) {
     if (!this.sendTransport) throw new Error('Send transport not initialized');
     const type = typeof appData?.type === 'string' ? appData.type : track.kind;
-    const producer = await this.sendTransport.produce({ track, appData: { userId, ...appData } });
+    const producerOptions: types.ProducerOptions = {
+      track,
+      appData: { userId, ...appData },
+    };
+    if (track.kind === 'video') {
+      const isScreen = type === 'screen';
+      producerOptions.encodings = [{
+        maxBitrate: isScreen ? 1_400_000 : 450_000,
+        scaleResolutionDownBy: isScreen ? 1 : 1.25,
+      }];
+      producerOptions.codecOptions = {
+        videoGoogleStartBitrate: isScreen ? 1000 : 450,
+      };
+    }
+    const producer = await this.sendTransport.produce(producerOptions);
     console.log('Mediasoup local producer created', { id: producer.id, kind: track.kind, type });
     this.producers.set(type, producer);
     this.producerIdsByType.set(type, producer.id);

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Grid2X2, Hand, Map as MapIcon, Maximize2, MicOff, Monitor, Pin, Shield, VideoOff, Lock, LogOut, Rows3, X } from 'lucide-react';
 import type { ModerationHistoryItem, OtherUser } from '../Arena';
 import { CanvasAvatarPreview } from '../CanvasAvatarPreview';
@@ -24,6 +24,74 @@ interface VideoOverlayProps {
   onModerationAll?: (action: 'mute-audio' | 'stop-video' | 'stop-screen') => void;
   moderationHistory?: ModerationHistoryItem[];
 }
+
+const hasLiveVideoTrack = (stream?: MediaStream) =>
+  Boolean(stream?.getVideoTracks().some(track => track.readyState === 'live' && track.enabled));
+
+const StreamPlayer: React.FC<{
+  stream?: MediaStream;
+  muted?: boolean;
+  className?: string;
+  style?: React.CSSProperties;
+  fallback: React.ReactNode;
+}> = React.memo(({ stream, muted = false, className, style, fallback }) => {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [hasVideo, setHasVideo] = useState(() => hasLiveVideoTrack(stream));
+
+  useEffect(() => {
+    const updateVideoState = () => setHasVideo(hasLiveVideoTrack(stream));
+    updateVideoState();
+    if (!stream) return;
+
+    const tracks = stream.getTracks();
+    tracks.forEach(track => {
+      track.addEventListener('ended', updateVideoState);
+      track.addEventListener('mute', updateVideoState);
+      track.addEventListener('unmute', updateVideoState);
+    });
+    return () => {
+      tracks.forEach(track => {
+        track.removeEventListener('ended', updateVideoState);
+        track.removeEventListener('mute', updateVideoState);
+        track.removeEventListener('unmute', updateVideoState);
+      });
+    };
+  }, [stream]);
+
+  useEffect(() => {
+    const videoNode = videoRef.current;
+    const audioNode = audioRef.current;
+    if (videoNode && videoNode.srcObject !== stream) videoNode.srcObject = stream || null;
+    if (audioNode && audioNode.srcObject !== stream) audioNode.srcObject = stream || null;
+    return () => {
+      if (videoNode && videoNode.srcObject === stream) videoNode.srcObject = null;
+      if (audioNode && audioNode.srcObject === stream) audioNode.srcObject = null;
+    };
+  }, [stream, hasVideo]);
+
+  if (!stream) return <>{fallback}</>;
+
+  if (hasVideo) {
+    return (
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted={muted}
+        className={className}
+        style={style}
+      />
+    );
+  }
+
+  return (
+    <>
+      {!muted && <audio ref={audioRef} autoPlay playsInline />}
+      {fallback}
+    </>
+  );
+});
 
 export const VideoOverlay: React.FC<VideoOverlayProps> = ({
   proximityUsers,
@@ -153,19 +221,16 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
 
   const renderParticipantContent = (participant: { id: string; name: string; stream?: MediaStream; avatarUrl?: string; isMe?: boolean }, large = false) => (
     <>
-      {participant.stream ? (
-        <video
-          autoPlay
-          playsInline
-          muted={participant.id === 'me'}
-          className={large ? 'meeting-video-large' : undefined}
-          ref={(node) => { if (node) node.srcObject = participant.stream!; }}
-        />
-      ) : (
+      <StreamPlayer
+        stream={participant.stream}
+        muted={participant.id === 'me'}
+        className={large ? 'meeting-video-large' : undefined}
+        fallback={
         <div className={large ? 'meeting-avatar-large' : undefined}>
           {renderAvatar(participant.avatarUrl, participant.name)}
         </div>
-      )}
+        }
+      />
       <span className="vid-label">{participant.name}</span>
       {activeSpeakerId === participant.id && (
         <span className="active-speaker-badge" style={{ '--speaker-level': Math.min(1, audioLevels[participant.id] * 9).toFixed(2) } as React.CSSProperties}>
@@ -258,11 +323,10 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
             {primaryScreen && meetingLayout === 'speaker' ? (
               <>
                 <button className="meeting-primary-tile screen" onClick={() => setFullScreenTile({ id: primaryScreen.id, name: primaryScreen.name, stream: primaryScreen.stream, isScreen: true })}>
-                  <video
-                    autoPlay
-                    playsInline
+                  <StreamPlayer
+                    stream={primaryScreen.stream}
                     muted={primaryScreen.id === 'me'}
-                    ref={(node) => { if (node) node.srcObject = primaryScreen.stream; }}
+                    fallback={<div className="vid-placeholder"><Monitor size={24} /></div>}
                   />
                   <span><Monitor size={15} />{primaryScreen.name}</span>
                   <Maximize2 className="meeting-maximize" size={18} />
@@ -280,11 +344,10 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
               <div className="meeting-grid">
                 {(primaryScreen ? screenShares : []).map(screen => (
                   <button key={screen.id} className="meeting-participant-tile screen" onClick={() => setFullScreenTile({ id: screen.id, name: screen.name, stream: screen.stream, isScreen: true })}>
-                    <video
-                      autoPlay
-                      playsInline
+                    <StreamPlayer
+                      stream={screen.stream}
                       muted={screen.id === 'me'}
-                      ref={(node) => { if (node) node.srcObject = screen.stream; }}
+                      fallback={<div className="vid-placeholder"><Monitor size={22} /></div>}
                     />
                     <span className="vid-label">{screen.name}</span>
                     <Maximize2 className="meeting-maximize" size={16} />
@@ -366,19 +429,12 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
           border: currentZone ? '2px solid #2dce89' : undefined,
           boxShadow: currentZone ? '0 0 15px rgba(45, 206, 137, 0.5)' : undefined
         }}>
-          {streams['me'] ? (
-            <video 
-              autoPlay 
-              playsInline 
-              muted 
-              style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }}
-              ref={(node) => { if (node) node.srcObject = streams['me']; }}
-            />
-          ) : (
-            <>
-              {renderAvatar(myAvatarUrl, myStoredUsername || 'You')}
-            </>
-          )}
+          <StreamPlayer
+            stream={streams.me}
+            muted
+            style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }}
+            fallback={renderAvatar(myAvatarUrl, myStoredUsername || 'You')}
+          />
           <span className="vid-label">{myStoredUsername || 'You'}</span>
           <div className="vid-status-icons">
             {!micOn && <div className="vid-status-icon"><MicOff size={10} /></div>}
@@ -397,18 +453,11 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
               border: currentZone ? '2px solid #2dce89' : undefined,
               boxShadow: currentZone ? '0 0 15px rgba(45, 206, 137, 0.5)' : undefined
             }}>
-              {stream ? (
-                <video 
-                  autoPlay 
-                  playsInline 
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  ref={(node) => { if (node) node.srcObject = stream; }}
-                />
-              ) : (
-                <>
-                  {renderAvatar(avatar, name)}
-                </>
-              )}
+              <StreamPlayer
+                stream={stream}
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                fallback={renderAvatar(avatar, name)}
+              />
               <span className="vid-label">{name}</span>
             </button>
           );
@@ -420,12 +469,11 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
       {viewMode !== 'grid' && <div style={{ position: 'absolute', top: '180px', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '1rem', zIndex: 90, pointerEvents: 'none' }}>
         {Object.entries(screenStreams).map(([id, stream]) => (
           <button key={id} className="screen-share-tile" style={{ pointerEvents: 'auto' }} onClick={() => setFullScreenTile({ id, name: id === 'me' ? 'Your screen' : 'Screen share', stream, isScreen: true })}>
-            <video 
-              autoPlay 
-              playsInline 
+            <StreamPlayer
+              stream={stream}
               muted={id === 'me'}
               style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-              ref={(node) => { if (node) node.srcObject = stream; }}
+              fallback={<div className="vid-placeholder"><Monitor size={24} /></div>}
             />
           </button>
         ))}
@@ -438,20 +486,17 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
             <button onClick={() => setFullScreenTile(null)} title="Close full screen"><X size={20} /></button>
           </header>
           <main>
-            {fullScreenTile.stream ? (
-              <video
-                autoPlay
-                playsInline
-                muted={fullScreenTile.id === 'me'}
-                className={fullScreenTile.isScreen ? 'screen' : ''}
-                ref={(node) => { if (node) node.srcObject = fullScreenTile.stream!; }}
-              />
-            ) : (
+            <StreamPlayer
+              stream={fullScreenTile.stream}
+              muted={fullScreenTile.id === 'me'}
+              className={fullScreenTile.isScreen ? 'screen' : ''}
+              fallback={
               <div className="full-video-avatar">
                 {renderAvatar(fullScreenTile.avatarUrl, fullScreenTile.name)}
                 <span>{fullScreenTile.name}</span>
               </div>
-            )}
+              }
+            />
           </main>
         </div>
       )}
