@@ -47,6 +47,10 @@ export function ArenaRightStack({
             privateZones={privateZones}
           />
         </div>
+        <div className="minimap-footer">
+          <span>{dimensions.w}x{dimensions.h}</span>
+          <span>{myPos.x}, {myPos.y}</span>
+        </div>
         <button onClick={onLocateUser}>Center me</button>
       </div>
       {currentRoom && (
