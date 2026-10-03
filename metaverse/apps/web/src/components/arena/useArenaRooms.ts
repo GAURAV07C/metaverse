@@ -28,21 +28,30 @@ function isWalkableTile(
   y: number,
   dimensions: Dimensions,
   elements: SpaceElement[],
+  hiddenElementIds: string[],
 ) {
   if (x < 0 || y < 0 || x >= dimensions.w || y >= dimensions.h) return false;
 
   return !elements.some((el) => {
+    if (hiddenElementIds.includes(el.id)) return false;
     const text = `${el.element.id} ${el.element.name ?? ''} ${el.element.category ?? ''}`.toLowerCase();
-    const isFloor = el.element.category === 'Rooms' || text.includes('floor');
-    const isSeat = text.includes('seating') ||
-      text.includes('chair') ||
-      text.includes('sofa') ||
-      text.includes('couch') ||
-      text.includes('bench') ||
-      text.includes('stool') ||
-      text.includes('seat');
+    const isWalkableSurface = [
+      'room',
+      'floor',
+      'rug',
+      'carpet',
+      'tile',
+      'wood',
+      'grass',
+      'ground',
+      'path',
+      'walkable',
+      'area',
+    ].some(keyword => text.includes(keyword));
+    const isSeat = ['seating', 'chair', 'sofa', 'couch', 'bench', 'stool', 'seat']
+      .some(keyword => text.includes(keyword));
 
-    if (!el.element.static || isFloor || isSeat) return false;
+    if (!el.element.static || el.element.category === 'Rooms' || isWalkableSurface || isSeat) return false;
     return x >= el.x && x < el.x + el.element.width && y >= el.y && y < el.y + el.element.height;
   });
 }
@@ -50,6 +59,7 @@ function isWalkableTile(
 interface UseArenaRoomsInput {
   privateZones: any[];
   elements: SpaceElement[];
+  hiddenElementIds?: string[];
   otherUsers: OtherUser[];
   myPos: Position;
   dimensions: Dimensions;
@@ -61,6 +71,7 @@ interface UseArenaRoomsInput {
 export function useArenaRooms({
   privateZones,
   elements,
+  hiddenElementIds = [],
   otherUsers,
   myPos,
   dimensions,
@@ -80,7 +91,7 @@ export function useArenaRooms({
       for (let y = zone.startY; y < zone.endY; y += 1) {
         for (let x = zone.startX; x < zone.endX; x += 1) {
           const occupied = otherUsers.some(user => user.x === x && user.y === y) || (myPos.x === x && myPos.y === y);
-          if (isWalkableTile(x, y, dimensions, elements) && !occupied) return { x, y };
+          if (isWalkableTile(x, y, dimensions, elements, hiddenElementIds) && !occupied) return { x, y };
         }
       }
       return null;
@@ -161,5 +172,5 @@ export function useArenaRooms({
       isSpotOccupied: isZoneOccupied,
       findWalkableTileInZone,
     };
-  }, [dimensions, elements, myPos, otherUsers, privateZones, proximityUsers, roomSessions, selectedUser]);
+  }, [dimensions, elements, hiddenElementIds, myPos, otherUsers, privateZones, proximityUsers, roomSessions, selectedUser]);
 }

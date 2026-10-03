@@ -105,6 +105,38 @@ export function Arena() {
   const liveTileSize = 32;
 
   const {
+    availableElements,
+    roomPrefabs,
+    addingElement,
+    setAddingElement,
+    builderMode,
+    setBuilderMode,
+    addX,
+    setAddX,
+    addY,
+    setAddY,
+    panelLoading,
+    panelMsg,
+    hiddenElementIds,
+    toggleHideElement,
+    closeBuild,
+    toggleBuild,
+    handleUpdateDimensions,
+    handleAddElementAt,
+    handleAddElement,
+    handleStampPrefab,
+    handleRemoveElement,
+  } = useArenaBuilder({
+    spaceId,
+    showPanel,
+    setShowPanel,
+    setDimensions,
+    fetchSpace,
+    refetchAvailableAssets: availableAssetsQuery.refetch,
+    setShowUsers,
+  });
+
+  const {
     autoPath,
     setAutoPath,
     panOffset,
@@ -122,6 +154,7 @@ export function Arena() {
     myPos,
     dimensions,
     elements,
+    hiddenElementIds,
     otherUsers,
     wsRef,
     setMyPos,
@@ -179,38 +212,6 @@ export function Arena() {
     pushToast,
   });
 
-  const {
-    availableElements,
-    roomPrefabs,
-    addingElement,
-    setAddingElement,
-    builderMode,
-    setBuilderMode,
-    addX,
-    setAddX,
-    addY,
-    setAddY,
-    panelLoading,
-    panelMsg,
-    hiddenElementIds,
-    toggleHideElement,
-    closeBuild,
-    toggleBuild,
-    handleUpdateDimensions,
-    handleAddElementAt,
-    handleAddElement,
-    handleStampPrefab,
-    handleRemoveElement,
-  } = useArenaBuilder({
-    spaceId,
-    showPanel,
-    setShowPanel,
-    setDimensions,
-    fetchSpace,
-    refetchAvailableAssets: availableAssetsQuery.refetch,
-    setShowUsers,
-  });
-
   useArenaSocket({
     spaceId,
     token,
@@ -265,6 +266,7 @@ export function Arena() {
   } = useArenaRooms({
     privateZones,
     elements,
+    hiddenElementIds,
     otherUsers,
     myPos,
     dimensions,

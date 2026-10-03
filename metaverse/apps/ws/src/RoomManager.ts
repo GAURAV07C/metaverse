@@ -391,7 +391,11 @@ export class RoomManager {
 
   public async canEnterTile(user: User, x: number, y: number): Promise<{ ok: boolean; reason?: string }> {
     if (!user.spaceId) return { ok: false, reason: 'not-in-space' };
-    const canOccupyStatic = await this.canOccupy(user.spaceId, x, y);
+    let canOccupyStatic = await this.canOccupy(user.spaceId, x, y);
+    if (!canOccupyStatic) {
+      await this.loadSpaceBounds(user.spaceId, true);
+      canOccupyStatic = await this.canOccupy(user.spaceId, x, y);
+    }
     if (!canOccupyStatic) return { ok: false, reason: 'blocked' };
     return this.canEnterDynamic(user, x, y);
   }

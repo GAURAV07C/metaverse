@@ -13,6 +13,7 @@ interface UseArenaMovementInput {
   myPos: Tile;
   dimensions: { w: number; h: number };
   elements: SpaceElement[];
+  hiddenElementIds?: string[];
   otherUsers: OtherUser[];
   wsRef: React.MutableRefObject<WsClient | null>;
   setMyPos: React.Dispatch<React.SetStateAction<Tile>>;
@@ -20,11 +21,25 @@ interface UseArenaMovementInput {
 }
 
 function isElementWalkable(el: SpaceElement) {
-  if (el.element.category === 'Rooms' || String(el.element.category).toLowerCase().includes('floor')) {
+  const text = `${el.element.id} ${el.element.name ?? ''} ${el.element.category ?? ''}`.toLowerCase();
+  const isWalkableSurface = [
+    'room',
+    'floor',
+    'rug',
+    'carpet',
+    'tile',
+    'wood',
+    'grass',
+    'ground',
+    'path',
+    'walkable',
+    'area',
+  ].some(keyword => text.includes(keyword));
+
+  if (el.element.category === 'Rooms' || isWalkableSurface) {
     return true;
   }
 
-  const text = `${el.element.id} ${el.element.name ?? ''} ${el.element.category ?? ''}`.toLowerCase();
   return (
     text.includes('seating') ||
     text.includes('chair') ||
@@ -42,6 +57,7 @@ export function useArenaMovement({
   myPos,
   dimensions,
   elements,
+  hiddenElementIds = [],
   otherUsers,
   wsRef,
   setMyPos,
@@ -58,6 +74,7 @@ export function useArenaMovement({
     if (options?.allowFollowedUser && followedUser && x === followedUser.x && y === followedUser.y) return true;
 
     const isCollidingWithElement = elements.some((el) => {
+      if (hiddenElementIds.includes(el.id)) return false;
       if (isElementWalkable(el)) return false;
       if (!el.element.static) return false;
       return x >= el.x && x < el.x + el.element.width && y >= el.y && y < el.y + el.element.height;
@@ -65,7 +82,7 @@ export function useArenaMovement({
     if (isCollidingWithElement) return false;
 
     return !otherUsers.some((u) => u.x === x && u.y === y);
-  }, [dimensions.h, dimensions.w, elements, followedUser, otherUsers]);
+  }, [dimensions.h, dimensions.w, elements, followedUser, hiddenElementIds, otherUsers]);
 
   const stopFollowing = useCallback(() => {
     setFollowingUserId(null);

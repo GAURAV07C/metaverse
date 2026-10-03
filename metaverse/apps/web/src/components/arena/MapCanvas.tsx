@@ -8,6 +8,20 @@ import { MapControls } from './MapControls';
 const TILE = 32;
 const ZOOM_MIN = 0.35;
 const ZOOM_MAX = 3.0;
+const WALKABLE_SURFACE_KEYWORDS = [
+  'room',
+  'floor',
+  'rug',
+  'carpet',
+  'tile',
+  'wood',
+  'grass',
+  'ground',
+  'path',
+  'walkable',
+  'area',
+];
+const WALKABLE_SEAT_KEYWORDS = ['seating', 'chair', 'sofa', 'couch', 'bench', 'stool', 'seat'];
 
 export interface PrivateZone {
   id: string;
@@ -238,10 +252,10 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
       (x, y) => {
         const visibleElements = elements.filter(el => !hiddenElementIds.includes(el.id));
         const isStaticEl = visibleElements.some(el => {
-          if (el.element.category === 'Rooms' || String(el.element.category).toLowerCase().includes('floor')) return false;
           const text = `${el.element.id} ${el.element.name ?? ''} ${el.element.category ?? ''}`.toLowerCase();
-          const isSeat = text.includes('seating') || text.includes('chair') || text.includes('sofa') || text.includes('couch') || text.includes('bench') || text.includes('stool') || text.includes('seat');
-          if (isSeat) return false;
+          const isWalkableSurface = WALKABLE_SURFACE_KEYWORDS.some(keyword => text.includes(keyword));
+          const isSeat = WALKABLE_SEAT_KEYWORDS.some(keyword => text.includes(keyword));
+          if (el.element.category === 'Rooms' || isWalkableSurface || isSeat) return false;
           return el.element.static && x >= el.x && x < el.x + el.element.width && y >= el.y && y < el.y + el.element.height;
         });
         if (isStaticEl) return false;
@@ -427,7 +441,7 @@ export const MapCanvas: React.FC<MapCanvasProps> = ({
     const isFloorElement = (el: SpaceElement) => {
       if (el.element.category === 'Rooms') return true;
       const text = `${el.element.id} ${el.element.name ?? ''} ${el.element.category ?? ''} ${el.element.imageUrl ?? ''}`.toLowerCase();
-      return text.includes('floor') || text.includes('carpet') || text.includes('wood_') || text.includes('tile_') || text.includes('grass');
+      return WALKABLE_SURFACE_KEYWORDS.some(keyword => text.includes(keyword));
     };
 
     // Draw Floors first

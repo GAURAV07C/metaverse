@@ -80,7 +80,7 @@ export class SpaceBoundsService {
       const name = String(customData.name || placement.element.name || "").toLowerCase();
       const elementId = String(placement.elementId || placement.element.id || "").toLowerCase();
 
-      if (category.includes("room") || category.includes("floor")) continue;
+      if (this.isWalkableSurface(category, name, elementId)) continue;
       if (this.isWalkableSeat(category, name, elementId)) continue;
 
       const width = customData.width ?? placement.element.width;
@@ -115,5 +115,22 @@ export class SpaceBoundsService {
       name.includes("stool") ||
       name.includes("seat") ||
       elementId.includes("chair");
+  }
+
+  private isWalkableSurface(category: string, name: string, elementId: string) {
+    const text = `${category} ${name} ${elementId}`;
+    return [
+      "room",
+      "floor",
+      "rug",
+      "carpet",
+      "tile",
+      "wood",
+      "grass",
+      "ground",
+      "path",
+      "walkable",
+      "area",
+    ].some((keyword) => text.includes(keyword));
   }
 }
