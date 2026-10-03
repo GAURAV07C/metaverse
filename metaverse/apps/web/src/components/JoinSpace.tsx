@@ -34,6 +34,8 @@ export function JoinSpace() {
   const [deviceMessage, setDeviceMessage] = useState('Camera and microphone are optional. You can join with both off.');
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [devicePrefs, setDevicePrefs] = useState<DevicePrefs>(() => readDevicePrefs());
+  const [inviteMessage, setInviteMessage] = useState('');
+  const [inviteRoomId, setInviteRoomId] = useState<string | null>(null);
   
   const [avatars, setAvatars] = useState<any[]>([]);
   const [selectedAvatarId, setSelectedAvatarId] = useState<string | null>(avatarId);
@@ -53,6 +55,21 @@ export function JoinSpace() {
       }
     }).catch(() => {});
   }, [spaceId, selectedAvatarId]);
+
+  useEffect(() => {
+    if (!spaceId) return;
+    const token = new URL(window.location.href).searchParams.get('invite');
+    if (!token) return;
+    setInviteMessage('Accepting invite...');
+    api.post(`/office/${spaceId}/invites/accept`, { token })
+      .then(res => {
+        setInviteMessage(`Invite accepted as ${res.data.role || 'Member'}.`);
+        if (res.data.roomId) setInviteRoomId(res.data.roomId);
+      })
+      .catch((error) => {
+        setInviteMessage(error?.response?.data?.message || 'Invite link could not be accepted.');
+      });
+  }, [spaceId]);
 
   useEffect(() => {
     if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -102,7 +119,7 @@ export function JoinSpace() {
       }
     }
     streamRef.current?.getTracks().forEach(track => track.stop());
-    navigate(`/space/${spaceId || 'default'}`);
+    navigate(`/space/${spaceId || 'default'}${inviteRoomId ? `?room=${encodeURIComponent(inviteRoomId)}` : ''}`);
   };
 
   const audioInputs = devices.filter(device => device.kind === 'audioinput');
@@ -130,6 +147,7 @@ export function JoinSpace() {
             <div className="ready-badge"><Sparkles size={24} /></div>
             <h1>Device check</h1>
             <p>Check your camera and microphone before entering {spaceName}.</p>
+            {inviteMessage && <p className="settings-hint">{inviteMessage}</p>}
             <div className="join-device-selectors">
               <label htmlFor="join-audio-input">Microphone
                 <select id="join-audio-input" name="joinAudioInput" value={devicePrefs.audioInputId || ''} onChange={e => saveDevicePref('audioInputId', e.target.value)}>
@@ -155,6 +173,7 @@ export function JoinSpace() {
         </> : <>
           <div className="join-right-col" style={{ gridColumn: '1 / -1', maxWidth: '500px', margin: '0 auto' }}>
             <h1>Welcome to {spaceName}</h1>
+            {inviteMessage && <p className="settings-hint">{inviteMessage}</p>}
             <label className="join-label" htmlFor="join-display-name">Display name
               <input id="join-display-name" name="joinDisplayName" className="join-input" value={name} onChange={e => setName(e.target.value)} placeholder="Enter your name" />
             </label>

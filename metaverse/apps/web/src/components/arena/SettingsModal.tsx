@@ -38,6 +38,14 @@ type NotificationPrefs = {
   respectFocus: boolean;
 };
 
+type OfficeSettings = {
+  visibility: 'Public' | 'Private';
+  joinPolicy: 'Open' | 'InviteLink' | 'MembersOnly';
+  companyEmailMembership: boolean;
+  supportAccess: boolean;
+  memberInvitesEnabled: boolean;
+};
+
 type OfficeMember = {
   id: string;
   userId: string;
@@ -86,6 +94,13 @@ const readNotificationPrefs = (): NotificationPrefs => {
 };
 
 const editableRoles = ['Admin', 'Builder', 'Member', 'Guest'] as const;
+const defaultOfficeSettings: OfficeSettings = {
+  visibility: 'Public',
+  joinPolicy: 'InviteLink',
+  companyEmailMembership: false,
+  supportAccess: true,
+  memberInvitesEnabled: true,
+};
 
 export const SettingsModal = ({ isOpen, onClose, myStoredUsername, micOn, camOn, setMicOn, setCamOn, onDevicePreferenceChange, notificationPreferences, onNotificationPreferenceChange, spaceId, currentUserRole = 'Guest', canManageMembers = false }: SettingsModalProps) => {
   const [tab, setTab] = useState('General');
@@ -98,6 +113,8 @@ export const SettingsModal = ({ isOpen, onClose, myStoredUsername, micOn, camOn,
   const [memberLoading, setMemberLoading] = useState(false);
   const [memberUsername, setMemberUsername] = useState('');
   const [memberRole, setMemberRole] = useState<typeof editableRoles[number]>('Member');
+  const [officeSettings, setOfficeSettings] = useState<OfficeSettings>(defaultOfficeSettings);
+  const [settingsMsg, setSettingsMsg] = useState('');
 
   useEffect(() => {
     if (!isOpen || !navigator.mediaDevices?.enumerateDevices) return;
@@ -109,6 +126,27 @@ export const SettingsModal = ({ isOpen, onClose, myStoredUsername, micOn, camOn,
   useEffect(() => {
     if (notificationPreferences) setNotificationPrefs({ ...DEFAULT_NOTIFICATION_PREFS, ...notificationPreferences });
   }, [notificationPreferences]);
+
+  useEffect(() => {
+    if (!isOpen || !spaceId) return;
+    api.get(`/office/${spaceId}/settings`)
+      .then(res => setOfficeSettings({ ...defaultOfficeSettings, ...(res.data.settings || {}) }))
+      .catch(() => setSettingsMsg('Could not load office security settings.'));
+  }, [isOpen, spaceId]);
+
+  const saveOfficeSetting = async <K extends keyof OfficeSettings>(key: K, value: OfficeSettings[K]) => {
+    if (!spaceId) return;
+    const next = { ...officeSettings, [key]: value };
+    setOfficeSettings(next);
+    setSettingsMsg('Saving settings...');
+    try {
+      const res = await api.put(`/office/${spaceId}/settings`, { [key]: value });
+      setOfficeSettings({ ...defaultOfficeSettings, ...(res.data.settings || next) });
+      setSettingsMsg('Settings saved.');
+    } catch (error: any) {
+      setSettingsMsg(error?.response?.data?.message || 'Could not save settings.');
+    }
+  };
 
   const refreshMembers = async () => {
     if (!spaceId || !canManageMembers) return;
@@ -317,13 +355,46 @@ export const SettingsModal = ({ isOpen, onClose, myStoredUsername, micOn, camOn,
             </div>
           )}
 
+          {tab === 'Security' && (
+            <div className="settings-stack">
+              {!canManageMembers && <p className="settings-hint">Only owners and admins can change office access.</p>}
+              <label htmlFor="settings-office-visibility">Office visibility
+                <select
+                  id="settings-office-visibility"
+                  value={officeSettings.visibility}
+                  disabled={!canManageMembers}
+                  onChange={e => saveOfficeSetting('visibility', e.target.value as OfficeSettings['visibility'])}
+                >
+                  <option value="Public">Public</option>
+                  <option value="Private">Private</option>
+                </select>
+              </label>
+              <label htmlFor="settings-join-policy">Join policy
+                <select
+                  id="settings-join-policy"
+                  value={officeSettings.joinPolicy}
+                  disabled={!canManageMembers}
+                  onChange={e => saveOfficeSetting('joinPolicy', e.target.value as OfficeSettings['joinPolicy'])}
+                >
+                  <option value="Open">Open</option>
+                  <option value="InviteLink">Invite link</option>
+                  <option value="MembersOnly">Members only</option>
+                </select>
+              </label>
+              <label className="settings-toggle" htmlFor="settings-company-email"><span>Allow membership with company email</span><input id="settings-company-email" type="checkbox" disabled={!canManageMembers} checked={officeSettings.companyEmailMembership} onChange={e => saveOfficeSetting('companyEmailMembership', e.target.checked)} /></label>
+              <label className="settings-toggle" htmlFor="settings-support-access"><span>Allow support access</span><input id="settings-support-access" type="checkbox" disabled={!canManageMembers} checked={officeSettings.supportAccess} onChange={e => saveOfficeSetting('supportAccess', e.target.checked)} /></label>
+              <label className="settings-toggle" htmlFor="settings-member-invites"><span>Members can invite members</span><input id="settings-member-invites" type="checkbox" disabled={!canManageMembers} checked={officeSettings.memberInvitesEnabled} onChange={e => saveOfficeSetting('memberInvitesEnabled', e.target.checked)} /></label>
+              {settingsMsg && <p className="settings-hint">{settingsMsg}</p>}
+            </div>
+          )}
+
           {tab === 'Manage guests' && <div className="settings-empty"><b>No guests</b><span>Guest passes will appear here.</span></div>}
 
-          {items.length > 0 && tab !== 'Audio' && tab !== 'Video' && tab !== 'Notifications' && (
+          {items.length > 0 && tab !== 'Audio' && tab !== 'Video' && tab !== 'Notifications' && tab !== 'Security' && (
             <div className="settings-stack">{items.map(item => <label className="settings-toggle" key={item}><span>{item}</span><input type="checkbox" defaultChecked /></label>)}</div>
           )}
 
-          {!items.length && tab !== 'General' && tab !== 'Notifications' && tab !== 'Manage members' && tab !== 'Manage guests' && (
+          {!items.length && tab !== 'General' && tab !== 'Notifications' && tab !== 'Manage members' && tab !== 'Manage guests' && tab !== 'Security' && (
             <div className="settings-empty"><Check size={22} /><b>{tab} is ready</b><span>Production settings can be wired from the Office API.</span></div>
           )}
 

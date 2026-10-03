@@ -150,13 +150,14 @@ Implemented:
 - Map mode returns to map.
 - Explicit in-memory room session state is emitted by the realtime server through `room-session-updated`.
 - Room directory counts and room media grouping use room session state when available, with coordinate fallback.
+- Room session lifecycle events are persisted through `RoomSessionEvent` and exposed at `/office/:spaceId/room-session-events`.
+- Group lead/follow signaling is available from the bottom toolbar and syncs over WebSocket.
+- Spotlight/pinned/active-speaker participants are prioritized in meeting mode and the map video strip.
 - Busy/focus mode suppresses interruptive rings and room invite popups when notification preferences respect focus.
 
 Missing or incomplete:
 
-- Room session state is in-memory; it is not persisted and does not yet have lifecycle analytics storage.
 - Audio/video group signaling is proximity/room based, but not yet full production-grade room media routing.
-- Spotlight areas are visual/status only; they do not yet prioritize audio/video streams.
 
 ### Media
 
@@ -177,13 +178,14 @@ Implemented:
 - Mediasoup fallback/init cleanup improvements.
 - Media diagnostics panel from the bottom toolbar shows live send/receive transports, producers, consumers, track state, queued producers, bytes, packets, packet loss, jitter, RTT, FPS, decoded frames, and client-side quality warnings.
 - Media diagnostics also show server-side mediasoup lifecycle counters for transports, producers, and consumers.
+- Media diagnostics persist recent quality snapshots in local storage and can export/clear the history.
 
 Missing or incomplete:
 
 - Screen share system audio depends on browser/OS capture support and needs multi-browser QA.
 - Remote moderation signaling is implemented for active speaker/screen actions and bulk mute in the current AV group; moderation audit is persisted server-side.
 - No production TURN/STUN quality checks.
-- Media quality warnings are client-side and include server network config warnings; persisted call quality history is still missing.
+- Media quality history is currently browser-local; server-side long-term call analytics are still missing.
 - Settings > Video includes adaptive quality presets that update capture constraints and mediasoup camera bitrate.
 
 ### Chat
@@ -253,6 +255,7 @@ Implemented:
 - Publish flow.
 - Publish creates map version snapshots.
 - Studio can restore a published map version back into draft.
+- Draft save, version restore, and publish write map audit events exposed at `/office/:spaceId/map-audit`.
 - Legacy private zones normalized toward rooms in behavior.
 
 Missing or incomplete:
@@ -468,21 +471,28 @@ Use this as the task queue. Do not assume everything is already done because the
 - [x] Add server mediasoup lifecycle counters in diagnostics.
 - [x] Improve Studio walkability/collision overlay.
 - [x] Suppress interruptive rings/invite popups in busy/focus mode.
+- [x] Add persisted room session lifecycle analytics with DB migration and `/office/:spaceId/room-session-events`.
+- [x] Add persisted client call quality history with JSON export/clear controls.
+- [x] Add group lead/follow signaling over WebSocket.
+- [x] Add spotlight/active-speaker stream priority ordering in meeting mode and map video strip.
+- [x] Add map edit audit DB model, migration, write hooks, and `/office/:spaceId/map-audit`.
+- [x] Add private/public space controls with HTTP and WebSocket access enforcement.
+- [x] Add invite links with role/scope, scoped room targets, and authenticated accept flow.
 
 ### Next Implementation Queue
 
-- [ ] Persist room session lifecycle analytics beyond the current realtime process.
+- [x] Persist room session lifecycle analytics beyond the current realtime process.
 - [x] Add adaptive media quality controls based on diagnostics.
 - [x] Add baseline TURN/STUN deployment self-checks in media diagnostics.
 - [x] Add WebSocket movement/chat load-test script.
-- [ ] Add persisted call quality history.
+- [x] Add persisted call quality history.
 - [ ] Add deeper TURN/STUN deployment probes against deployed AWS networking.
-- [ ] Add spotlight stream priority behavior.
-- [ ] Add follow-leader/request-lead group mode.
+- [x] Add spotlight stream priority behavior.
+- [x] Add follow-leader/request-lead group mode.
 - [ ] Add map version diff preview and named releases.
-- [ ] Add invite links with role/scope.
-- [ ] Add private/public space controls.
-- [ ] Add audit log for map edits.
+- [x] Add invite links with role/scope.
+- [x] Add private/public space controls.
+- [x] Add audit log for map edits.
 - [x] Add load testing scripts for WebSocket.
 - [ ] Add mediasoup/browser media load test automation.
 

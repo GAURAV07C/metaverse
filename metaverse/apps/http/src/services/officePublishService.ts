@@ -1,4 +1,5 @@
 import client from "@repo/db/client";
+import { summarizeMapData, writeMapAuditEvent } from "./mapAudit.js";
 import { validatePortalTargets } from "./portalValidation.js";
 import type { SpaceAccess } from "./officeAccess.js";
 
@@ -22,7 +23,15 @@ export async function publishOfficeDraft(space: SpaceAccess, draft: { data: unkn
     await syncDraftAreas(space.id, data.areas);
   }
 
-  await createMapVersion(space.id, data, userId);
+  const version = await createMapVersion(space.id, data, userId);
+  void writeMapAuditEvent({
+    spaceId: space.id,
+    action: "published",
+    actorUserId: userId,
+    summary: summarizeMapData(data),
+    versionId: version.id,
+    versionNumber: version.version,
+  });
 
   return client.spaceDraft.update({
     where: { spaceId: space.id },
@@ -110,7 +119,7 @@ async function createMapVersion(spaceId: string, data: any, userId: string) {
     select: { version: true },
   });
 
-  await (client as any).spaceMapVersion.create({
+  return (client as any).spaceMapVersion.create({
     data: {
       spaceId,
       version: (latestVersion?.version || 0) + 1,

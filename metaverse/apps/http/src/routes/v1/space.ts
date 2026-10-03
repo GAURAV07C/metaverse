@@ -2,7 +2,7 @@ import { Router } from "express";
 import { AddElementSchema,  CreateSpaceSchema, deleteElement, UpdateSpaceSchema } from "../../types/index.js";
 import client from "@repo/db/client";
 import { userMiddleware } from "../../middleware/user.js";
-import { canEditSpace } from "../../services/officeAccess.js";
+import { canEditSpace, requireSpaceEntry } from "../../services/officeAccess.js";
 import { createBlankSpace, createSpaceFromMap } from "../../services/spaceCreationService.js";
 import { parseDimensions } from "../../services/spaceDimensions.js";
 import { presentSpaceDetail, presentSpaceListItem } from "../../services/spacePresenter.js";
@@ -294,6 +294,7 @@ spaceRouter.get("/:spaceId", userMiddleware, async (req, res) => {
             },
             privateZones: true,
             studioDraft: true,
+            settings: true,
             members: {
                 where: { userId: req.userId! },
                 select: { role: true },
@@ -306,6 +307,8 @@ spaceRouter.get("/:spaceId", userMiddleware, async (req, res) => {
 
         return ;
     }
+
+    if (!requireSpaceEntry(space, req.userId!, res)) return;
 
     res.json(presentSpaceDetail(space, req.userId!));
 });

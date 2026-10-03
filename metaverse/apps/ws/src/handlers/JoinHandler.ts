@@ -30,10 +30,21 @@ export class JoinHandler {
 
     try {
       await this.loadUserProfile(user, userId);
-      const space = await client.space.findFirst({ where: { id: spaceId } });
+      const space = await client.space.findFirst({
+        where: { id: spaceId },
+        include: {
+          settings: true,
+          members: { where: { userId }, select: { role: true } },
+        },
+      });
 
       if (!space) {
         user.rejectJoin(1008, "space-not-found");
+        return;
+      }
+
+      if (!this.canEnterSpace(space, userId)) {
+        user.rejectJoin(1008, "space-private");
         return;
       }
 
@@ -124,6 +135,12 @@ export class JoinHandler {
     }
 
     return { x: 0, y: 0 };
+  }
+
+  private static canEnterSpace(space: { creatorId: string; members?: { role: string }[]; settings?: { visibility?: string | null } | null }, userId: string) {
+    if (space.creatorId === userId) return true;
+    if ((space.members?.length || 0) > 0) return true;
+    return (space.settings?.visibility || "Public") === "Public";
   }
 
   private static async loadRecentChat(spaceId: string) {

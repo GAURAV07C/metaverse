@@ -60,6 +60,7 @@ model Space {
   roomInviteEvents RoomInviteEvent[]
   moderationAuditEvents ModerationAuditEvent[]
   roomSessionEvents RoomSessionEvent[]
+  mapEditAuditEvents MapEditAuditEvent[]
   mapVersions SpaceMapVersion[]
   notificationPreferences NotificationPreference[]
   chatMessages ChatMessage[]
@@ -246,6 +247,8 @@ model SpaceSettings {
   supportAccess Boolean @default(true)
   memberInvitesEnabled Boolean @default(true)
   smartObjectsEnabled Boolean @default(true)
+  visibility String @default("Public")
+  joinPolicy String @default("InviteLink")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -256,12 +259,17 @@ model InviteLink {
   space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   token     String   @unique
   role      String   @default("Member")
+  scope     String   @default("space")
+  roomId    String?
+  createdById String?
   expiresAt DateTime?
   revokedAt DateTime?
   createdAt DateTime @default(now())
 
   @@index([spaceId])
   @@index([token])
+  @@index([spaceId, scope])
+  @@index([createdById])
 }
 
 model SpaceMember {
@@ -397,6 +405,23 @@ model RoomSessionEvent {
   @@index([spaceId, createdAt])
   @@index([spaceId, roomId, createdAt])
   @@index([userId])
+}
+
+model MapEditAuditEvent {
+  id            String   @id @default(cuid())
+  spaceId       String
+  space         Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  action        String
+  actorUserId   String?
+  actorUsername String?
+  summary       Json?
+  versionId     String?
+  versionNumber Int?
+  createdAt     DateTime @default(now())
+
+  @@index([spaceId, createdAt])
+  @@index([actorUserId])
+  @@index([versionId])
 }
 
 model NotificationPreference {

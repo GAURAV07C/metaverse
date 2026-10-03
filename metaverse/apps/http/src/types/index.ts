@@ -139,6 +139,8 @@ export const OfficeSettingsSchema = z.object({
   supportAccess: z.boolean().optional(),
   memberInvitesEnabled: z.boolean().optional(),
   smartObjectsEnabled: z.boolean().optional(),
+  visibility: z.enum(["Public", "Private"]).optional(),
+  joinPolicy: z.enum(["Open", "InviteLink", "MembersOnly"]).optional(),
 });
 
 export const DeskAssignmentSchema = z.object({

@@ -62,6 +62,8 @@ export class User {
         return "This space is already hosted by another realtime media server. Enable sticky routing for this space.";
       case "space-route-mismatch":
         return "Realtime route spaceId did not match the join request.";
+      case "space-private":
+        return "This office is private. Ask an owner or admin for access.";
       default:
         return "The realtime server rejected the join request.";
     }

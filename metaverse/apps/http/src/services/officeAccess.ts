@@ -14,6 +14,7 @@ export type SpaceAccess = {
   height: number | null;
   creatorId: string;
   members?: { role: string }[];
+  settings?: { visibility?: string | null; joinPolicy?: string | null } | null;
 };
 
 export function cleanSpaceRole(role: unknown): SpaceMemberRole {
@@ -29,6 +30,7 @@ export async function getSpaceForUser(spaceId: string, userId: string) {
       width: true,
       height: true,
       creatorId: true,
+      settings: { select: { visibility: true, joinPolicy: true } },
       members: { where: { userId }, select: { role: true } },
     },
   });
@@ -45,6 +47,18 @@ export function canEditSpace(space: { creatorId: string; members?: { role: strin
 
 export function canManageMembers(space: { creatorId: string; members?: { role: string }[] }, userId: string) {
   return MANAGER_ROLES.has(getSpaceRole(space, userId));
+}
+
+export function canEnterSpace(space: { creatorId: string; members?: { role: string }[]; settings?: { visibility?: string | null } | null }, userId: string) {
+  if (space.creatorId === userId) return true;
+  if ((space.members?.length || 0) > 0) return true;
+  return (space.settings?.visibility || "Public") === "Public";
+}
+
+export function requireSpaceEntry(space: { creatorId: string; members?: { role: string }[]; settings?: { visibility?: string | null } | null }, userId: string, res: Response) {
+  if (canEnterSpace(space, userId)) return true;
+  res.status(403).json({ message: "This office is private. Ask an owner or admin for access." });
+  return false;
 }
 
 export function requireSpaceEditor(space: { creatorId: string; members?: { role: string }[] }, userId: string, res: Response) {

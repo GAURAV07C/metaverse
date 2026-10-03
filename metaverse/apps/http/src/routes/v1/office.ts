@@ -17,6 +17,7 @@ import {
   publicSettings,
 } from "../../services/officePreferences.js";
 import { PublishValidationError, publishOfficeDraft } from "../../services/officePublishService.js";
+import { summarizeMapData, writeMapAuditEvent } from "../../services/mapAudit.js";
 
 export const officeRouter = Router();
 officeRouter.use(userMiddleware);
@@ -84,15 +85,56 @@ officeRouter.post("/:spaceId/invites", async (req, res) => {
   if (!space) return res.status(404).json({ message: "Space not found" });
   if (!requireSpaceEditor(space, req.userId, res)) return;
   const token = crypto.randomBytes(18).toString("base64url");
+  const scope = req.body?.scope === "room" ? "room" : "space";
+  const roomId = scope === "room" && typeof req.body?.roomId === "string" ? req.body.roomId.slice(0, 120) : null;
   const invite = await client.inviteLink.create({
     data: {
       spaceId: space.id,
       token,
       role: cleanSpaceRole(req.body?.role),
+      scope,
+      roomId,
+      createdById: req.userId,
       expiresAt: req.body?.expiresAt ? new Date(req.body.expiresAt) : null,
     },
   });
-  res.json({ invite, url: `/space/${space.id}/join?invite=${token}` });
+  res.json({ invite, url: `/space/${space.id}/join?invite=${token}${roomId ? `&room=${encodeURIComponent(roomId)}` : ""}` });
+});
+
+officeRouter.post("/:spaceId/invites/accept", async (req, res) => {
+  const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+  if (!token) return res.status(400).json({ message: "Invite token is required" });
+
+  const invite = await client.inviteLink.findFirst({
+    where: {
+      token,
+      spaceId: req.params.spaceId,
+      revokedAt: null,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+    },
+    include: { space: { select: { creatorId: true } } },
+  });
+  if (!invite) return res.status(404).json({ message: "Invite link is invalid or expired" });
+
+  if (invite.space.creatorId !== req.userId) {
+    await (client as any).spaceMember.upsert({
+      where: { spaceId_userId: { spaceId: invite.spaceId, userId: req.userId } },
+      update: { role: cleanSpaceRole(invite.role) },
+      create: {
+        spaceId: invite.spaceId,
+        userId: req.userId,
+        role: cleanSpaceRole(invite.role),
+        createdById: invite.createdById,
+      },
+    });
+  }
+
+  res.json({
+    accepted: true,
+    role: cleanSpaceRole(invite.role),
+    scope: invite.scope || "space",
+    roomId: invite.roomId,
+  });
 });
 
 officeRouter.get("/:spaceId/members", async (req, res) => {
@@ -244,6 +286,19 @@ officeRouter.get("/:spaceId/moderation-audit", async (req, res) => {
   res.json({ events });
 });
 
+officeRouter.get("/:spaceId/map-audit", async (req, res) => {
+  const space = await getSpaceForUser(req.params.spaceId, req.userId);
+  if (!space) return res.status(404).json({ message: "Space not found" });
+  if (!requireSpaceEditor(space, req.userId, res)) return;
+  const take = Math.min(Math.max(Number(req.query.take) || 50, 1), 100);
+  const events = await (client as any).mapEditAuditEvent.findMany({
+    where: { spaceId: space.id },
+    orderBy: { createdAt: "desc" },
+    take,
+  });
+  res.json({ events });
+});
+
 officeRouter.get("/:spaceId/room-session-events", async (req, res) => {
   const space = await getSpaceForUser(req.params.spaceId, req.userId);
   if (!space) return res.status(404).json({ message: "Space not found" });
@@ -344,6 +399,12 @@ officeRouter.put("/:spaceId/draft", async (req, res) => {
     update: { data: parsed.data.data as any, updatedById: req.userId },
     create: { spaceId: space.id, data: parsed.data.data as any, updatedById: req.userId },
   });
+  void writeMapAuditEvent({
+    spaceId: space.id,
+    action: "draft_saved",
+    actorUserId: req.userId,
+    summary: summarizeMapData(parsed.data.data),
+  });
   res.json({ draft });
 });
 
@@ -386,6 +447,14 @@ officeRouter.post("/:spaceId/versions/:versionId/restore", async (req, res) => {
     where: { spaceId: space.id },
     update: { data: version.data as any, updatedById: req.userId },
     create: { spaceId: space.id, data: version.data as any, updatedById: req.userId },
+  });
+  void writeMapAuditEvent({
+    spaceId: space.id,
+    action: "version_restored",
+    actorUserId: req.userId,
+    summary: summarizeMapData(version.data),
+    versionId: version.id,
+    versionNumber: version.version,
   });
 
   res.json({ draft, restoredVersion: version.version });
