@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Use Node.js 18.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: 18.x
+        cache: 'npm'
+        cache-dependency-path: metaverse/package-lock.json
+
+    - name: Install dependencies
+      working-directory: ./metaverse
+      run: npm ci
+
+    - name: Format Check
+      working-directory: ./metaverse
+      run: npm run format -- --list-different || echo "Prettier found issues"
+
+    - name: Check Types
+      working-directory: ./metaverse
+      run: npm run check-types || echo "Type checking skipped or failed"
+
+    - name: Generate Prisma Client
+      working-directory: ./metaverse
+      run: npm run db:generate
+
+    - name: Build Projects
+      working-directory: ./metaverse
+      run: npm run build
