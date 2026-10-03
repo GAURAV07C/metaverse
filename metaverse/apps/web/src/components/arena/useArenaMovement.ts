@@ -137,10 +137,11 @@ export function useArenaMovement({
       let nx = myPos.x;
       let ny = myPos.y;
       let moved = false;
-      if (e.key === 'ArrowUp' || e.key === 'w') { ny -= 1; moved = true; }
-      else if (e.key === 'ArrowDown' || e.key === 's') { ny += 1; moved = true; }
-      else if (e.key === 'ArrowLeft' || e.key === 'a') { nx -= 1; moved = true; }
-      else if (e.key === 'ArrowRight' || e.key === 'd') { nx += 1; moved = true; }
+      const key = e.key.toLowerCase();
+      if (key === 'arrowup' || key === 'w') { ny -= 1; moved = true; }
+      else if (key === 'arrowdown' || key === 's') { ny += 1; moved = true; }
+      else if (key === 'arrowleft' || key === 'a') { nx -= 1; moved = true; }
+      else if (key === 'arrowright' || key === 'd') { nx += 1; moved = true; }
 
       if (!moved) return;
       e.preventDefault();
