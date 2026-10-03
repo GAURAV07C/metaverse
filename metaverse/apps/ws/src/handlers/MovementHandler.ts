@@ -31,6 +31,7 @@ export class MovementHandler {
       user.spaceId,
     );
     RoomManager.getInstance().checkProximity(user, user.spaceId);
+    RoomManager.getInstance().updateRoomSession(user);
   }
 
   static async handleMove(user: User, parsedData: any) {

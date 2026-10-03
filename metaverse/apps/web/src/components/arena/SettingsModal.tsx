@@ -23,6 +23,7 @@ type DevicePrefs = {
   audioInputId?: string;
   videoInputId?: string;
   audioOutputId?: string;
+  videoQuality?: 'auto' | 'low' | 'standard' | 'high';
 };
 
 const DEVICE_PREF_KEY = 'metaverse_device_preferences';
@@ -131,7 +132,7 @@ export const SettingsModal = ({ isOpen, onClose, myStoredUsername, micOn, camOn,
     const next = { ...devicePrefs, [key]: value || undefined };
     setDevicePrefs(next);
     localStorage.setItem(DEVICE_PREF_KEY, JSON.stringify(next));
-    const isLiveInput = (key === 'audioInputId' && micOn) || (key === 'videoInputId' && camOn);
+    const isLiveInput = (key === 'audioInputId' && micOn) || ((key === 'videoInputId' || key === 'videoQuality') && camOn);
     if (!isLiveInput || !onDevicePreferenceChange) {
       setDeviceMsg('Saved. The next time you turn media on, this device will be used.');
       return;
@@ -253,6 +254,14 @@ export const SettingsModal = ({ isOpen, onClose, myStoredUsername, micOn, camOn,
                 <select id="settings-video-input" name="settingsVideoInput" value={devicePrefs.videoInputId || ''} onChange={e => saveDevicePref('videoInputId', e.target.value)}>
                   <option value="">System default camera</option>
                   {videoInputs.map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `Camera ${index + 1}`}</option>)}
+                </select>
+              </label>
+              <label htmlFor="settings-video-quality">Video quality
+                <select id="settings-video-quality" name="settingsVideoQuality" value={devicePrefs.videoQuality || 'auto'} onChange={e => saveDevicePref('videoQuality', e.target.value)}>
+                  <option value="auto">Auto / balanced</option>
+                  <option value="low">Low bandwidth</option>
+                  <option value="standard">Standard</option>
+                  <option value="high">High quality</option>
                 </select>
               </label>
               <label className="settings-toggle" htmlFor="settings-cam-enabled"><span>Camera is {camOn ? 'on' : 'off'}</span><input id="settings-cam-enabled" name="settingsCamEnabled" type="checkbox" checked={!!camOn} onChange={e => setCamOn?.(e.target.checked)} /></label>

@@ -19,6 +19,7 @@ export class User {
   public x: number;
   public y: number;
   public inProximityWith: Set<string> = new Set();
+  public currentRoomId?: string;
   public readonly requestedSpaceId?: string;
 
   private ws: WebSocket;
@@ -102,11 +103,17 @@ export class User {
         case "status-set":
           CollaborationHandler.handleStatusSet(this, parsedData);
           break;
+        case "group-lead-set":
+          CollaborationHandler.handleGroupLeadSet(this, parsedData);
+          break;
         case "webrtc-get-router-rtp-capabilities":
           await WebRTCHandler.handleGetRouterRtpCapabilities(this, parsedData);
           break;
         case "webrtc-create-transport":
           await WebRTCHandler.handleCreateTransport(this, parsedData);
+          break;
+        case "webrtc-get-media-lifecycle":
+          await WebRTCHandler.handleGetMediaLifecycle(this, parsedData);
           break;
         case "webrtc-connect-transport":
           await WebRTCHandler.handleConnectTransport(this, parsedData);
@@ -155,6 +162,7 @@ export class User {
       this,
       this.spaceId,
     );
+    RoomManager.getInstance().clearGroupLeadForUser(this, this.spaceId);
     RoomManager.getInstance().removeUser(this, this.spaceId);
   }
 

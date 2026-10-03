@@ -59,6 +59,7 @@ model Space {
   smartObjects  SmartObject[]
   roomInviteEvents RoomInviteEvent[]
   moderationAuditEvents ModerationAuditEvent[]
+  roomSessionEvents RoomSessionEvent[]
   mapVersions SpaceMapVersion[]
   notificationPreferences NotificationPreference[]
   chatMessages ChatMessage[]
@@ -379,6 +380,23 @@ model ModerationAuditEvent {
   @@index([spaceId, createdAt])
   @@index([actorUserId])
   @@index([targetUserId])
+}
+
+model RoomSessionEvent {
+  id             String   @id @default(cuid())
+  spaceId        String
+  space          Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  roomId         String?
+  roomName       String?
+  eventType      String
+  userId         String?
+  username       String?
+  previousRoomId String?
+  createdAt      DateTime @default(now())
+
+  @@index([spaceId, createdAt])
+  @@index([spaceId, roomId, createdAt])
+  @@index([userId])
 }
 
 model NotificationPreference {

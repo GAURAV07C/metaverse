@@ -95,6 +95,16 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
   const activeRemoteSpeakerId = activeSpeakerId && activeSpeakerId !== 'me' ? activeSpeakerId : null;
   const activeRemoteScreenId = primaryScreen?.id && primaryScreen.id !== 'me' ? primaryScreen.id : null;
   const showVideoStrip = viewMode !== 'grid' && participants.length > 0;
+  const prioritizedParticipants = useMemo(() => {
+    const priorityOf = (participant: MediaParticipant) => {
+      if (participant.id === pinnedParticipantId) return 0;
+      if (participant.id === activeSpeakerId) return 1;
+      if (participant.stream) return 2;
+      if (participant.isMe) return 3;
+      return 4;
+    };
+    return [...participants].sort((a, b) => priorityOf(a) - priorityOf(b));
+  }, [activeSpeakerId, participants, pinnedParticipantId]);
 
   useEffect(() => {
     if (!fullScreenTile) return;
@@ -169,6 +179,7 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
         <MeetingOverlay
           roomName={currentZone?.name}
           participants={participants}
+          prioritizedParticipants={prioritizedParticipants}
           connectedCount={connectedUsers.length}
           screenShares={screenShares}
           meetingLayout={meetingLayout}
@@ -211,7 +222,7 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
 
       {showVideoStrip && (
         <ProximityVideoStrip
-          participants={participants}
+          participants={prioritizedParticipants}
           currentZone={currentZone}
           micOn={micOn}
           camOn={camOn}

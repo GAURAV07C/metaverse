@@ -7,6 +7,25 @@ export interface OtherUser {
   status?: 'available' | 'busy' | 'focus' | 'away';
 }
 
+export interface RoomSessionMember {
+  userId?: string;
+  username?: string;
+  avatarUrl?: string;
+  status?: 'available' | 'busy' | 'focus' | 'away';
+}
+
+export interface RoomSession {
+  roomId: string;
+  name?: string;
+  members: RoomSessionMember[];
+}
+
+export type GroupLead = {
+  userId: string;
+  username?: string;
+  startedAt: string;
+} | null;
+
 export interface RoomInvite {
   id: string;
   inviteId?: string;

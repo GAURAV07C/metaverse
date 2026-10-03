@@ -54,6 +54,7 @@ export class JoinHandler {
       const spawn = await this.pickSpawn(spaceId, space);
       user.x = spawn.x;
       user.y = spawn.y;
+      roomManager.updateRoomSession(user);
 
       user.send({
         type: "space-joined",
@@ -64,6 +65,9 @@ export class JoinHandler {
           username: user.username,
           avatarUrl: user.avatarUrl,
           users: roomManager.serializeUsers(spaceId, user.id),
+          roomSessions: roomManager.serializeRoomSessions(spaceId),
+          currentRoomId: user.currentRoomId || null,
+          groupLead: roomManager.getGroupLead(spaceId),
         },
       });
 

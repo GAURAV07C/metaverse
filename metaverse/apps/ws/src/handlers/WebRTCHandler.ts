@@ -35,6 +35,19 @@ export class WebRTCHandler {
     });
   }
 
+  static async handleGetMediaLifecycle(user: User, parsedData?: any) {
+    await this.handle(user, parsedData, async () => {
+      if (!user.spaceId) return;
+      user.send({
+        type: "webrtc-media-lifecycle",
+        payload: {
+          lifecycle: MediasoupManager.getInstance().getSpaceLifecycle(user.spaceId),
+          requestId: this.getRequestId(parsedData),
+        },
+      });
+    });
+  }
+
   static async handleConnectTransport(user: User, parsedData: any) {
     await this.handle(user, parsedData, async () => {
       const { transportId, dtlsParameters } = parsedData.payload;

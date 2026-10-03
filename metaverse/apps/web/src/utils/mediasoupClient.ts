@@ -5,6 +5,85 @@ import { WsClient } from './ws';
 type Transport = types.Transport;
 type Producer = types.Producer;
 type Consumer = types.Consumer;
+type VideoQualityPreference = 'auto' | 'low' | 'standard' | 'high';
+
+function readVideoQuality(): VideoQualityPreference {
+  try {
+    const raw = JSON.parse(localStorage.getItem('metaverse_device_preferences') || '{}');
+    return ['auto', 'low', 'standard', 'high'].includes(raw.videoQuality) ? raw.videoQuality : 'auto';
+  } catch {
+    return 'auto';
+  }
+}
+
+function videoBitratePreset(type: string) {
+  if (type === 'screen') return { maxBitrate: 1_400_000, startBitrate: 1000, scaleResolutionDownBy: 1 };
+  const presets = {
+    low: { maxBitrate: 220_000, startBitrate: 220, scaleResolutionDownBy: 1.8 },
+    standard: { maxBitrate: 450_000, startBitrate: 450, scaleResolutionDownBy: 1.25 },
+    high: { maxBitrate: 900_000, startBitrate: 700, scaleResolutionDownBy: 1 },
+    auto: { maxBitrate: 450_000, startBitrate: 450, scaleResolutionDownBy: 1.25 },
+  } satisfies Record<VideoQualityPreference, { maxBitrate: number; startBitrate: number; scaleResolutionDownBy: number }>;
+  return presets[readVideoQuality()];
+}
+
+export interface MediaStatsSummary {
+  bytesSent?: number;
+  bytesReceived?: number;
+  packetsSent?: number;
+  packetsReceived?: number;
+  packetsLost?: number;
+  jitter?: number;
+  roundTripTime?: number;
+  framesDecoded?: number;
+  framesEncoded?: number;
+  framesPerSecond?: number;
+  frameWidth?: number;
+  frameHeight?: number;
+}
+
+export interface MediaDiagnostics {
+  hasSendTransport: boolean;
+  hasRecvTransport: boolean;
+  pendingRemoteProducers: number;
+  producers: Array<{
+    id: string;
+    type: string;
+    kind?: string;
+    closed?: boolean;
+    trackState?: MediaStreamTrackState;
+    stats: MediaStatsSummary;
+  }>;
+  consumers: Array<{
+    id: string;
+    producerId: string;
+    type?: string;
+    kind?: string;
+    closed?: boolean;
+    paused?: boolean;
+    trackState?: MediaStreamTrackState;
+    stats: MediaStatsSummary;
+  }>;
+  serverLifecycle?: {
+    createdAt: string;
+    transportsCreated: number;
+    transportsClosed: number;
+    producersCreated: number;
+    producersClosed: number;
+    consumersCreated: number;
+    consumersClosed: number;
+    liveTransports: number;
+    liveProducers: number;
+    liveConsumers: number;
+    available: boolean;
+    unavailableReason?: string;
+    rtcMinPort: number;
+    rtcMaxPort: number;
+    listenIp: string;
+    announcedIp?: string | null;
+    networkWarnings?: string[];
+  };
+}
 
 export class MediasoupClient {
   private device: Device;
@@ -46,6 +125,9 @@ export class MediasoupClient {
           break;
         case 'webrtc-consumer-resumed':
           this.resolveRequest('webrtc-consumer-resumed', msg.payload);
+          break;
+        case 'webrtc-media-lifecycle':
+          this.resolveRequest('webrtc-media-lifecycle', msg.payload);
           break;
         case 'webrtc-error':
           this.rejectPendingRequests(new Error(msg.payload.message), msg.payload.requestId);
@@ -104,6 +186,8 @@ export class MediasoupClient {
         responseType = 'webrtc-consumed';
       } else if (type === 'webrtc-resume-consumer') {
         responseType = 'webrtc-consumer-resumed';
+      } else if (type === 'webrtc-get-media-lifecycle') {
+        responseType = 'webrtc-media-lifecycle';
       }
 
       this.pendingRequests.set(requestId, { resolve, reject, responseType });
@@ -207,13 +291,13 @@ export class MediasoupClient {
       appData: { userId, ...appData },
     };
     if (track.kind === 'video') {
-      const isScreen = type === 'screen';
+      const bitrate = videoBitratePreset(type);
       producerOptions.encodings = [{
-        maxBitrate: isScreen ? 1_400_000 : 450_000,
-        scaleResolutionDownBy: isScreen ? 1 : 1.25,
+        maxBitrate: bitrate.maxBitrate,
+        scaleResolutionDownBy: bitrate.scaleResolutionDownBy,
       }];
       producerOptions.codecOptions = {
-        videoGoogleStartBitrate: isScreen ? 1000 : 450,
+        videoGoogleStartBitrate: bitrate.startBitrate,
       };
     }
     const producer = await this.sendTransport.produce(producerOptions);
@@ -246,6 +330,70 @@ export class MediasoupClient {
       this.producerIdsByType.delete(kind);
       this.ws.send({ type: 'webrtc-stop-producer', payload: { producerId } });
     }
+  }
+
+  private summarizeStats(stats: RTCStatsReport): MediaStatsSummary {
+    const summary: MediaStatsSummary = {};
+    stats.forEach((entry) => {
+      const report = entry as RTCStats & Record<string, number | string | boolean | undefined>;
+      if (report.type === 'outbound-rtp' || report.type === 'inbound-rtp' || report.type === 'remote-inbound-rtp') {
+        summary.bytesSent = typeof report.bytesSent === 'number' ? report.bytesSent : summary.bytesSent;
+        summary.bytesReceived = typeof report.bytesReceived === 'number' ? report.bytesReceived : summary.bytesReceived;
+        summary.packetsSent = typeof report.packetsSent === 'number' ? report.packetsSent : summary.packetsSent;
+        summary.packetsReceived = typeof report.packetsReceived === 'number' ? report.packetsReceived : summary.packetsReceived;
+        summary.packetsLost = typeof report.packetsLost === 'number' ? report.packetsLost : summary.packetsLost;
+        summary.jitter = typeof report.jitter === 'number' ? report.jitter : summary.jitter;
+        summary.roundTripTime = typeof report.roundTripTime === 'number' ? report.roundTripTime : summary.roundTripTime;
+        summary.framesDecoded = typeof report.framesDecoded === 'number' ? report.framesDecoded : summary.framesDecoded;
+        summary.framesEncoded = typeof report.framesEncoded === 'number' ? report.framesEncoded : summary.framesEncoded;
+        summary.framesPerSecond = typeof report.framesPerSecond === 'number' ? report.framesPerSecond : summary.framesPerSecond;
+        summary.frameWidth = typeof report.frameWidth === 'number' ? report.frameWidth : summary.frameWidth;
+        summary.frameHeight = typeof report.frameHeight === 'number' ? report.frameHeight : summary.frameHeight;
+      }
+    });
+    return summary;
+  }
+
+  public async getDiagnostics(): Promise<MediaDiagnostics> {
+    let serverLifecycle: MediaDiagnostics['serverLifecycle'] | undefined;
+    try {
+      const response = await this.request('webrtc-get-media-lifecycle');
+      serverLifecycle = response?.lifecycle;
+    } catch (error) {
+      console.warn('Unable to read server media lifecycle', error);
+    }
+
+    const producers = await Promise.all(Array.from(this.producers.entries()).map(async ([type, producer]) => ({
+      id: producer.id,
+      type,
+      kind: producer.track?.kind,
+      closed: producer.closed,
+      trackState: producer.track?.readyState,
+      stats: this.summarizeStats(await producer.getStats()),
+    })));
+
+    const consumers = await Promise.all(Array.from(this.consumers.values()).map(async (consumer) => {
+      const meta = this.producerMeta.get(consumer.producerId);
+      return {
+        id: consumer.id,
+        producerId: consumer.producerId,
+        type: meta?.type,
+        kind: consumer.kind,
+        closed: consumer.closed,
+        paused: consumer.paused,
+        trackState: consumer.track?.readyState,
+        stats: this.summarizeStats(await consumer.getStats()),
+      };
+    }));
+
+    return {
+      hasSendTransport: Boolean(this.sendTransport),
+      hasRecvTransport: Boolean(this.recvTransport),
+      pendingRemoteProducers: this.pendingRemoteProducers.length,
+      producers,
+      consumers,
+      serverLifecycle,
+    };
   }
 
   private async consumeOrQueue(producerId: string, userId: string, appData?: any) {

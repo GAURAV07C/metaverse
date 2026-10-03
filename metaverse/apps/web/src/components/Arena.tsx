@@ -8,6 +8,7 @@ import type { SpaceElement } from './arena/ElementsPanel';
 import { PrejoinScreen } from './arena/PrejoinScreen';
 import { ArenaChrome } from './arena/ArenaChrome';
 import { ArenaStage } from './arena/ArenaStage';
+import { MediaDiagnosticsPanel } from './arena/MediaDiagnosticsPanel';
 import { useArenaRooms } from './arena/useArenaRooms';
 import { useInviteLinks } from './arena/useInviteLinks';
 import { useArenaToasts } from './arena/useArenaToasts';
@@ -20,7 +21,7 @@ import { useArenaBuilder } from './arena/useArenaBuilder';
 import { useArenaNotificationState } from './arena/useArenaNotificationState';
 import { useArenaSpaceState } from './arena/useArenaSpaceState';
 import { useAvailableAssetsQuery, useInviteEventsQuery, useModerationAuditQuery, useNotificationPreferencesQuery } from './arena/queries';
-import type { ChatScope, NotificationPrefs, OtherUser, PresenceStatus, RoomInvite } from './arena/types';
+import type { ChatScope, GroupLead, NotificationPrefs, OtherUser, PresenceStatus, RoomInvite, RoomSession } from './arena/types';
 export type { InviteHistoryItem, ModerationHistoryItem, OtherUser } from './arena/types';
 import { DEFAULT_NOTIFICATION_PREFS } from './arena/arenaStorage';
 import { getElementInteraction } from './arena/arenaHelpers';
@@ -55,7 +56,10 @@ export function Arena() {
   const [myPos, setMyPos] = useState({ x: 5, y: 5 });
   const [otherUsers, setOtherUsers] = useState<OtherUser[]>([]);
   const [proximityUsers, setProximityUsers] = useState<string[]>([]);
+  const [roomSessions, setRoomSessions] = useState<RoomSession[]>([]);
+  const [groupLead, setGroupLead] = useState<GroupLead>(null);
   const [mediaReady, setMediaReady] = useState(false);
+  const [showMediaDiagnostics, setShowMediaDiagnostics] = useState(false);
 
   const [hasJoined, setHasJoined] = useState(false);
   const [connected, setConnected] = useState(false);
@@ -162,6 +166,7 @@ export function Arena() {
     handleCamChange,
     handleScreenShare,
     handleDevicePreferenceChange,
+    getMediaDiagnostics,
     stopMicrophone,
     stopCamera,
     stopScreenShare,
@@ -216,6 +221,8 @@ export function Arena() {
     msRef,
     activeTabRef,
     showUsersRef,
+    notificationPrefsRef,
+    presenceStatusRef,
     setConnected,
     setMediaReady,
     setMyPos,
@@ -224,6 +231,8 @@ export function Arena() {
     setMessages,
     setSelectedUserId,
     setProximityUsers,
+    setRoomSessions,
+    setGroupLead,
     setUnreadChatCount,
     setRoomInvites,
     setReactions,
@@ -261,6 +270,7 @@ export function Arena() {
     dimensions,
     selectedUser,
     proximityUsers,
+    roomSessions,
   });
   const {
     usePortal,
@@ -608,6 +618,16 @@ export function Arena() {
             presenceStatus,
             onStatusChange: handleStatusChange,
             onOpenShortcuts: () => setShowShortcuts(true),
+            onOpenDiagnostics: () => setShowMediaDiagnostics(true),
+            groupLead,
+            myUserId: myUserId || undefined,
+            onToggleLead: () => {
+              if (groupLead?.userId && groupLead.userId !== myUserId) {
+                handleFollowOtherUser(groupLead.userId);
+                return;
+              }
+              wsRef.current?.setGroupLead(groupLead?.userId === myUserId ? false : true);
+            },
           }}
           panels={{
             elementsPanel: {
@@ -651,6 +671,12 @@ export function Arena() {
             canManageMembers: currentUserRole === 'Owner' || currentUserRole === 'Admin',
             },
           }}
+        />
+        <MediaDiagnosticsPanel
+          open={showMediaDiagnostics}
+          onClose={() => setShowMediaDiagnostics(false)}
+          getDiagnostics={getMediaDiagnostics}
+          storageKey={`metaverse_media_quality_${spaceId || 'space'}`}
         />
     </div>
   );

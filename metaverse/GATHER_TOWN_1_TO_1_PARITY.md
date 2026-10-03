@@ -34,6 +34,8 @@ Important files:
   - Bottom toolbar controls: status, mic, camera, meeting mode, screen share, reactions, build, shortcuts, leave.
 - `apps/web/src/components/arena/VideoOverlay.tsx`
   - Video tiles, meeting/grid mode, fullscreen video/screen share.
+- `apps/web/src/components/arena/MediaDiagnosticsPanel.tsx`
+  - In-space mediasoup/WebRTC diagnostics panel for producers, consumers, track state, packet loss, jitter, and RTP counters.
 - `apps/web/src/components/arena/MiniMap.tsx`
   - Real canvas minimap.
 - `apps/web/src/components/arena/InteractionLayer.tsx`
@@ -146,10 +148,13 @@ Implemented:
 - Server-backed moderation audit events through `ModerationAuditEvent` and `/office/:spaceId/moderation-audit`.
 - Meeting mode has a local raise-hand control and badge.
 - Map mode returns to map.
+- Explicit in-memory room session state is emitted by the realtime server through `room-session-updated`.
+- Room directory counts and room media grouping use room session state when available, with coordinate fallback.
+- Busy/focus mode suppresses interruptive rings and room invite popups when notification preferences respect focus.
 
 Missing or incomplete:
 
-- Room membership is inferred from position; there is no explicit room session model.
+- Room session state is in-memory; it is not persisted and does not yet have lifecycle analytics storage.
 - Audio/video group signaling is proximity/room based, but not yet full production-grade room media routing.
 - Spotlight areas are visual/status only; they do not yet prioritize audio/video streams.
 
@@ -170,13 +175,16 @@ Implemented:
 - Screen share can publish browser/system audio as a separate `screen-audio` producer when the browser provides an audio track.
 - Fullscreen video tile view.
 - Mediasoup fallback/init cleanup improvements.
+- Media diagnostics panel from the bottom toolbar shows live send/receive transports, producers, consumers, track state, queued producers, bytes, packets, packet loss, jitter, RTT, FPS, decoded frames, and client-side quality warnings.
+- Media diagnostics also show server-side mediasoup lifecycle counters for transports, producers, and consumers.
 
 Missing or incomplete:
 
 - Screen share system audio depends on browser/OS capture support and needs multi-browser QA.
 - Remote moderation signaling is implemented for active speaker/screen actions and bulk mute in the current AV group; moderation audit is persisted server-side.
 - No production TURN/STUN quality checks.
-- No media quality indicator or connection diagnostics.
+- Media quality warnings are client-side and include server network config warnings; persisted call quality history is still missing.
+- Settings > Video includes adaptive quality presets that update capture constraints and mediasoup camera bitrate.
 
 ### Chat
 
@@ -240,6 +248,8 @@ Implemented:
 - Portal quick target picker and client/server publish validation.
 - Portal target metadata is persisted on published map zones.
 - Room generator with spots.
+- Room directory search/filter in the space sidebar.
+- Studio walkability overlay shows walkable/blocked areas and uses runtime-like blocking rules for floors/seats.
 - Publish flow.
 - Publish creates map version snapshots.
 - Studio can restore a published map version back into draft.
@@ -253,7 +263,7 @@ Missing or incomplete:
 - Undo/redo exists visually but needs deeper coverage across all edits.
 - Portal targets are configurable; cross-map picker UX still needs polish.
 - Tile effects need a polished visual editing UI.
-- Collision preview and walkable tile validation should be clearer before publish.
+- Collision preview exists; publish-time walkability validation still needs deeper checks.
 - Version history exists; diff preview and version naming are still missing.
 - Map templates and room template browser need better production organization.
 
@@ -391,8 +401,7 @@ Current status:
 - Object search and categorized library.
 - Better room templates.
 - Tile effects palette with live preview.
-- Collision/walkability overlay.
-- Publish validation.
+- Publish-time collision/walkability validation.
 - Version diff preview and version naming.
 - Role-aware edit mode.
 - Custom object interaction editor.
@@ -406,14 +415,14 @@ Current status:
 - Moderation tools.
 - Analytics for active users/rooms.
 - Load testing for WebSocket and media.
-- TURN server setup and media diagnostics.
+- TURN server setup and persisted call quality history.
 - Error reporting and structured logs.
 
 ## Backend Gaps
 
 Need to add:
 
-- Explicit room session state.
+- Persisted room session lifecycle analytics.
 - Role model and middleware for all write APIs.
 - Chat persistence and delivery metadata.
 - Room invite events.
@@ -421,7 +430,7 @@ Need to add:
 - Object interaction persistence and validation.
 - Portal target validation.
 - Organization-wide notification defaults and policy controls if needed.
-- Media room lifecycle and cleanup metrics.
+- Persisted media room lifecycle and cleanup metrics.
 
 ## Frontend Gaps
 
@@ -437,16 +446,45 @@ Need to add:
 
 ## Suggested Implementation Order
 
-1. Add prejoin/device settings parity.
-2. Add persisted invite history.
+1. Persist room session/media lifecycle analytics beyond the in-memory realtime server.
+2. Add persisted call quality history and deeper TURN/STUN deployment checks.
 3. Expand notification sounds and organization-wide notification policy controls if needed.
-4. Add remote meeting moderation signaling.
-5. Add version diff preview and stronger publish validation.
-6. Add onboarding and contextual help polish.
+4. Add version diff preview and stronger publish validation.
+5. Add onboarding and contextual help polish.
+6. Add advanced spawn rules and follow-leader mode.
 
 ## Exact Missing Feature Backlog
 
 Use this as the task queue. Do not assume everything is already done because the UI looks close.
+
+### Current Completed Batch
+
+- [x] Remove stale temp artifacts from the repo workspace.
+- [x] Add room directory search/filter.
+- [x] Add client WebRTC/media diagnostics.
+- [x] Add client-side media quality warnings.
+- [x] Add in-memory realtime room session state.
+- [x] Use room session state for room counts and room media grouping.
+- [x] Add server mediasoup lifecycle counters in diagnostics.
+- [x] Improve Studio walkability/collision overlay.
+- [x] Suppress interruptive rings/invite popups in busy/focus mode.
+
+### Next Implementation Queue
+
+- [ ] Persist room session lifecycle analytics beyond the current realtime process.
+- [x] Add adaptive media quality controls based on diagnostics.
+- [x] Add baseline TURN/STUN deployment self-checks in media diagnostics.
+- [x] Add WebSocket movement/chat load-test script.
+- [ ] Add persisted call quality history.
+- [ ] Add deeper TURN/STUN deployment probes against deployed AWS networking.
+- [ ] Add spotlight stream priority behavior.
+- [ ] Add follow-leader/request-lead group mode.
+- [ ] Add map version diff preview and named releases.
+- [ ] Add invite links with role/scope.
+- [ ] Add private/public space controls.
+- [ ] Add audit log for map edits.
+- [x] Add load testing scripts for WebSocket.
+- [ ] Add mediasoup/browser media load test automation.
 
 ### P0: Must-Have For Gather-Like Daily Use
 
@@ -458,9 +496,6 @@ Use this as the task queue. Do not assume everything is already done because the
 - Advanced spawn rules for guest/member/event-specific entry points.
 - Spotlight stream priority behavior.
 - Follow leader / request lead mode.
-- DND/focus behavior that affects ring/notifications.
-- Walkability/collision overlay.
-- Room directory search/filter.
 
 ### P2: Must-Have For Admin/Production
 
@@ -471,7 +506,6 @@ Use this as the task queue. Do not assume everything is already done because the
 - Private/public space controls.
 - Audit log for map edits.
 - Map version diff preview and named releases.
-- Media diagnostics.
 - TURN server deployment config.
 - Load testing for WS and media.
 

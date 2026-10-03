@@ -15,8 +15,11 @@ const buildSpaceWsUrl = (baseUrl: string, spaceId: string) => {
   return url.toString();
 };
 
+type RoomSessionPayload = { roomId: string; name?: string; members: { userId?: string; username?: string; avatarUrl?: string; status?: 'available' | 'busy' | 'focus' | 'away' }[] };
+type GroupLeadPayload = { userId: string; username?: string; startedAt: string } | null;
+
 export type WsIncomingMessage =
-  | { type: 'space-joined'; payload: { spawn: { x: number; y: number }; userId: string; username?: string; avatarUrl?: string; users: { id: string; userId?: string; username?: string; avatarUrl?: string; status?: 'available' | 'busy' | 'focus' | 'away'; x: number; y: number }[]; chatHistory?: any[] } }
+  | { type: 'space-joined'; payload: { spawn: { x: number; y: number }; userId: string; username?: string; avatarUrl?: string; users: { id: string; userId?: string; username?: string; avatarUrl?: string; status?: 'available' | 'busy' | 'focus' | 'away'; x: number; y: number }[]; chatHistory?: any[]; roomSessions?: RoomSessionPayload[]; currentRoomId?: string | null; groupLead?: GroupLeadPayload } }
   | { type: 'user-joined'; payload: { userId: string; username?: string; avatarUrl?: string; status?: 'available' | 'busy' | 'focus' | 'away'; x: number; y: number } }
   | { type: 'user-left'; payload: { userId: string } }
   | { type: 'movement'; payload: { userId: string; x: number; y: number } }
@@ -30,6 +33,9 @@ export type WsIncomingMessage =
   | { type: 'status-update'; payload: { userId: string; username?: string; status: 'available' | 'busy' | 'focus' | 'away'; timestamp: string } }
   | { type: 'proximity-entered'; payload: { userId: string } }
   | { type: 'proximity-left'; payload: { userId: string } }
+  | { type: 'room-session-current'; payload: { roomId: string | null; previousRoomId?: string | null; roomName?: string } }
+  | { type: 'room-session-updated'; payload: { sessions: RoomSessionPayload[] } }
+  | { type: 'group-lead-updated'; payload: { lead: GroupLeadPayload } }
   | { type: 'webrtc-router-rtp-capabilities'; payload: { rtpCapabilities: any } }
   | { type: 'webrtc-transport-created'; payload: { id: string; iceParameters: any; iceCandidates: any; dtlsParameters: any } }
   | { type: 'webrtc-transport-connected' }
@@ -38,6 +44,7 @@ export type WsIncomingMessage =
   | { type: 'producer-closed'; payload: { producerId: string; userId?: string; appData?: any } }
   | { type: 'webrtc-consumed'; payload: { id: string; producerId: string; kind: string; rtpParameters: any } }
   | { type: 'webrtc-consumer-resumed'; payload: { consumerId: string; requestId?: string } }
+  | { type: 'webrtc-media-lifecycle'; payload: { lifecycle: any; requestId?: string } }
   | { type: 'join-error'; payload: { reason: string; message: string; redirectUrl?: string; ownerInstanceId?: string } }
   | { type: 'webrtc-error'; payload: { message: string; requestId?: string } };
 
@@ -141,6 +148,10 @@ export class WsClient {
 
   setStatus(status: 'available' | 'busy' | 'focus' | 'away') {
     this.send({ type: 'status-set', payload: { status } });
+  }
+
+  setGroupLead(enabled: boolean) {
+    this.send({ type: 'group-lead-set', payload: { enabled } });
   }
 
   onMessage(cb: (msg: WsIncomingMessage) => void) {

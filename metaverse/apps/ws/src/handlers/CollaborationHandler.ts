@@ -200,6 +200,12 @@ export class CollaborationHandler {
     );
   }
 
+  static handleGroupLeadSet(user: User, parsedData: any) {
+    if (!user.spaceId || !user.userId) return;
+    const enabled = Boolean(parsedData?.payload?.enabled);
+    RoomManager.getInstance().setGroupLead(user, enabled);
+  }
+
   private static readModerationAction(parsedData: any): ModerationAction | undefined {
     const action = typeof parsedData?.payload?.action === "string" ? parsedData.payload.action : "";
     return MODERATION_ACTIONS.includes(action as ModerationAction) ? action as ModerationAction : undefined;

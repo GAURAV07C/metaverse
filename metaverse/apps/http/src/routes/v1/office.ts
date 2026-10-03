@@ -244,6 +244,21 @@ officeRouter.get("/:spaceId/moderation-audit", async (req, res) => {
   res.json({ events });
 });
 
+officeRouter.get("/:spaceId/room-session-events", async (req, res) => {
+  const space = await getSpaceForUser(req.params.spaceId, req.userId);
+  if (!space) return res.status(404).json({ message: "Space not found" });
+  const take = Math.min(Math.max(Number(req.query.take) || 50, 1), 200);
+  const where = canEditSpace(space, req.userId)
+    ? { spaceId: space.id }
+    : { spaceId: space.id, userId: req.userId };
+  const events = await (client as any).roomSessionEvent.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+    take,
+  });
+  res.json({ events });
+});
+
 officeRouter.get("/:spaceId/desks", async (req, res) => {
   const space = await getSpaceForUser(req.params.spaceId, req.userId);
   if (!space) return res.status(404).json({ message: "Space not found" });

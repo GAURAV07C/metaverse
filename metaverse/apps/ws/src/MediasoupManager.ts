@@ -25,6 +25,16 @@ const rtcMaxPort = Number(process.env.MEDIASOUP_RTC_MAX_PORT || 49999);
 const listenIp = process.env.MEDIASOUP_LISTEN_IP || "0.0.0.0";
 const announcedIp = process.env.MEDIASOUP_ANNOUNCED_IP || undefined;
 
+type SpaceMediaLifecycle = {
+  createdAt: string;
+  transportsCreated: number;
+  transportsClosed: number;
+  producersCreated: number;
+  producersClosed: number;
+  consumersCreated: number;
+  consumersClosed: number;
+};
+
 export class MediasoupManager {
   private static instance: MediasoupManager;
   private worker?: Worker;
@@ -37,6 +47,7 @@ export class MediasoupManager {
   public producers: Map<string, Producer> = new Map();
   public consumers: Map<string, Consumer> = new Map();
   public producerMeta: Map<string, { spaceId: string; userId?: string; appData?: any }> = new Map();
+  private lifecycleBySpace: Map<string, SpaceMediaLifecycle> = new Map();
 
   private constructor() {}
 
@@ -119,6 +130,43 @@ export class MediasoupManager {
     }
   }
 
+  private lifecycle(spaceId: string) {
+    if (!this.lifecycleBySpace.has(spaceId)) {
+      this.lifecycleBySpace.set(spaceId, {
+        createdAt: new Date().toISOString(),
+        transportsCreated: 0,
+        transportsClosed: 0,
+        producersCreated: 0,
+        producersClosed: 0,
+        consumersCreated: 0,
+        consumersClosed: 0,
+      });
+    }
+    return this.lifecycleBySpace.get(spaceId)!;
+  }
+
+  public getSpaceLifecycle(spaceId: string) {
+    const lifecycle = this.lifecycle(spaceId);
+    const networkWarnings = [
+      ...(process.env.NODE_ENV === "production" && !announcedIp ? ["MEDIASOUP_ANNOUNCED_IP is missing in production."] : []),
+      ...(rtcMinPort >= rtcMaxPort ? ["MEDIASOUP_RTC_MIN_PORT must be lower than MEDIASOUP_RTC_MAX_PORT."] : []),
+      ...(listenIp !== "0.0.0.0" && process.env.NODE_ENV === "production" ? ["MEDIASOUP_LISTEN_IP should usually be 0.0.0.0 in container/EC2 production."] : []),
+    ];
+    return {
+      ...lifecycle,
+      liveTransports: Array.from(this.transports.values()).filter((transport) => !transport.closed).length,
+      liveProducers: Array.from(this.producerMeta.values()).filter((meta) => meta.spaceId === spaceId).length,
+      liveConsumers: Array.from(this.consumers.values()).filter((consumer) => !consumer.closed).length,
+      available: this.isAvailable(),
+      unavailableReason: this.isAvailable() ? undefined : this.getUnavailableReason(),
+      rtcMinPort,
+      rtcMaxPort,
+      listenIp,
+      announcedIp: announcedIp || null,
+      networkWarnings,
+    };
+  }
+
   public async getRouter(spaceId: string): Promise<Router> {
     this.assertReady();
     if (this.routers.has(spaceId)) return this.routers.get(spaceId)!;
@@ -152,6 +200,7 @@ export class MediasoupManager {
         type: candidate.type,
       })),
     });
+    this.lifecycle(spaceId).transportsCreated += 1;
     transport.on("dtlsstatechange", (dtlsState: any) => {
       console.log("Mediasoup transport dtlsstatechange", { id: transport.id, dtlsState });
       if (dtlsState === "closed") transport.close();
@@ -160,6 +209,10 @@ export class MediasoupManager {
       console.log("Mediasoup transport icestatechange", { id: transport.id, iceState });
     });
     transport.on("routerclose", () => transport.close());
+    transport.on("@close", () => {
+      this.lifecycle(spaceId).transportsClosed += 1;
+      this.transports.delete(transport.id);
+    });
 
     this.transports.set(transport.id, transport);
     return transport;
@@ -177,6 +230,7 @@ export class MediasoupManager {
     const producer = await transport.produce({ kind, rtpParameters });
     this.producers.set(producer.id, producer);
     this.producerMeta.set(producer.id, meta);
+    this.lifecycle(meta.spaceId).producersCreated += 1;
     console.log("Mediasoup producer created", { producerId: producer.id, kind, spaceId: meta.spaceId, userId: meta.userId, appData: meta.appData });
 
     producer.on("transportclose", () => {
@@ -189,9 +243,11 @@ export class MediasoupManager {
 
   public closeProducer(producerId: string) {
     const producer = this.producers.get(producerId);
+    const meta = this.producerMeta.get(producerId);
     if (producer && !producer.closed) producer.close();
     this.producers.delete(producerId);
     this.producerMeta.delete(producerId);
+    if (meta) this.lifecycle(meta.spaceId).producersClosed += 1;
   }
 
   public closeUserProducers(spaceId: string, userId?: string) {
@@ -227,10 +283,15 @@ export class MediasoupManager {
       paused: true,
     });
     this.consumers.set(consumer.id, consumer);
+    this.lifecycle(spaceId).consumersCreated += 1;
     console.log("Mediasoup consumer created", { consumerId: consumer.id, producerId, kind: consumer.kind, spaceId });
 
     consumer.on("transportclose", () => consumer.close());
     consumer.on("producerclose", () => consumer.close());
+    consumer.on("@close", () => {
+      this.lifecycle(spaceId).consumersClosed += 1;
+      this.consumers.delete(consumer.id);
+    });
     return consumer;
   }
 

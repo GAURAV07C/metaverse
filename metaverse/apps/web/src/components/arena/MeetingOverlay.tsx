@@ -7,6 +7,7 @@ import type { FullScreenTile, MediaParticipant, ScreenShareTile } from './mediaT
 interface MeetingOverlayProps {
   roomName?: string;
   participants: MediaParticipant[];
+  prioritizedParticipants?: MediaParticipant[];
   connectedCount: number;
   screenShares: ScreenShareTile[];
   meetingLayout: 'speaker' | 'grid';
@@ -38,6 +39,7 @@ interface MeetingOverlayProps {
 export function MeetingOverlay({
   roomName,
   participants,
+  prioritizedParticipants,
   connectedCount,
   screenShares,
   meetingLayout,
@@ -65,12 +67,13 @@ export function MeetingOverlay({
   onModerationAction,
   onModerationAll,
 }: MeetingOverlayProps) {
+  const visibleParticipants = prioritizedParticipants || participants;
   const primaryScreen = screenShares[0];
   const speakerParticipant =
-    participants.find(participant => participant.id === pinnedParticipantId) ||
-    participants.find(participant => participant.id === activeSpeakerId) ||
-    participants.find(participant => participant.id !== 'me' && participant.stream) ||
-    participants[0];
+    visibleParticipants.find(participant => participant.id === pinnedParticipantId) ||
+    visibleParticipants.find(participant => participant.id === activeSpeakerId) ||
+    visibleParticipants.find(participant => participant.id !== 'me' && participant.stream) ||
+    visibleParticipants[0];
 
   const renderParticipant = (participant: MediaParticipant, large = false) => (
     <ParticipantTileContent
@@ -167,7 +170,7 @@ export function MeetingOverlay({
               <Maximize2 className="meeting-maximize" size={18} />
             </button>
             <div className="meeting-filmstrip">
-              {participants.map(participant => (
+              {visibleParticipants.map(participant => (
                 <button
                   key={participant.id}
                   className={`meeting-participant-tile ${activeSpeakerId === participant.id ? 'active-speaker' : ''} ${pinnedParticipantId === participant.id ? 'pinned' : ''}`}
@@ -192,7 +195,7 @@ export function MeetingOverlay({
                 <Maximize2 className="meeting-maximize" size={16} />
               </button>
             ))}
-            {participants.map(participant => (
+            {visibleParticipants.map(participant => (
               <button
                 key={participant.id}
                 className={`meeting-participant-tile ${speakerParticipant?.id === participant.id && !primaryScreen ? 'speaker' : ''} ${activeSpeakerId === participant.id ? 'active-speaker' : ''} ${pinnedParticipantId === participant.id ? 'pinned' : ''}`}

@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import type { Prefab } from './types';
 import type { SpaceElement } from '../arena/ElementsPanel';
 import { StudioElement } from './StudioElement';
@@ -24,6 +24,27 @@ interface Props {
 }
 
 const TILE = 32;
+
+function isBlockingElement(el: SpaceElement) {
+  if (!el.element.static) return false;
+  const category = String(el.element.category ?? '').toLowerCase();
+  const name = String(el.element.name ?? '').toLowerCase();
+  const id = String(el.element.id ?? '').toLowerCase();
+  const text = `${category} ${name} ${id}`;
+
+  if (category.includes('room') || category.includes('floor') || text.includes('floor')) return false;
+  if (
+    category.includes('seating') ||
+    text.includes('chair') ||
+    text.includes('sofa') ||
+    text.includes('couch') ||
+    text.includes('bench') ||
+    text.includes('stool') ||
+    text.includes('seat')
+  ) return false;
+
+  return true;
+}
 
 export function StudioCanvas({ tool, availableElements, elements, setElements, areas = [], setAreas, dimensions, selectedElId, setSelectedElId, setStatus, onExit }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -63,12 +84,15 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
   const isOccupied = useCallback((gx: number, gy: number, gw: number = 1, gh: number = 1, ignoreId?: string) => {
     return elements.some(el => {
       if (el.id === ignoreId) return false;
+      if (!isBlockingElement(el)) return false;
       const w = el.element.width || 1;
       const h = el.element.height || 1;
       // Two rectangles overlap if:
       return gx < el.x + w && gx + gw > el.x && gy < el.y + h && gy + gh > el.y;
     });
   }, [elements]);
+
+  const blockingElements = useMemo(() => elements.filter(isBlockingElement), [elements]);
 
   // --- Native Wheel Event (Prevents Browser Zoom) ---
   useEffect(() => {
@@ -985,29 +1009,42 @@ export function StudioCanvas({ tool, availableElements, elements, setElements, a
         ))}
 
         {/* Walkability Overlay */}
-        {showWalkability && elements.map(el => {
-          if (!el.element.static) return null;
-          const cat = String(el.element.category).toLowerCase();
-          const name = String(el.element.name).toLowerCase();
-          const id = String(el.element.id).toLowerCase();
-          if (cat.includes('room') || cat.includes('floor')) return null;
-          if (cat.includes('seating') || name.includes('chair') || name.includes('sofa') || name.includes('couch') || name.includes('bench') || name.includes('stool') || name.includes('seat') || id.includes('chair')) return null;
-          
-          return (
-            <div key={`walk-${el.id}`} style={{
+        {showWalkability && (
+          <>
+            <div style={{
               position: 'absolute',
-              left: el.x * TILE,
-              top: el.y * TILE,
-              width: (el.element.width || 1) * TILE,
-              height: (el.element.height || 1) * TILE,
-              backgroundColor: 'rgba(239, 68, 68, 0.5)',
-              border: '1px solid rgba(239, 68, 68, 0.8)',
+              inset: 0,
               pointerEvents: 'none',
-              zIndex: 90
+              zIndex: 88,
+              backgroundColor: 'rgba(34, 197, 94, 0.08)',
+              backgroundImage: `linear-gradient(rgba(34,197,94,.28) 1px, transparent 1px), linear-gradient(90deg, rgba(34,197,94,.28) 1px, transparent 1px)`,
+              backgroundSize: `${TILE}px ${TILE}px`,
             }} />
-          )
-        })}
+            {blockingElements.map(el => (
+              <div key={`walk-${el.id}`} style={{
+                position: 'absolute',
+                left: el.x * TILE,
+                top: el.y * TILE,
+                width: (el.element.width || 1) * TILE,
+                height: (el.element.height || 1) * TILE,
+                backgroundColor: 'rgba(239, 68, 68, 0.45)',
+                border: '1px solid rgba(239, 68, 68, 0.86)',
+                boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.18)',
+                pointerEvents: 'none',
+                zIndex: 90
+              }} />
+            ))}
+          </>
+        )}
       </div>
+
+      {showWalkability && (
+        <div className="studio-walkability-legend">
+          <span><i className="walkable" /> Walkable</span>
+          <span><i className="blocked" /> Blocked</span>
+          <b>{blockingElements.length} blocking objects</b>
+        </div>
+      )}
 
       <StudioZoomControls
         zoom={zoom}

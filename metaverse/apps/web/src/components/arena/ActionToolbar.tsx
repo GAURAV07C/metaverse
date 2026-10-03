@@ -1,5 +1,6 @@
 ﻿import React, { useState } from 'react';
-import { CircleDot, Grid2X2, HelpCircle, Mic, MicOff, Video, VideoOff, Smile, MonitorUp, Hammer, LogOut } from 'lucide-react';
+import { Activity, CircleDot, Footprints, Grid2X2, HelpCircle, Mic, MicOff, Video, VideoOff, Smile, MonitorUp, Hammer, LogOut } from 'lucide-react';
+import type { GroupLead } from './types';
 
 interface ActionToolbarProps {
   myStoredUsername: string | null;
@@ -20,6 +21,10 @@ interface ActionToolbarProps {
   presenceStatus?: 'available' | 'busy' | 'focus' | 'away';
   onStatusChange?: (status: 'available' | 'busy' | 'focus' | 'away') => void;
   onOpenShortcuts?: () => void;
+  onOpenDiagnostics?: () => void;
+  groupLead?: GroupLead;
+  myUserId?: string;
+  onToggleLead?: () => void;
 }
 
 export const ActionToolbar: React.FC<ActionToolbarProps> = ({
@@ -27,7 +32,8 @@ export const ActionToolbar: React.FC<ActionToolbarProps> = ({
   isScreenSharing, handleScreenShare,
   canBuild = true,
   showPanel, onToggleBuild, onOpenSettings, onChooseEmoji,
-  meetingMode = false, onToggleMeetingMode, presenceStatus = 'available', onStatusChange, onOpenShortcuts,
+  meetingMode = false, onToggleMeetingMode, presenceStatus = 'available', onStatusChange, onOpenShortcuts, onOpenDiagnostics,
+  groupLead, myUserId, onToggleLead,
 }) => {
   const [showEmoji, setShowEmoji] = useState(false);
   const [showStatus, setShowStatus] = useState(false);
@@ -61,6 +67,16 @@ export const ActionToolbar: React.FC<ActionToolbarProps> = ({
       <span className="toolbar-divider" />
       <div className="toolbar-group" aria-label="Space actions">
         <button className={`action-icon-btn ${meetingMode ? 'active' : ''}`} disabled={!onToggleMeetingMode} onClick={onToggleMeetingMode} title={meetingMode ? 'Back to map' : 'Meeting mode'} aria-label={meetingMode ? 'Back to map' : 'Meeting mode'} aria-pressed={meetingMode}><Grid2X2 size={20} /></button>
+        <button
+          className={`action-icon-btn ${groupLead?.userId ? 'active' : ''}`}
+          disabled={!onToggleLead}
+          onClick={onToggleLead}
+          title={groupLead?.userId === myUserId ? 'Stop leading group' : groupLead?.userId ? `Follow ${groupLead.username || 'leader'}` : 'Lead group'}
+          aria-label={groupLead?.userId === myUserId ? 'Stop leading group' : groupLead?.userId ? 'Follow group leader' : 'Lead group'}
+          aria-pressed={!!groupLead?.userId}
+        >
+          <Footprints size={20} />
+        </button>
         <button className={`action-icon-btn ${isScreenSharing ? 'active' : ''}`} disabled={!handleScreenShare} onClick={handleScreenShare} title={handleScreenShare ? 'Share screen' : 'Screen sharing unavailable in this space'} aria-label="Share screen" aria-pressed={!!isScreenSharing}><MonitorUp size={20} /></button>
         <div className="emoji-control">
           <button className={`action-icon-btn ${showEmoji ? 'active' : ''}`} onClick={() => setShowEmoji(!showEmoji)} title="Send reaction" aria-label="Send reaction" aria-expanded={showEmoji} aria-controls="emoji-picker"><Smile size={20} /></button>
@@ -69,6 +85,7 @@ export const ActionToolbar: React.FC<ActionToolbarProps> = ({
           </div>}
         </div>
         <button className={`action-icon-btn ${showPanel ? 'active' : ''}`} disabled={!canBuild} onClick={onToggleBuild} title={canBuild ? 'Build' : 'Only the owner can build'} aria-label="Build" aria-expanded={showPanel}><Hammer size={20} /></button>
+        <button className="action-icon-btn" onClick={onOpenDiagnostics} disabled={!onOpenDiagnostics} title="Media diagnostics" aria-label="Media diagnostics"><Activity size={20} /></button>
         <button className="action-icon-btn" onClick={onOpenShortcuts} title="Keyboard shortcuts" aria-label="Keyboard shortcuts"><HelpCircle size={20} /></button>
       </div>
       <span className="toolbar-divider" />

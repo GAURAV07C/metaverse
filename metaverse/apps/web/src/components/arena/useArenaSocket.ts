@@ -4,7 +4,7 @@ import { MediasoupClient } from '../../utils/mediasoupClient';
 import { WsClient } from '../../utils/ws';
 import { normalizeAssetUrl } from './arenaHelpers';
 import type { ArenaToast } from './useArenaToasts';
-import type { InviteHistoryItem, ModerationHistoryItem, OtherUser, RoomInvite } from './types';
+import type { GroupLead, InviteHistoryItem, ModerationHistoryItem, NotificationPrefs, OtherUser, PresenceStatus, RoomInvite, RoomSession } from './types';
 
 type PushToast = (toast: Omit<ArenaToast, 'id'> & { category?: 'joins' | 'chat' | 'roomInvites' | 'system' }) => void;
 
@@ -18,6 +18,8 @@ interface UseArenaSocketInput {
   msRef: React.MutableRefObject<MediasoupClient | null>;
   activeTabRef: React.MutableRefObject<'users' | 'chat'>;
   showUsersRef: React.MutableRefObject<boolean>;
+  notificationPrefsRef: React.MutableRefObject<NotificationPrefs>;
+  presenceStatusRef: React.MutableRefObject<PresenceStatus>;
   setConnected: React.Dispatch<React.SetStateAction<boolean>>;
   setMediaReady: (ready: boolean) => void;
   setMyPos: React.Dispatch<React.SetStateAction<{ x: number; y: number }>>;
@@ -26,6 +28,8 @@ interface UseArenaSocketInput {
   setMessages: React.Dispatch<React.SetStateAction<{ username: string; message: string; time: string; scope?: string }[]>>;
   setSelectedUserId: React.Dispatch<React.SetStateAction<string | null>>;
   setProximityUsers: React.Dispatch<React.SetStateAction<string[]>>;
+  setRoomSessions: React.Dispatch<React.SetStateAction<RoomSession[]>>;
+  setGroupLead: React.Dispatch<React.SetStateAction<GroupLead>>;
   setUnreadChatCount: React.Dispatch<React.SetStateAction<number>>;
   setRoomInvites: React.Dispatch<React.SetStateAction<RoomInvite[]>>;
   setReactions: React.Dispatch<React.SetStateAction<Record<string, { emoji: string; expiresAt: number }>>>;
@@ -51,6 +55,8 @@ export function useArenaSocket({
   msRef,
   activeTabRef,
   showUsersRef,
+  notificationPrefsRef,
+  presenceStatusRef,
   setConnected,
   setMediaReady,
   setMyPos,
@@ -59,6 +65,8 @@ export function useArenaSocket({
   setMessages,
   setSelectedUserId,
   setProximityUsers,
+  setRoomSessions,
+  setGroupLead,
   setUnreadChatCount,
   setRoomInvites,
   setReactions,
@@ -127,6 +135,29 @@ export function useArenaSocket({
           setProximityUsers(prev => prev.filter(id => id !== msg.payload.userId));
           msRef.current?.closeConsumersByUserId(msg.payload.userId);
           removeUserMedia(msg.payload.userId);
+          break;
+        case 'room-session-updated':
+          setRoomSessions(msg.payload.sessions || []);
+          break;
+        case 'group-lead-updated':
+          setGroupLead(msg.payload.lead || null);
+          if (msg.payload.lead?.userId && msg.payload.lead.userId !== myUserId) {
+            pushToast({
+              title: `${msg.payload.lead.username || 'Someone'} is leading`,
+              detail: 'Use the lead control to follow their path.',
+              kind: 'info',
+              category: 'system',
+            });
+          } else if (!msg.payload.lead) {
+            pushToast({ title: 'Lead mode ended', detail: 'Group follow is now off.', kind: 'info', category: 'system' });
+          }
+          break;
+        case 'room-session-current':
+          if (msg.payload.roomId && msg.payload.roomName) {
+            pushToast({ title: `Joined ${msg.payload.roomName}`, detail: 'Room audio/video group is active.', kind: 'success', category: 'system' });
+          } else if (msg.payload.previousRoomId) {
+            pushToast({ title: 'Left room', detail: 'You are back in the public area.', kind: 'info', category: 'system' });
+          }
           break;
         case 'chat-receive':
           handleChatReceive(msg);
@@ -210,6 +241,8 @@ export function useArenaSocket({
           avatarUrl: normalizeAssetUrl(user.avatarUrl) || undefined,
           status: user.status || 'available',
         })));
+      setRoomSessions(msg.payload.roomSessions || []);
+      setGroupLead(msg.payload.groupLead || null);
       setMyAvatarUrl(normalizeAssetUrl(msg.payload.avatarUrl) || normalizeAssetUrl(storedAvatarUrl));
 
       if (msg.payload.chatHistory) {
@@ -272,8 +305,15 @@ export function useArenaSocket({
       });
     }
 
+    function suppressInterruptions() {
+      const prefs = notificationPrefsRef.current;
+      const status = presenceStatusRef.current;
+      return prefs.respectFocus && (status === 'focus' || status === 'busy');
+    }
+
     function handleChatReceive(msg: any) {
       if (msg.payload.isRing) {
+        if (suppressInterruptions()) return;
         playInviteRing();
         pushToast({ title: 'Incoming Ring', detail: `${msg.payload.username || 'Someone'} is ringing you!`, kind: 'info', category: 'system' });
         return;
@@ -316,6 +356,7 @@ export function useArenaSocket({
         roomName: invite.roomName,
         createdAt: Date.now(),
       });
+      if (suppressInterruptions()) return;
       setRoomInvites(prev => [invite, ...prev.filter(item => item.roomId !== invite.roomId || item.fromUserId !== invite.fromUserId)].slice(0, 3));
       window.setTimeout(() => expireInvite(inviteId), 30000);
       playInviteRing();
@@ -439,6 +480,8 @@ export function useArenaSocket({
     msRef,
     myUserId,
     playInviteRing,
+    notificationPrefsRef,
+    presenceStatusRef,
     pushToast,
     recordInviteHistory,
     recordModerationHistory,
@@ -449,6 +492,8 @@ export function useArenaSocket({
     setMyPos,
     setOtherUsers,
     setProximityUsers,
+    setGroupLead,
+    setRoomSessions,
     setReactions,
     setRoomInvites,
     setScreenStreams,

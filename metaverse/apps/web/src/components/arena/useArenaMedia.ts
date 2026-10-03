@@ -1,10 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type React from 'react';
 import type { MediasoupClient } from '../../utils/mediasoupClient';
-import { readDevicePreferences } from './arenaStorage';
+import { readDevicePreferences, type VideoQualityPreference } from './arenaStorage';
 import type { ArenaToast } from './useArenaToasts';
 
 type PushToast = (toast: Omit<ArenaToast, 'id'> & { category?: 'joins' | 'chat' | 'roomInvites' | 'system' }) => void;
+
+function cameraConstraints(deviceId?: string, quality: VideoQualityPreference = 'auto'): MediaStreamConstraints {
+  const presets = {
+    low: { width: { ideal: 320, max: 480 }, height: { ideal: 180, max: 270 }, frameRate: { ideal: 12, max: 15 } },
+    standard: { width: { ideal: 640, max: 960 }, height: { ideal: 360, max: 540 }, frameRate: { ideal: 20, max: 24 } },
+    high: { width: { ideal: 960, max: 1280 }, height: { ideal: 540, max: 720 }, frameRate: { ideal: 24, max: 30 } },
+    auto: { width: { ideal: 640, max: 960 }, height: { ideal: 360, max: 540 }, frameRate: { ideal: 20, max: 24 } },
+  } satisfies Record<VideoQualityPreference, MediaTrackConstraints>;
+
+  return {
+    video: {
+      deviceId: deviceId ? { exact: deviceId } : undefined,
+      ...presets[quality],
+    },
+  };
+}
 
 interface UseArenaMediaInput {
   msRef: React.MutableRefObject<MediasoupClient | null>;
@@ -36,9 +52,10 @@ export function useArenaMedia({
     if (!msRef.current) throw new Error('Media server is not ready');
 
     const type = kind === 'audio' ? 'audio' : 'camera';
+    const prefs = readDevicePreferences();
     const constraints: MediaStreamConstraints = kind === 'audio'
       ? { audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: true, noiseSuppression: true, autoGainControl: true } }
-      : { video: { deviceId: deviceId ? { exact: deviceId } : undefined, width: { ideal: 640, max: 960 }, height: { ideal: 360, max: 540 }, frameRate: { ideal: 20, max: 24 } } };
+      : cameraConstraints(deviceId, prefs.videoQuality || 'auto');
 
     const stream = await Promise.race([
       navigator.mediaDevices.getUserMedia(constraints),
@@ -203,15 +220,20 @@ export function useArenaMedia({
     else void stopCamera();
   }, [startCamera, stopCamera]);
 
-  const handleDevicePreferenceChange = useCallback(async (key: 'audioInputId' | 'videoInputId' | 'audioOutputId', value: string) => {
+  const handleDevicePreferenceChange = useCallback(async (key: 'audioInputId' | 'videoInputId' | 'audioOutputId' | 'videoQuality', value: string) => {
     if (key === 'audioInputId' && micOn) {
       await replaceLocalMediaTrack('audio', value || undefined);
       return;
     }
-    if (key === 'videoInputId' && camOn) {
-      await replaceLocalMediaTrack('video', value || undefined);
+    if ((key === 'videoInputId' || key === 'videoQuality') && camOn) {
+      const { videoInputId } = readDevicePreferences();
+      await replaceLocalMediaTrack('video', videoInputId || undefined);
     }
   }, [camOn, micOn, replaceLocalMediaTrack]);
+
+  const getMediaDiagnostics = useCallback(async () => {
+    return msRef.current?.getDiagnostics() ?? null;
+  }, [msRef]);
 
   useEffect(() => {
     if (!mediaReady || !pendingInitialMedia) return;
@@ -251,6 +273,7 @@ export function useArenaMedia({
     handleCamChange,
     handleScreenShare,
     handleDevicePreferenceChange,
+    getMediaDiagnostics,
     stopMicrophone,
     stopCamera,
     stopScreenShare,

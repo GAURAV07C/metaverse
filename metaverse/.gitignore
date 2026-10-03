@@ -38,6 +38,7 @@ yarn-error.log*
 
 # Local Codex/browser test artifacts
 .tmp/
+tmp/
 
 # TypeScript incremental build metadata
 *.tsbuildinfo

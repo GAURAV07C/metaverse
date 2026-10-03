@@ -47,12 +47,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   setActiveTab, chatScope, setChatScope, currentRoom, allRooms = [], activeRooms = [], onJoinRoom, onCopyRoomLink, copiedRoomId, onOpenMeetingMode, myStatus = 'available', unreadChatCount = 0,
 }) => {
   const [search, setSearch] = useState('');
+  const [roomSearch, setRoomSearch] = useState('');
   const chatEnd = useRef<HTMLDivElement>(null);
   useEffect(() => { if (showUsers && activeTab === 'chat') chatEnd.current?.scrollIntoView({ block: 'nearest' }); }, [messages.length, showUsers, activeTab]);
   if (!showUsers) return null;
   const people = otherUsers.filter((u, index, all) => u.username !== myStoredUsername && all.findIndex(person => person.userId === u.userId) === index);
   const matches = (name: string) => name.toLowerCase().includes(search.trim().toLowerCase());
+  const roomMatches = (name?: string) => name?.toLowerCase().includes(roomSearch.trim().toLowerCase()) ?? false;
   const filtered = people.filter(u => matches(u.username));
+  const filteredRooms = roomSearch ? allRooms.filter(({ room }) => roomMatches(room.name || 'Room')) : allRooms;
   const myName = myStoredUsername || 'You';
   const renderAvatar = (avatarUrl: string | undefined, name: string, size = 32) => {
     if (!avatarUrl) return name.charAt(0).toUpperCase();
@@ -109,7 +112,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {allRooms.length > 0 && (
             <section className="people-panel-section">
               <p className="people-section-title">Rooms <ChevronDown size={13} /></p>
-              {allRooms.map(({ room, count, spots, vacant }) => (
+              <label className="room-search" htmlFor="room-search-input"><Search size={14} /><input id="room-search-input" name="roomSearch" value={roomSearch} onChange={e => setRoomSearch(e.target.value)} placeholder="Search rooms" aria-label="Search rooms" /></label>
+              {filteredRooms.map(({ room, count, spots, vacant }) => (
                 <div className={`area-row compact room-directory-row ${currentRoom?.id === room.id ? 'active' : ''}`} key={room.id}>
                   <DoorOpen size={14} />
                   <div><strong>{room.name || 'Room'}</strong><span>{count} online · {spots ? `${vacant}/${spots} spots` : 'open floor'}</span></div>
@@ -117,6 +121,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <button className="room-join-button" data-room-id={room.id} type="button" disabled={currentRoom?.id === room.id} onMouseDown={(e) => { e.preventDefault(); requestJoinRoom(room.id); }} onPointerDown={(e) => { e.preventDefault(); requestJoinRoom(room.id); }} onClick={() => requestJoinRoom(room.id)}>{currentRoom?.id === room.id ? 'Here' : 'Join'}</button>
                 </div>
               ))}
+              {roomSearch && !filteredRooms.length && <div className="panel-empty compact"><DoorOpen size={22} /><p>No rooms found</p><span>Try another room name.</span></div>}
             </section>
           )}
 

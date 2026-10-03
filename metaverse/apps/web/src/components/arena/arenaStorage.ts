@@ -2,6 +2,7 @@ import type { InviteHistoryItem, ModerationHistoryItem, NotificationPrefs } from
 
 export const DEVICE_PREF_KEY = 'metaverse_device_preferences';
 export const NOTIFICATION_PREF_KEY = 'metaverse_notification_preferences';
+export type VideoQualityPreference = 'auto' | 'low' | 'standard' | 'high';
 
 export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   joins: true,
@@ -14,7 +15,12 @@ export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
 
 export const readDevicePreferences = () => {
   try {
-    return JSON.parse(localStorage.getItem(DEVICE_PREF_KEY) || '{}') as { audioInputId?: string; videoInputId?: string; audioOutputId?: string };
+    return JSON.parse(localStorage.getItem(DEVICE_PREF_KEY) || '{}') as {
+      audioInputId?: string;
+      videoInputId?: string;
+      audioOutputId?: string;
+      videoQuality?: VideoQualityPreference;
+    };
   } catch {
     return {};
   }

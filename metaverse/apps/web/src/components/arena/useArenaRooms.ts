@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import type { SpaceElement } from './ElementsPanel';
-import type { OtherUser } from './types';
+import type { OtherUser, RoomSession } from './types';
 
 type Position = { x: number; y: number };
 type Dimensions = { w: number; h: number };
@@ -55,6 +55,7 @@ interface UseArenaRoomsInput {
   dimensions: Dimensions;
   selectedUser?: OtherUser | null;
   proximityUsers: string[];
+  roomSessions: RoomSession[];
 }
 
 export function useArenaRooms({
@@ -65,6 +66,7 @@ export function useArenaRooms({
   dimensions,
   selectedUser,
   proximityUsers,
+  roomSessions,
 }: UseArenaRoomsInput) {
   return useMemo(() => {
     const currentRoom = privateZones.find(zone => isAudioRoomZone(zone) && isTileInZone(myPos.x, myPos.y, zone));
@@ -84,12 +86,18 @@ export function useArenaRooms({
       return null;
     };
 
+    const sessionForRoom = (roomId: string) => roomSessions.find(session => session.roomId === roomId);
+    const sessionCount = (room: any) => {
+      const session = sessionForRoom(room.id);
+      if (session) return session.members.filter(member => Boolean(member.userId)).length;
+      return otherUsers.filter(user => isTileInZone(user.x, user.y, room)).length +
+        (isTileInZone(myPos.x, myPos.y, room) ? 1 : 0);
+    };
+
     const activeRooms = privateZones
       .filter(isAudioRoomZone)
       .map((room) => {
-        const otherCount = otherUsers.filter(user => isTileInZone(user.x, user.y, room)).length;
-        const iAmInside = isTileInZone(myPos.x, myPos.y, room);
-        return { room, count: otherCount + (iAmInside ? 1 : 0) };
+        return { room, count: sessionCount(room) };
       })
       .filter(item => item.count > 0);
 
@@ -97,8 +105,7 @@ export function useArenaRooms({
       .filter(isAudioRoomZone)
       .map((room) => {
         const spots = getRoomSpots(privateZones, room);
-        const count = otherUsers.filter(user => isTileInZone(user.x, user.y, room)).length +
-          (isTileInZone(myPos.x, myPos.y, room) ? 1 : 0);
+        const count = sessionCount(room);
 
         return {
           room,
@@ -114,7 +121,10 @@ export function useArenaRooms({
 
     const mediaGroupUserIds = Array.from(new Set([
       ...proximityUsers,
-      ...(currentRoom ? otherUsers.filter(user => isTileInZone(user.x, user.y, currentRoom)).map(user => user.userId) : []),
+      ...(currentRoom
+        ? (sessionForRoom(currentRoom.id)?.members.map(member => member.userId).filter(Boolean) as string[] | undefined) ||
+          otherUsers.filter(user => isTileInZone(user.x, user.y, currentRoom)).map(user => user.userId)
+        : []),
     ]));
 
     const currentPortal = privateZones.find(zone =>
@@ -151,5 +161,5 @@ export function useArenaRooms({
       isSpotOccupied: isZoneOccupied,
       findWalkableTileInZone,
     };
-  }, [dimensions, elements, myPos, otherUsers, privateZones, proximityUsers, selectedUser]);
+  }, [dimensions, elements, myPos, otherUsers, privateZones, proximityUsers, roomSessions, selectedUser]);
 }

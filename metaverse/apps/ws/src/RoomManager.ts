@@ -11,6 +11,7 @@ import {
   isInsideZone,
   type SpatialPeer,
 } from "./services/spatialRules";
+import { writeRoomSessionEvent } from "./services/eventPersistence";
 
 type PresencePeer = SpatialPeer & {
   id: string;
@@ -22,10 +23,25 @@ type PresencePeer = SpatialPeer & {
   y: number;
 };
 
+type RoomSessionMember = {
+  userId?: string;
+  username?: string;
+  avatarUrl?: string;
+  status?: "available" | "busy" | "focus" | "away";
+};
+
+type GroupLead = {
+  userId: string;
+  username?: string;
+  startedAt: string;
+};
+
 export class RoomManager {
   rooms: Map<string, User[]> = new Map();
   zones: Map<string, any[]> = new Map();
   remotePeers: Map<string, Map<string, PresencePeer>> = new Map();
+  roomSessions: Map<string, Map<string, Map<string, RoomSessionMember>>> = new Map();
+  groupLeads: Map<string, GroupLead> = new Map();
   static instance: RoomManager;
   private spaceBounds = new SpaceBoundsService();
 
@@ -44,6 +60,7 @@ export class RoomManager {
   }
 
   public removeUser(user: User, spaceId: string) {
+    this.leaveRoomSession(user, spaceId);
     if (!this.rooms.has(spaceId)) {
       return;
     }
@@ -56,6 +73,8 @@ export class RoomManager {
       this.zones.delete(spaceId);
       this.spaceBounds.clear(spaceId);
       this.remotePeers.delete(spaceId);
+      this.roomSessions.delete(spaceId);
+      this.groupLeads.delete(spaceId);
       RealtimeBus.getInstance().releaseSpaceOwner(spaceId);
     }
   }
@@ -109,6 +128,145 @@ export class RoomManager {
         x: user.x,
         y: user.y,
       })) ?? [];
+  }
+
+  public serializeRoomSessions(spaceId: string) {
+    const sessions = this.roomSessions.get(spaceId);
+    if (!sessions) return [];
+    return Array.from(sessions.entries()).map(([roomId, members]) => {
+      const room = (this.zones.get(spaceId) || []).find((zone) => zone.id === roomId);
+      return {
+        roomId,
+        name: room?.name,
+        members: Array.from(members.values()),
+      };
+    });
+  }
+
+  public getGroupLead(spaceId: string) {
+    return this.groupLeads.get(spaceId) || null;
+  }
+
+  public setGroupLead(user: User, enabled: boolean) {
+    if (!user.spaceId || !user.userId) return;
+
+    const lead = enabled
+      ? { userId: user.userId, username: user.username, startedAt: new Date().toISOString() }
+      : null;
+
+    if (lead) {
+      this.groupLeads.set(user.spaceId, lead);
+    } else if (this.groupLeads.get(user.spaceId)?.userId === user.userId) {
+      this.groupLeads.delete(user.spaceId);
+    } else {
+      return;
+    }
+
+    this.broadcastGroupLead(user.spaceId, lead);
+  }
+
+  public updateRoomSession(user: User) {
+    if (!user.spaceId) return;
+    const room = this.getAudioRoomAt(user.spaceId, user.x, user.y);
+    const nextRoomId = room?.id;
+    const previousRoomId = user.currentRoomId;
+
+    if (previousRoomId && previousRoomId !== nextRoomId) {
+      this.removeRoomSessionMember(user.spaceId, previousRoomId, user.userId);
+    }
+
+    if (nextRoomId) {
+      if (!this.roomSessions.has(user.spaceId)) this.roomSessions.set(user.spaceId, new Map());
+      const sessions = this.roomSessions.get(user.spaceId)!;
+      if (!sessions.has(nextRoomId)) sessions.set(nextRoomId, new Map());
+      sessions.get(nextRoomId)!.set(user.userId || user.id, {
+        userId: user.userId,
+        username: user.username,
+        avatarUrl: user.avatarUrl,
+        status: user.status,
+      });
+    }
+
+    user.currentRoomId = nextRoomId;
+
+    if (previousRoomId !== nextRoomId) {
+      const eventType = previousRoomId && nextRoomId ? "moved" : nextRoomId ? "joined" : "left";
+      void writeRoomSessionEvent({
+        spaceId: user.spaceId,
+        roomId: nextRoomId || previousRoomId,
+        roomName: room?.name || this.findZoneName(user.spaceId, previousRoomId),
+        eventType,
+        userId: user.userId,
+        username: user.username,
+        previousRoomId,
+      });
+      this.broadcastRoomSessions(user.spaceId);
+      user.send({
+        type: "room-session-current",
+        payload: {
+          roomId: nextRoomId || null,
+          previousRoomId: previousRoomId || null,
+          roomName: room?.name,
+        },
+      });
+    }
+  }
+
+  public leaveRoomSession(user: User, spaceId: string) {
+    if (!user.currentRoomId) return;
+    const previousRoomId = user.currentRoomId;
+    this.removeRoomSessionMember(spaceId, user.currentRoomId, user.userId);
+    user.currentRoomId = undefined;
+    void writeRoomSessionEvent({
+      spaceId,
+      roomId: previousRoomId,
+      roomName: this.findZoneName(spaceId, previousRoomId),
+      eventType: "left",
+      userId: user.userId,
+      username: user.username,
+      previousRoomId,
+    });
+    this.broadcastRoomSessions(spaceId);
+  }
+
+  public clearGroupLeadForUser(user: User, spaceId: string) {
+    if (!user.userId) return;
+    if (this.groupLeads.get(spaceId)?.userId !== user.userId) return;
+    this.groupLeads.delete(spaceId);
+    this.broadcastGroupLead(spaceId, null);
+  }
+
+  private removeRoomSessionMember(spaceId: string, roomId: string, userId?: string) {
+    const sessions = this.roomSessions.get(spaceId);
+    if (!sessions) return;
+    const members = sessions.get(roomId);
+    if (!members) return;
+    members.delete(userId || "");
+    if (members.size === 0) sessions.delete(roomId);
+    if (sessions.size === 0) this.roomSessions.delete(spaceId);
+  }
+
+  private broadcastRoomSessions(spaceId: string) {
+    const message = {
+      type: "room-session-updated",
+      payload: {
+        sessions: this.serializeRoomSessions(spaceId),
+      },
+    };
+    this.rooms.get(spaceId)?.forEach((user) => user.send(message));
+  }
+
+  private broadcastGroupLead(spaceId: string, lead: GroupLead | null) {
+    const message = {
+      type: "group-lead-updated",
+      payload: { lead },
+    };
+    this.rooms.get(spaceId)?.forEach((user) => user.send(message));
+  }
+
+  private findZoneName(spaceId: string, roomId?: string) {
+    if (!roomId) return undefined;
+    return (this.zones.get(spaceId) || []).find((zone) => zone.id === roomId)?.name;
   }
 
   private handleRemoteBroadcast(spaceId: string, senderConnectionId: string | undefined, message: OutgoingMessage) {

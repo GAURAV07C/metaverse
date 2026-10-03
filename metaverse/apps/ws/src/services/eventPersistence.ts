@@ -34,3 +34,19 @@ export async function writeModerationAuditEvent(data: {
     console.warn("Failed to persist moderation audit event", error instanceof Error ? error.message : error);
   }
 }
+
+export async function writeRoomSessionEvent(data: {
+  spaceId: string;
+  roomId?: string;
+  roomName?: string;
+  eventType: "joined" | "left" | "moved";
+  userId?: string;
+  username?: string;
+  previousRoomId?: string;
+}) {
+  try {
+    await (client as any).roomSessionEvent.create({ data });
+  } catch (error) {
+    console.warn("Failed to persist room session event", error instanceof Error ? error.message : error);
+  }
+}
