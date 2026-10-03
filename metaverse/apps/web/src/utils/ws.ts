@@ -37,6 +37,7 @@ export type WsIncomingMessage =
   | { type: 'new-producer'; payload: { producerId: string; userId: string; appData: any } }
   | { type: 'producer-closed'; payload: { producerId: string; userId?: string; appData?: any } }
   | { type: 'webrtc-consumed'; payload: { id: string; producerId: string; kind: string; rtpParameters: any } }
+  | { type: 'webrtc-consumer-resumed'; payload: { consumerId: string; requestId?: string } }
   | { type: 'join-error'; payload: { reason: string; message: string; redirectUrl?: string; ownerInstanceId?: string } }
   | { type: 'webrtc-error'; payload: { message: string; requestId?: string } };
 

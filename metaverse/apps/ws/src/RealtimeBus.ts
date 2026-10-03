@@ -30,6 +30,15 @@ export class RealtimeBus {
   private readonly publicUrl = process.env.SFU_PUBLIC_URL || process.env.PUBLIC_WS_URL || process.env.VITE_APP_WS_URL;
 
   private constructor() {
+    const busDisabled =
+      process.env.REALTIME_BUS_ENABLED === "false" ||
+      process.env.SFU_SPACE_AFFINITY === "off";
+
+    if (busDisabled) {
+      console.log("Realtime Redis pub/sub disabled for single-server mode.");
+      return;
+    }
+
     const redisUrl = process.env.REDIS_URL || process.env.UPSTASH_REDIS_URL;
     if (!redisUrl) {
       console.log("Realtime Redis pub/sub disabled. Set REDIS_URL or UPSTASH_REDIS_URL to enable multi-instance signaling.");

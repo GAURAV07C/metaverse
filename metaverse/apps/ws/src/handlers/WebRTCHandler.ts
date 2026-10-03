@@ -108,6 +108,18 @@ export class WebRTCHandler {
     });
   }
 
+  static async handleResumeConsumer(user: User, parsedData: any) {
+    await this.handle(user, parsedData, async () => {
+      const consumerId = typeof parsedData?.payload?.consumerId === "string" ? parsedData.payload.consumerId : "";
+      if (!consumerId) throw new Error("Consumer id is required");
+      await MediasoupManager.getInstance().resumeConsumer(consumerId);
+      user.send({
+        type: "webrtc-consumer-resumed",
+        payload: { consumerId, requestId: this.getRequestId(parsedData) },
+      });
+    });
+  }
+
   private static async handle(user: User, parsedData: any, action: () => Promise<void>) {
     try {
       await action();

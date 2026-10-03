@@ -28,6 +28,8 @@ export const StreamPlayer = React.memo(function StreamPlayer({
     if (!stream) return;
 
     const tracks = stream.getTracks();
+    stream.addEventListener('addtrack', updateVideoState);
+    stream.addEventListener('removetrack', updateVideoState);
     tracks.forEach(track => {
       track.addEventListener('ended', updateVideoState);
       track.addEventListener('mute', updateVideoState);
@@ -35,6 +37,8 @@ export const StreamPlayer = React.memo(function StreamPlayer({
     });
 
     return () => {
+      stream.removeEventListener('addtrack', updateVideoState);
+      stream.removeEventListener('removetrack', updateVideoState);
       tracks.forEach(track => {
         track.removeEventListener('ended', updateVideoState);
         track.removeEventListener('mute', updateVideoState);

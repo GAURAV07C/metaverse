@@ -224,7 +224,7 @@ export class MediasoupManager {
     const consumer = await transport.consume({
       producerId,
       rtpCapabilities,
-      paused: false,
+      paused: true,
     });
     this.consumers.set(consumer.id, consumer);
     console.log("Mediasoup consumer created", { consumerId: consumer.id, producerId, kind: consumer.kind, spaceId });
@@ -232,5 +232,11 @@ export class MediasoupManager {
     consumer.on("transportclose", () => consumer.close());
     consumer.on("producerclose", () => consumer.close());
     return consumer;
+  }
+
+  public async resumeConsumer(consumerId: string) {
+    const consumer = this.consumers.get(consumerId);
+    if (!consumer || consumer.closed) throw new Error("Consumer not found");
+    await consumer.resume();
   }
 }

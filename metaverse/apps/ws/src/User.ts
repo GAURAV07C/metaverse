@@ -120,6 +120,9 @@ export class User {
         case "webrtc-consume":
           await WebRTCHandler.handleConsume(this, parsedData);
           break;
+        case "webrtc-resume-consumer":
+          await WebRTCHandler.handleResumeConsumer(this, parsedData);
+          break;
       }
     });
   }

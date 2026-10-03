@@ -88,9 +88,10 @@ export function useArenaSocket({
       const isScreenMedia = appData?.type === 'screen' || appData?.type === 'screen-audio';
       const setter = isScreenMedia ? setScreenStreams : setStreams;
       setter(prev => {
-        const existing = prev[userId] || new MediaStream();
-        existing.addTrack(consumer.track);
-        return { ...prev, [userId]: existing };
+        const existingTracks = prev[userId]?.getTracks() || [];
+        const hasTrack = existingTracks.some(track => track.id === consumer.track.id);
+        const nextTracks = hasTrack ? existingTracks : [...existingTracks, consumer.track];
+        return { ...prev, [userId]: new MediaStream(nextTracks) };
       });
     };
 

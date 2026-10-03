@@ -44,6 +44,9 @@ export class MediasoupClient {
         case 'webrtc-consumed':
           this.resolveRequest('webrtc-consumed', msg.payload);
           break;
+        case 'webrtc-consumer-resumed':
+          this.resolveRequest('webrtc-consumer-resumed', msg.payload);
+          break;
         case 'webrtc-error':
           this.rejectPendingRequests(new Error(msg.payload.message), msg.payload.requestId);
           break;
@@ -99,6 +102,8 @@ export class MediasoupClient {
         responseType = 'webrtc-produced';
       } else if (type === 'webrtc-consume') {
         responseType = 'webrtc-consumed';
+      } else if (type === 'webrtc-resume-consumer') {
+        responseType = 'webrtc-consumer-resumed';
       }
 
       this.pendingRequests.set(requestId, { resolve, reject, responseType });
@@ -284,6 +289,8 @@ export class MediasoupClient {
     if (this.onNewConsumer) {
       this.onNewConsumer(consumer, userId, this.producerMeta.get(producerId) || appData);
     }
+
+    await this.request('webrtc-resume-consumer', { consumerId: consumer.id });
   }
 
   public getConsumersByUserId(userId: string): Consumer[] {
