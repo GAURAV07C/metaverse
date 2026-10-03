@@ -17,25 +17,25 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: 18.x
-        cache: 'npm'
-        cache-dependency-path: metaverse/package-lock.json
+        cache: 'yarn'
+        cache-dependency-path: metaverse/yarn.lock
 
     - name: Install dependencies
       working-directory: ./metaverse
-      run: npm ci
+      run: yarn install --frozen-lockfile
 
     - name: Format Check
       working-directory: ./metaverse
-      run: npm run format -- --list-different || echo "Prettier found issues"
+      run: yarn run format --list-different || echo "Prettier found issues"
 
     - name: Check Types
       working-directory: ./metaverse
-      run: npm run check-types || echo "Type checking skipped or failed"
+      run: yarn run check-types || echo "Type checking skipped or failed"
 
     - name: Generate Prisma Client
       working-directory: ./metaverse
-      run: npm run db:generate
+      run: yarn run db:generate
 
     - name: Build Projects
       working-directory: ./metaverse
-      run: npm run build
+      run: yarn run build
